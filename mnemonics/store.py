@@ -22,15 +22,16 @@ CREATE TABLE IF NOT EXISTS memories (
 CREATE INDEX IF NOT EXISTS idx_ns ON memories(ns);
 """
 
-DIM = 384  # all-MiniLM-L6-v2 output dim
+DIM = 384  # all-MiniLM-L6-v2 default dim
 
 
 class Store:
     """Thread-safe memory store backed by SQLite + hnswlib."""
 
-    def __init__(self, path: str | Path = "~/.mnemonics"):
+    def __init__(self, path: str | Path = "~/.mnemonics", dim: int = DIM):
         self.root = Path(path).expanduser()
         self.root.mkdir(parents=True, exist_ok=True)
+        self.dim = dim
         self._lock = threading.Lock()
         self._db = sqlite3.connect(str(self.root / "memories.db"), check_same_thread=False)
         self._db.executescript(_SCHEMA)
@@ -40,7 +41,7 @@ class Store:
     def _index_for(self, ns: str) -> hnswlib.Index:
         if ns not in self._index:
             idx_path = self.root / f"index_{ns}.bin"
-            idx = hnswlib.Index(space="cosine", dim=DIM)
+            idx = hnswlib.Index(space="cosine", dim=self.dim)
             if idx_path.exists():
                 idx.load_index(str(idx_path))
                 idx.set_ef(64)
