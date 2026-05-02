@@ -1,0 +1,2 @@
+[console_scripts]
+mnemonics = mnemonics.cli:main
