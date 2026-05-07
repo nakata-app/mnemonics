@@ -78,6 +78,9 @@ class _Handler(BaseHTTPRequestHandler):
 
         if self.path == "/ingest":
             texts = body.get("texts", [])
+            if not isinstance(texts, list):
+                self._json(400, {"error": "texts must be an array of strings"})
+                return
             if not texts:
                 self._json(400, {"error": "texts must not be empty"})
                 return
@@ -191,6 +194,9 @@ def _mcp_loop() -> None:
 
             if name == "mnemonics_ingest":
                 texts = args.get("texts", [])
+                if not isinstance(texts, list):
+                    err("texts must be an array of strings, not a single string")
+                    continue
                 n = _ingest(texts=texts, store=_get_store(), ns=args.get("ns", "default"))
                 ok({"content": [{"type": "text", "text": f"Stored {n} chunks."}]})
 
