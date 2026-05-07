@@ -44,6 +44,9 @@ def ingest(
     chunk_overlap: int = 40,
 ) -> int:
     """Chunk, embed and store texts. Returns total chunks stored."""
+    # Guard: a single string is iterable in Python, would be ingested char-by-char.
+    if isinstance(texts, str):
+        texts = [texts]
     enc = _get_encoder(model)
     all_chunks: list[str] = []
     all_meta: list[dict] = []
