@@ -29,7 +29,6 @@ def main() -> None:
     r.add_argument("query")
     r.add_argument("--ns", default="default")
     r.add_argument("--top-k", type=int, default=5)
-    r.add_argument("--no-verify", action="store_true")
     r.add_argument("--path", default="~/.mnemonics")
 
     # stats
@@ -64,12 +63,9 @@ def main() -> None:
             store=store,
             ns=args.ns,
             top_k=args.top_k,
-            verify=not args.no_verify,
         )
-        print(f"trust_score: {result['trust_score']}  flagged: {result['flagged_count']}")
         for r in result["results"]:
-            flag = " ⚠" if r.get("flagged") else ""
-            print(f"  [{r['score']:.3f}]{flag} {r['text'][:120]}")
+            print(f"  [{r['score']:.3f}] {r['text'][:120]}")
 
     elif args.cmd == "stats":
         from mnemonics.store import Store

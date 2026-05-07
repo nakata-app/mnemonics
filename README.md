@@ -1,19 +1,19 @@
 # Mnemonics
 
-**Your memory doesn't hallucinate.**
+`/nɪˈmɒnɪks/`, *ni-MON-iks* (the "m" is silent, like "memories" with an N).
 
-Mnemonics is a local-first AI memory layer that stores, retrieves, and *verifies* what it returns. Built on sentence embeddings + HNSW vector search, with optional [halluguard](https://github.com/nakata-app/halluguard) verification to flag results that drift from the indexed corpus.
+**Local-first AI memory.**
+
+Mnemonics is a small, local memory layer that stores text and retrieves it with semantic search. Built on sentence embeddings + HNSW vector search, persisted to SQLite. No cloud, no telemetry, no daemon required for day-to-day use.
 
 ## Why
 
-Every RAG pipeline has the same silent failure mode: the retriever returns plausible-looking chunks, the LLM fills in the gaps, and nobody notices the fabrication until it matters. Mnemonics surfaces that problem at retrieval time, not after.
+Most AI memory tools push your conversations to a hosted service. Mnemonics doesn't. Your index, your DB, your machine. The library is small enough to read in one sitting.
 
 ## Install
 
 ```bash
 pip install mnemonics
-# with verification support:
-pip install "mnemonics[verify]"
 ```
 
 ## Quick start
@@ -22,9 +22,8 @@ pip install "mnemonics[verify]"
 # Store something
 mnemonics ingest "The Eiffel Tower is 330 meters tall and located in Paris."
 
-# Retrieve with hallucination check
+# Retrieve
 mnemonics retrieve "how tall is the Eiffel Tower"
-# trust_score: 1.0  flagged: 0
 #   [0.912] The Eiffel Tower is 330 meters tall and located in Paris.
 ```
 
@@ -39,12 +38,9 @@ store = Store("~/.mnemonics")
 
 ingest(["Paris is the capital of France.", "Rome is the capital of Italy."], store)
 
-result = retrieve("what is the capital of France", store, top_k=3, verify=True)
+result = retrieve("what is the capital of France", store, top_k=3)
 for r in result["results"]:
-    flag = " FLAGGED" if r["flagged"] else ""
-    print(f"[{r['score']:.3f}]{flag} {r['text']}")
-
-print(f"trust_score: {result['trust_score']}")
+    print(f"[{r['score']:.3f}] {r['text']}")
 ```
 
 ## REST server
@@ -56,11 +52,13 @@ mnemonics serve --port 7810
 | Method | Path | Body |
 |--------|------|------|
 | POST | `/ingest` | `{"texts": [...], "ns": "default"}` |
-| POST | `/retrieve` | `{"query": "...", "top_k": 5, "verify": true}` |
+| POST | `/retrieve` | `{"query": "...", "top_k": 5}` |
 | GET | `/health` | |
 | GET | `/namespaces` | |
 | GET | `/count?ns=default` | |
 | DELETE | `/memory/<id>` | |
+
+The server binds to `127.0.0.1` only. No external interface.
 
 ## MCP (Claude Code / Cursor / Metis)
 
@@ -99,7 +97,7 @@ texts -> chunk (200w / 40w overlap) -> embed (all-MiniLM-L6-v2)
       -> hnswlib cosine index (per namespace)
       -> SQLite metadata store
 
-retrieve -> embed query -> knn search -> halluguard verify -> ranked results
+retrieve -> embed query -> knn search -> ranked results
 ```
 
 Storage layout under `~/.mnemonics`:
@@ -109,18 +107,6 @@ memories.db        SQLite (text, meta, timestamps)
 index_default.bin  hnswlib index for "default" namespace
 index_<ns>.bin     one index per namespace
 ```
-
-## Verification
-
-When `verify=True`, retrieved chunks are sent to a local halluguard daemon (port 7801) which cross-checks each result against the full retrieved corpus. Results that diverge get flagged and the aggregate `trust_score` drops.
-
-```bash
-pip install "mnemonics[verify]"
-halluguard serve &
-mnemonics retrieve "your query"  # auto-verifies
-```
-
-Verification is best-effort: if the daemon is not running, retrieval proceeds normally with `trust_score: 1.0`.
 
 ## License
 
