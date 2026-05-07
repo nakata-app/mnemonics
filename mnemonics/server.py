@@ -3,14 +3,14 @@
 Endpoints:
   GET  /health
   POST /ingest   {"texts": [...], "ns": "default", "meta": [...]}
-  POST /retrieve {"query": "...", "ns": "default", "top_k": 5, "verify": true}
+  POST /retrieve {"query": "...", "ns": "default", "top_k": 5}
   GET  /namespaces
   GET  /count?ns=default
   DELETE /memory/<id>
 
 MCP tools (JSON-RPC over stdio):
   mnemonics_ingest   — store memories
-  mnemonics_retrieve — search + verify
+  mnemonics_retrieve — semantic search
   mnemonics_forget   — delete a memory by id
 """
 from __future__ import annotations
@@ -99,7 +99,6 @@ class _Handler(BaseHTTPRequestHandler):
                 store=_get_store(),
                 ns=body.get("ns", "default"),
                 top_k=int(body.get("top_k", 5)),
-                verify=bool(body.get("verify", True)),
             )
             self._json(200, result)
 
@@ -164,14 +163,13 @@ def _mcp_loop() -> None:
                 },
                 {
                     "name": "mnemonics_retrieve",
-                    "description": "Search memories for a query. Returns top results with hallucination verification.",
+                    "description": "Semantic search over stored memories. Returns top-k ranked results.",
                     "inputSchema": {
                         "type": "object",
                         "properties": {
                             "query": {"type": "string"},
                             "ns": {"type": "string"},
                             "top_k": {"type": "integer"},
-                            "verify": {"type": "boolean", "description": "Run halluguard verification (default true)"},
                         },
                         "required": ["query"],
                     },
@@ -202,12 +200,8 @@ def _mcp_loop() -> None:
                     store=_get_store(),
                     ns=args.get("ns", "default"),
                     top_k=int(args.get("top_k", 5)),
-                    verify=bool(args.get("verify", True)),
                 )
-                lines = [f"trust_score: {result['trust_score']}  flagged: {result['flagged_count']}"]
-                for r in result["results"]:
-                    flag = " ⚠ FLAGGED" if r.get("flagged") else ""
-                    lines.append(f"[{r['score']:.3f}]{flag} {r['text'][:200]}")
+                lines = [f"[{r['score']:.3f}] {r['text'][:200]}" for r in result["results"]]
                 ok({"content": [{"type": "text", "text": "\n".join(lines)}]})
 
             elif name == "mnemonics_forget":

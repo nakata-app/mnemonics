@@ -1,12 +1,12 @@
 [project]
 name = "mnemonics"
 version = "0.1.0"
-description = "Verified AI memory — retrieval that doesn't hallucinate."
+description = "Local-first AI memory — semantic retrieval over your own SQLite + HNSW index."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 authors = [{ name = "atakan" }]
-keywords = ["llm", "memory", "retrieval", "rag", "hallucination", "mcp", "agent"]
+keywords = ["llm", "memory", "retrieval", "rag", "mcp", "agent", "local-first"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Programming Language :: Python :: 3",
@@ -17,12 +17,9 @@ dependencies = [
   "numpy>=1.24",
   "hnswlib>=0.8",
   "sentence-transformers>=3.0",
-  "requests>=2.28",
 ]
 
 [project.optional-dependencies]
-verify = ["halluguard>=0.3"]
-server = ["halluguard>=0.3"]
 dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.5"]
 
 [project.scripts]
@@ -31,3 +28,8 @@ mnemonics = "mnemonics.cli:main"
 [build-system]
 requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["mnemonics*"]
+exclude = ["tests*", "benchmarks*", "claude_hooks*", "dist*"]
