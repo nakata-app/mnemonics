@@ -221,6 +221,11 @@ def _mcp_loop() -> None:
                         },
                     },
                 },
+                {
+                    "name": "mnemonics_stats",
+                    "description": "List all namespaces with their chunk counts.",
+                    "inputSchema": {"type": "object", "properties": {}},
+                },
             ]})
 
         elif method == "tools/call":
@@ -279,6 +284,11 @@ def _mcp_loop() -> None:
                     n = store.gc(ns=ns, age_days=age_days)
                     text = f"Deleted {n} row(s)."
                 ok({"content": [{"type": "text", "text": text}]})
+
+            elif name == "mnemonics_stats":
+                store = _get_store()
+                lines = [f"  {ns}: {store.count(ns)} chunks" for ns in store.list_namespaces()]
+                ok({"content": [{"type": "text", "text": "\n".join(lines) or "(empty)"}]})
 
             else:
                 err(f"unknown tool: {name}")

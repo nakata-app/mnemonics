@@ -114,6 +114,7 @@ Tools exposed:
 - `mnemonics_pin`
 - `mnemonics_tier`
 - `mnemonics_gc`
+- `mnemonics_stats`
 
 ## Namespaces
 
