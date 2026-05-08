@@ -66,6 +66,7 @@ def retrieve(
         else:
             r["decay_factor"] = 1.0
             r["boost"] = 1.0
+            r["score"] = r["raw_score"]
 
     if decay:
         results.sort(key=lambda r: r["score"], reverse=True)

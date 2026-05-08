@@ -239,7 +239,10 @@ def test_mcp_initialize(tmp_store):
 def test_mcp_tools_list(tmp_store):
     resp = _mcp(tmp_store, {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
     names = {t["name"] for t in resp[0]["result"]["tools"]}
-    assert names == {"mnemonics_ingest", "mnemonics_retrieve", "mnemonics_forget"}
+    assert names == {
+        "mnemonics_ingest", "mnemonics_retrieve", "mnemonics_forget",
+        "mnemonics_pin", "mnemonics_tier",
+    }
 
 
 def test_mcp_ingest(tmp_store):
@@ -253,14 +256,44 @@ def test_mcp_ingest(tmp_store):
 
 
 def test_mcp_retrieve(tmp_store):
-    fake = {"results": [], "trust_score": 1.0, "flagged_count": 0, "verified": True}
+    fake = {"results": [{
+        "id": 1, "score": 0.42, "raw_score": 0.50, "decay_factor": 0.90,
+        "boost": 1.05, "age_days": 3.0, "tier": 1, "text": "hello world",
+    }]}
     with patch("mnemonics.server._retrieve", return_value=fake):
         resp = _mcp(tmp_store, {
             "jsonrpc": "2.0", "id": 4,
             "method": "tools/call",
             "params": {"name": "mnemonics_retrieve", "arguments": {"query": "test"}},
         })
-    assert "trust_score" in resp[0]["result"]["content"][0]["text"]
+    text = resp[0]["result"]["content"][0]["text"]
+    assert "raw=" in text and "decay=" in text and "boost=" in text and "tier=" in text
+
+
+def test_mcp_pin(populated_store):
+    store, docs, vecs = populated_store
+    first_id = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 8,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_pin", "arguments": {"id": first_id}},
+    })
+    assert "Pinned" in resp[0]["result"]["content"][0]["text"]
+    tier = store._db.execute("SELECT tier FROM memories WHERE id=?", (first_id,)).fetchone()[0]
+    assert tier == 0
+
+
+def test_mcp_tier(populated_store):
+    store, docs, vecs = populated_store
+    first_id = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 9,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_tier", "arguments": {"id": first_id, "tier": 2}},
+    })
+    assert "Tier set" in resp[0]["result"]["content"][0]["text"]
+    tier = store._db.execute("SELECT tier FROM memories WHERE id=?", (first_id,)).fetchone()[0]
+    assert tier == 2
 
 
 def test_mcp_forget(populated_store):

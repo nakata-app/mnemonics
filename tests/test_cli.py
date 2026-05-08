@@ -64,12 +64,18 @@ def test_ingest_multiple_words_joined(tmp_path):
 
 # ── retrieve ──────────────────────────────────────────────────────────────────
 
-def test_retrieve_prints_trust_score(tmp_path, capsys):
-    fake_result = {
-        "trust_score": 0.95,
-        "flagged_count": 0,
-        "results": [{"score": 0.85, "text": "Paris is in France.", "flagged": False}],
+def _v2_result(score=0.85, text="Paris is in France.", tier=1, decay=0.95, boost=1.10, age=5):
+    return {
+        "results": [{
+            "id": 1, "score": score, "raw_score": round(score / (decay * boost), 4),
+            "decay_factor": decay, "boost": boost, "age_days": age, "tier": tier,
+            "text": text,
+        }],
     }
+
+
+def test_retrieve_prints_v2_breakdown(tmp_path, capsys):
+    fake_result = _v2_result(score=0.85, text="Paris is in France.")
     with (
         patch("mnemonics.store.Store"),
         patch("mnemonics.retrieve.retrieve", return_value=fake_result),
@@ -78,25 +84,29 @@ def test_retrieve_prints_trust_score(tmp_path, capsys):
         main()
 
     out = capsys.readouterr().out
-    assert "0.95" in out
+    assert "0.850" in out
+    assert "raw=" in out
+    assert "decay=" in out
+    assert "boost=" in out
+    assert "tier=def" in out
     assert "Paris" in out
 
 
-def test_retrieve_no_verify_flag(tmp_path):
-    fake_result = {"trust_score": 1.0, "flagged_count": 0, "results": []}
+def test_retrieve_no_decay_flag(tmp_path):
+    fake_result = _v2_result()
     with (
         patch("mnemonics.store.Store"),
         patch("mnemonics.retrieve.retrieve", return_value=fake_result) as mock_ret,
-        patch("sys.argv", ["mnemonics", "retrieve", "q", "--no-verify", "--path", str(tmp_path)]),
+        patch("sys.argv", ["mnemonics", "retrieve", "q", "--no-decay", "--path", str(tmp_path)]),
     ):
         main()
 
     call_kwargs = mock_ret.call_args[1]
-    assert call_kwargs["verify"] is False
+    assert call_kwargs["decay"] is False
 
 
 def test_retrieve_top_k_param(tmp_path):
-    fake_result = {"trust_score": 1.0, "flagged_count": 0, "results": []}
+    fake_result = {"results": []}
     with (
         patch("mnemonics.store.Store"),
         patch("mnemonics.retrieve.retrieve", return_value=fake_result) as mock_ret,
@@ -108,12 +118,8 @@ def test_retrieve_top_k_param(tmp_path):
     assert call_kwargs["top_k"] == 10
 
 
-def test_retrieve_flagged_results_show_warning(tmp_path, capsys):
-    fake_result = {
-        "trust_score": 0.3,
-        "flagged_count": 1,
-        "results": [{"score": 0.9, "text": "suspicious claim", "flagged": True}],
-    }
+def test_retrieve_pinned_label(tmp_path, capsys):
+    fake_result = _v2_result(tier=0, decay=1.0, boost=1.0)
     with (
         patch("mnemonics.store.Store"),
         patch("mnemonics.retrieve.retrieve", return_value=fake_result),
@@ -122,7 +128,71 @@ def test_retrieve_flagged_results_show_warning(tmp_path, capsys):
         main()
 
     out = capsys.readouterr().out
-    assert "⚠" in out
+    assert "tier=pin" in out
+
+
+# ── pin / tier / gc ──────────────────────────────────────────────────────────
+
+def test_pin_calls_store_pin(tmp_path):
+    mock_store = MagicMock()
+    mock_store.pin.return_value = True
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "pin", "42", "--path", str(tmp_path)]),
+    ):
+        try:
+            main()
+        except SystemExit:
+            pass
+    mock_store.pin.assert_called_once_with(42)
+
+
+def test_tier_calls_store_set_tier(tmp_path):
+    mock_store = MagicMock()
+    mock_store.set_tier.return_value = True
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "tier", "42", "2", "--path", str(tmp_path)]),
+    ):
+        try:
+            main()
+        except SystemExit:
+            pass
+    mock_store.set_tier.assert_called_once_with(42, 2)
+
+
+def test_gc_dry_run_lists_only(tmp_path, capsys):
+    mock_store = MagicMock()
+    mock_store.gc_candidates.return_value = [
+        {"id": 7, "ns": "ambient", "preview": "old log", "age_days": 45},
+    ]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "gc", "--path", str(tmp_path)]),
+    ):
+        main()
+
+    out = capsys.readouterr().out
+    assert "id=    7" in out
+    assert "Dry-run" in out
+    mock_store.gc.assert_not_called()
+
+
+def test_gc_apply_deletes(tmp_path, capsys):
+    mock_store = MagicMock()
+    mock_store.gc_candidates.return_value = [
+        {"id": 7, "ns": "ambient", "preview": "old log", "age_days": 45},
+    ]
+    mock_store.gc.return_value = 1
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "gc", "--apply", "--path", str(tmp_path)]),
+    ):
+        main()
+
+    out = capsys.readouterr().out
+    assert "Deleted: 1" in out
+    mock_store.gc.assert_called_once()
 
 
 # ── stats ─────────────────────────────────────────────────────────────────────
