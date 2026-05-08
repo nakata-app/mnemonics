@@ -8,10 +8,22 @@ license = "MIT"
 authors = [{ name = "atakan" }]
 keywords = ["llm", "memory", "retrieval", "rag", "mcp", "agent", "local-first"]
 classifiers = [
-  "Development Status :: 3 - Alpha",
+  "Development Status :: 4 - Beta",
   "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Topic :: Software Development :: Libraries",
 ]
+
+[project.urls]
+Homepage = "https://github.com/nakata-app/mnemonics"
+Repository = "https://github.com/nakata-app/mnemonics"
+Issues = "https://github.com/nakata-app/mnemonics/issues"
+Changelog = "https://github.com/nakata-app/mnemonics/blob/main/CHANGELOG.md"
 
 dependencies = [
   "numpy>=1.24",
