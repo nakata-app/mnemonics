@@ -35,6 +35,17 @@ def main() -> None:
     st = sub.add_parser("stats", help="Show memory stats")
     st.add_argument("--path", default="~/.mnemonics")
 
+    # pin
+    pin = sub.add_parser("pin", help="Pin a memory (tier=0, no decay)")
+    pin.add_argument("memory_id", type=int)
+    pin.add_argument("--path", default="~/.mnemonics")
+
+    # tier
+    tr = sub.add_parser("tier", help="Set memory tier (0=pinned, 1=default, 2=ambient)")
+    tr.add_argument("memory_id", type=int)
+    tr.add_argument("level", type=int, choices=[0, 1, 2])
+    tr.add_argument("--path", default="~/.mnemonics")
+
     args = p.parse_args()
 
     if args.cmd == "serve":
@@ -72,6 +83,21 @@ def main() -> None:
         store = Store(args.path)
         for ns in store.list_namespaces():
             print(f"  {ns}: {store.count(ns)} chunks")
+
+    elif args.cmd == "pin":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        ok_ = store.pin(args.memory_id)
+        print(f"Pinned id={args.memory_id}" if ok_ else f"id={args.memory_id} not found")
+        sys.exit(0 if ok_ else 1)
+
+    elif args.cmd == "tier":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        ok_ = store.set_tier(args.memory_id, args.level)
+        label = {0: "pinned", 1: "default", 2: "ambient"}[args.level]
+        print(f"id={args.memory_id} -> tier {args.level} ({label})" if ok_ else f"id={args.memory_id} not found")
+        sys.exit(0 if ok_ else 1)
 
     else:
         p.print_help()

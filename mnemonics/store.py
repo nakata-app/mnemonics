@@ -13,34 +13,56 @@ import numpy as np
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS memories (
-    id       INTEGER PRIMARY KEY AUTOINCREMENT,
-    ns       TEXT NOT NULL DEFAULT 'default',
-    text     TEXT NOT NULL,
-    meta     TEXT NOT NULL DEFAULT '{}',
-    created  TEXT NOT NULL DEFAULT (datetime('now'))
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    ns            TEXT NOT NULL DEFAULT 'default',
+    text          TEXT NOT NULL,
+    meta          TEXT NOT NULL DEFAULT '{}',
+    created       TEXT NOT NULL DEFAULT (datetime('now')),
+    tier          INTEGER NOT NULL DEFAULT 1,
+    last_accessed TEXT,
+    access_count  INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_ns ON memories(ns);
 """
 
-DIM = 384  # all-MiniLM-L6-v2 output dim
+# Tier semantics:
+#   0 = pinned   (no decay, retained forever, manual)
+#   1 = default  (slow decay)
+#   2 = ambient  (fast decay)
+
+DIM = 384  # all-MiniLM-L6-v2 default dim
 
 
 class Store:
     """Thread-safe memory store backed by SQLite + hnswlib."""
 
-    def __init__(self, path: str | Path = "~/.mnemonics"):
+    def __init__(self, path: str | Path = "~/.mnemonics", dim: int = DIM):
         self.root = Path(path).expanduser()
         self.root.mkdir(parents=True, exist_ok=True)
+        self.dim = dim
         self._lock = threading.Lock()
         self._db = sqlite3.connect(str(self.root / "memories.db"), check_same_thread=False)
         self._db.executescript(_SCHEMA)
+        self._migrate()
         self._db.commit()
         self._index: dict[str, hnswlib.Index] = {}
+
+    def _migrate(self) -> None:
+        """Idempotent column additions for older DBs created before the schema bump."""
+        cols = {row[1] for row in self._db.execute("PRAGMA table_info(memories)").fetchall()}
+        if "tier" not in cols:
+            self._db.execute("ALTER TABLE memories ADD COLUMN tier INTEGER NOT NULL DEFAULT 1")
+        if "last_accessed" not in cols:
+            self._db.execute("ALTER TABLE memories ADD COLUMN last_accessed TEXT")
+        if "access_count" not in cols:
+            self._db.execute("ALTER TABLE memories ADD COLUMN access_count INTEGER NOT NULL DEFAULT 0")
+        # idx_tier must come after migration so the column exists.
+        self._db.execute("CREATE INDEX IF NOT EXISTS idx_tier ON memories(tier)")
 
     def _index_for(self, ns: str) -> hnswlib.Index:
         if ns not in self._index:
             idx_path = self.root / f"index_{ns}.bin"
-            idx = hnswlib.Index(space="cosine", dim=DIM)
+            idx = hnswlib.Index(space="cosine", dim=self.dim)
             if idx_path.exists():
                 idx.load_index(str(idx_path))
                 idx.set_ef(64)
@@ -77,7 +99,8 @@ class Store:
             row_ids = [int(x) for x in labels[0]]
             placeholders = ",".join("?" * len(row_ids))
             rows = self._db.execute(
-                f"SELECT id, text, meta, created FROM memories WHERE id IN ({placeholders})",
+                f"SELECT id, text, meta, created, tier, last_accessed, access_count "
+                f"FROM memories WHERE id IN ({placeholders})",
                 row_ids,
             ).fetchall()
             by_id = {r[0]: r for r in rows}
@@ -91,9 +114,33 @@ class Store:
                     "text": row[1],
                     "meta": json.loads(row[2]),
                     "created": row[3],
+                    "tier": row[4],
+                    "last_accessed": row[5],
+                    "access_count": row[6],
                     "score": float(1 - dist),
                 })
+            # Touch retrieved rows: bump access_count, update last_accessed.
+            if results:
+                touched_ids = [r["id"] for r in results]
+                touch_placeholders = ",".join("?" * len(touched_ids))
+                self._db.execute(
+                    f"UPDATE memories SET last_accessed = datetime('now'), "
+                    f"access_count = access_count + 1 WHERE id IN ({touch_placeholders})",
+                    touched_ids,
+                )
+                self._db.commit()
         return results
+
+    def set_tier(self, memory_id: int, tier: int) -> bool:
+        if tier not in (0, 1, 2):
+            raise ValueError("tier must be 0 (pinned), 1 (default), or 2 (ambient)")
+        with self._lock:
+            cur = self._db.execute("UPDATE memories SET tier=? WHERE id=?", (tier, memory_id))
+            self._db.commit()
+        return cur.rowcount > 0
+
+    def pin(self, memory_id: int) -> bool:
+        return self.set_tier(memory_id, 0)
 
     def list_namespaces(self) -> list[str]:
         rows = self._db.execute("SELECT DISTINCT ns FROM memories ORDER BY ns").fetchall()

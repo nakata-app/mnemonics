@@ -186,6 +186,27 @@ def _mcp_loop() -> None:
                         "required": ["id"],
                     },
                 },
+                {
+                    "name": "mnemonics_pin",
+                    "description": "Pin a memory (tier=0, never decays). Use for decisions, key facts.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {"id": {"type": "integer"}},
+                        "required": ["id"],
+                    },
+                },
+                {
+                    "name": "mnemonics_tier",
+                    "description": "Set memory tier: 0=pinned, 1=default, 2=ambient (fast decay).",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer"},
+                            "tier": {"type": "integer", "enum": [0, 1, 2]},
+                        },
+                        "required": ["id", "tier"],
+                    },
+                },
             ]})
 
         elif method == "tools/call":
@@ -213,6 +234,14 @@ def _mcp_loop() -> None:
             elif name == "mnemonics_forget":
                 deleted = _get_store().delete(int(args["id"]))
                 ok({"content": [{"type": "text", "text": f"Deleted: {deleted}"}]})
+
+            elif name == "mnemonics_pin":
+                pinned = _get_store().pin(int(args["id"]))
+                ok({"content": [{"type": "text", "text": f"Pinned: {pinned}"}]})
+
+            elif name == "mnemonics_tier":
+                changed = _get_store().set_tier(int(args["id"]), int(args["tier"]))
+                ok({"content": [{"type": "text", "text": f"Tier set: {changed}"}]})
 
             else:
                 err(f"unknown tool: {name}")
