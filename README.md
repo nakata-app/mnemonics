@@ -142,6 +142,19 @@ memories.db        SQLite (text, meta, tier, access counters, timestamps)
 index_<ns>.bin     hnswlib index for each namespace
 ```
 
+## Privacy
+
+- The REST server binds to `127.0.0.1` only. There is no `0.0.0.0` flag.
+- The mnemonics package contains no outbound HTTP, no telemetry, no analytics.
+- **First-run network:** `sentence-transformers` downloads the `all-MiniLM-L6-v2` model (~90 MB) from Hugging Face Hub on the first `ingest` or `retrieve`. The model caches under `~/.cache/huggingface/`. After that first download, you can pin the package fully offline:
+
+  ```bash
+  export TRANSFORMERS_OFFLINE=1
+  export HF_HUB_OFFLINE=1
+  ```
+
+- DB encryption-at-rest (SQLCipher) is not currently enabled. The SQLite file at `~/.mnemonics/memories.db` is plaintext on disk; protect it with full-disk encryption (FileVault on macOS) until first-class encryption support lands.
+
 ## License
 
 MIT
