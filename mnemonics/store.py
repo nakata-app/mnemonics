@@ -155,3 +155,35 @@ class Store:
             cur = self._db.execute("DELETE FROM memories WHERE id=?", (memory_id,))
             self._db.commit()
         return cur.rowcount > 0
+
+    def gc_candidates(self, ns: str | None = None, age_days: int = 30) -> list[dict[str, Any]]:
+        """Rows safe to garbage-collect: tier 2 (ambient) older than `age_days`, never accessed."""
+        sql = (
+            "SELECT id, ns, substr(text, 1, 80) AS preview, "
+            "CAST(julianday('now') - julianday(created) AS INTEGER) AS age_days "
+            "FROM memories "
+            "WHERE tier = 2 AND access_count = 0 "
+            "AND julianday('now') - julianday(created) > ?"
+        )
+        params: list[Any] = [age_days]
+        if ns is not None:
+            sql += " AND ns = ?"
+            params.append(ns)
+        sql += " ORDER BY age_days DESC"
+        rows = self._db.execute(sql, params).fetchall()
+        return [{"id": r[0], "ns": r[1], "preview": r[2], "age_days": r[3]} for r in rows]
+
+    def gc(self, ns: str | None = None, age_days: int = 30) -> int:
+        """Delete the candidates returned by gc_candidates. Returns deleted count."""
+        candidates = self.gc_candidates(ns=ns, age_days=age_days)
+        if not candidates:
+            return 0
+        ids = [c["id"] for c in candidates]
+        placeholders = ",".join("?" * len(ids))
+        with self._lock:
+            self._db.execute(
+                f"DELETE FROM memories WHERE id IN ({placeholders})",
+                ids,
+            )
+            self._db.commit()
+        return len(ids)
