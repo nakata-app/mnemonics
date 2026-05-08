@@ -102,6 +102,7 @@ class _Handler(BaseHTTPRequestHandler):
                 store=_get_store(),
                 ns=body.get("ns", "default"),
                 top_k=int(body.get("top_k", 5)),
+                decay=bool(body.get("decay", True)),
             )
             self._json(200, result)
 
@@ -166,13 +167,14 @@ def _mcp_loop() -> None:
                 },
                 {
                     "name": "mnemonics_retrieve",
-                    "description": "Semantic search over stored memories. Returns top-k ranked results.",
+                    "description": "Semantic search with tier-aware decay. Pinned (tier 0) memories never decay; tier 1 has 90-day half-life, tier 2 has 14-day. Set decay=false to see raw cosine scores.",
                     "inputSchema": {
                         "type": "object",
                         "properties": {
                             "query": {"type": "string"},
                             "ns": {"type": "string"},
                             "top_k": {"type": "integer"},
+                            "decay": {"type": "boolean", "description": "Apply decay scoring (default true)"},
                         },
                         "required": ["query"],
                     },
@@ -227,8 +229,14 @@ def _mcp_loop() -> None:
                     store=_get_store(),
                     ns=args.get("ns", "default"),
                     top_k=int(args.get("top_k", 5)),
+                    decay=bool(args.get("decay", True)),
                 )
-                lines = [f"[{r['score']:.3f}] {r['text'][:200]}" for r in result["results"]]
+                tier_label = {0: "pin", 1: "def", 2: "amb"}
+                lines = [
+                    f"[{r['score']:.3f}] [raw={r['raw_score']:.3f} decay={r['decay_factor']:.2f} "
+                    f"age={r['age_days']:.0f}d tier={tier_label.get(r['tier'], '?')}] {r['text'][:200]}"
+                    for r in result["results"]
+                ]
                 ok({"content": [{"type": "text", "text": "\n".join(lines)}]})
 
             elif name == "mnemonics_forget":

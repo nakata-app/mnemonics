@@ -29,6 +29,7 @@ def main() -> None:
     r.add_argument("query")
     r.add_argument("--ns", default="default")
     r.add_argument("--top-k", type=int, default=5)
+    r.add_argument("--no-decay", action="store_true", help="Disable tier-aware decay scoring")
     r.add_argument("--path", default="~/.mnemonics")
 
     # stats
@@ -74,9 +75,15 @@ def main() -> None:
             store=store,
             ns=args.ns,
             top_k=args.top_k,
+            decay=not args.no_decay,
         )
         for r in result["results"]:
-            print(f"  [{r['score']:.3f}] {r['text'][:120]}")
+            tier_label = {0: "pin", 1: "def", 2: "amb"}.get(r["tier"], "?")
+            print(
+                f"  [{r['score']:.3f}] "
+                f"[raw={r['raw_score']:.3f} decay={r['decay_factor']:.2f} "
+                f"age={r['age_days']:.0f}d tier={tier_label}] {r['text'][:120]}"
+            )
 
     elif args.cmd == "stats":
         from mnemonics.store import Store
