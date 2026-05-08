@@ -234,7 +234,8 @@ def _mcp_loop() -> None:
                 tier_label = {0: "pin", 1: "def", 2: "amb"}
                 lines = [
                     f"[{r['score']:.3f}] [raw={r['raw_score']:.3f} decay={r['decay_factor']:.2f} "
-                    f"age={r['age_days']:.0f}d tier={tier_label.get(r['tier'], '?')}] {r['text'][:200]}"
+                    f"boost={r['boost']:.2f} age={r['age_days']:.0f}d "
+                    f"tier={tier_label.get(r['tier'], '?')}] {r['text'][:200]}"
                     for r in result["results"]
                 ]
                 ok({"content": [{"type": "text", "text": "\n".join(lines)}]})

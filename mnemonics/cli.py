@@ -82,7 +82,8 @@ def main() -> None:
             print(
                 f"  [{r['score']:.3f}] "
                 f"[raw={r['raw_score']:.3f} decay={r['decay_factor']:.2f} "
-                f"age={r['age_days']:.0f}d tier={tier_label}] {r['text'][:120]}"
+                f"boost={r['boost']:.2f} age={r['age_days']:.0f}d "
+                f"tier={tier_label}] {r['text'][:120]}"
             )
 
     elif args.cmd == "stats":
