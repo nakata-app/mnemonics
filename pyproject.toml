@@ -1,6 +1,6 @@
 [project]
 name = "mnemonics"
-version = "0.2.0"
+version = "0.2.1"
 description = "Local-first AI memory — semantic retrieval over your own SQLite + HNSW index."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -13,18 +13,10 @@ classifiers = [
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
-  "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
   "Topic :: Software Development :: Libraries",
 ]
-
-[project.urls]
-Homepage = "https://github.com/nakata-app/mnemonics"
-Repository = "https://github.com/nakata-app/mnemonics"
-Issues = "https://github.com/nakata-app/mnemonics/issues"
-Changelog = "https://github.com/nakata-app/mnemonics/blob/main/CHANGELOG.md"
-
 dependencies = [
   "numpy>=1.24",
   "hnswlib>=0.8",
@@ -37,6 +29,12 @@ dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.5"]
 [project.scripts]
 mnemonics = "mnemonics.cli:main"
 mnem = "mnemonics.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/nakata-app/mnemonics"
+Repository = "https://github.com/nakata-app/mnemonics"
+Issues = "https://github.com/nakata-app/mnemonics/issues"
+Changelog = "https://github.com/nakata-app/mnemonics/blob/main/CHANGELOG.md"
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]

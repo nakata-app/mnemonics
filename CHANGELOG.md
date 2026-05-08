@@ -2,6 +2,16 @@
 
 All notable changes to mnemonics. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-05-08
+
+### Fixed
+
+- `pyproject.toml`: `[project.urls]` table was placed before `dependencies`, causing the TOML parser to read `dependencies` as `project.urls.dependencies` and fail the build. Moved `[project.urls]` to the end of `[project]`.
+- `pyproject.toml`: removed `License :: OSI Approved :: MIT License` classifier; modern setuptools rejects it when SPDX `license = "MIT"` is set.
+- Bumped `/health` and MCP `serverInfo` version strings to `0.2.1`.
+
+No behavioral changes, packaging-only patch to enable PyPI publish.
+
 ## [0.2.0] - 2026-05-08
 
 The "second brain" rewrite. Halluguard is gone, decay is in.
