@@ -60,7 +60,7 @@ class _Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         path = self.path.split("?")[0]
         if path == "/health":
-            self._json(200, {"status": "ok", "version": "0.1.0"})
+            self._json(200, {"status": "ok", "version": "0.2.0"})
         elif path == "/namespaces":
             self._json(200, {"namespaces": _get_store().list_namespaces()})
         elif path == "/count":
@@ -147,7 +147,7 @@ def _mcp_loop() -> None:
         if method == "initialize":
             ok({
                 "protocolVersion": "2024-11-05",
-                "serverInfo": {"name": "mnemonics", "version": "0.1.0"},
+                "serverInfo": {"name": "mnemonics", "version": "0.2.0"},
                 "capabilities": {"tools": {}},
             })
 
