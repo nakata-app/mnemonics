@@ -113,6 +113,7 @@ Tools exposed:
 - `mnemonics_forget`
 - `mnemonics_pin`
 - `mnemonics_tier`
+- `mnemonics_gc`
 
 ## Namespaces
 

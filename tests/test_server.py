@@ -241,7 +241,7 @@ def test_mcp_tools_list(tmp_store):
     names = {t["name"] for t in resp[0]["result"]["tools"]}
     assert names == {
         "mnemonics_ingest", "mnemonics_retrieve", "mnemonics_forget",
-        "mnemonics_pin", "mnemonics_tier",
+        "mnemonics_pin", "mnemonics_tier", "mnemonics_gc",
     }
 
 

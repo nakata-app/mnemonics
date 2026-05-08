@@ -4,8 +4,10 @@ __pycache__/
 *.egg-info/
 dist/
 build/
-*.egg-info/
 .pytest_cache/
 *.bin
 *.db
 .DS_Store
+.coverage
+htmlcov/
+benchmarks/results_*.json

@@ -209,6 +209,18 @@ def _mcp_loop() -> None:
                         "required": ["id", "tier"],
                     },
                 },
+                {
+                    "name": "mnemonics_gc",
+                    "description": "Garbage-collect ambient (tier 2) memories never accessed and older than age_days. Default dry_run=true returns candidates only.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ns": {"type": "string", "description": "Limit to one namespace (default: all)"},
+                            "age_days": {"type": "integer", "description": "Minimum age in days (default: 30)"},
+                            "dry_run": {"type": "boolean", "description": "If true, only list candidates (default: true)"},
+                        },
+                    },
+                },
             ]})
 
         elif method == "tools/call":
@@ -251,6 +263,22 @@ def _mcp_loop() -> None:
             elif name == "mnemonics_tier":
                 changed = _get_store().set_tier(int(args["id"]), int(args["tier"]))
                 ok({"content": [{"type": "text", "text": f"Tier set: {changed}"}]})
+
+            elif name == "mnemonics_gc":
+                store = _get_store()
+                ns = args.get("ns")
+                age_days = int(args.get("age_days", 30))
+                dry_run = bool(args.get("dry_run", True))
+                cands = store.gc_candidates(ns=ns, age_days=age_days)
+                if dry_run:
+                    text = (
+                        f"{len(cands)} candidate(s) (dry-run):\n"
+                        + "\n".join(f"  id={c['id']} ns={c['ns']} age={c['age_days']}d" for c in cands[:30])
+                    )
+                else:
+                    n = store.gc(ns=ns, age_days=age_days)
+                    text = f"Deleted {n} row(s)."
+                ok({"content": [{"type": "text", "text": text}]})
 
             else:
                 err(f"unknown tool: {name}")
