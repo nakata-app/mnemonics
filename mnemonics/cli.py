@@ -54,6 +54,20 @@ def main() -> None:
     gc.add_argument("--apply", action="store_true", help="Actually delete (default: dry-run, list only)")
     gc.add_argument("--path", default="~/.mnemonics")
 
+    # eval
+    ev = sub.add_parser("eval", help="Retrieval eval: MRR / R@5 / R@10 / NDCG@10")
+    ev.add_argument("--corpus", required=True, help="Path to corpus.jsonl ({id, text})")
+    ev.add_argument("--queries", required=True, help="Path to queries.jsonl ({query, relevant_id})")
+    ev.add_argument(
+        "--encoder",
+        action="append",
+        default=None,
+        help="minilm | adaptmem | <HF id>. Repeat to compare multiple encoders.",
+    )
+    ev.add_argument("--model-path", default=None, help="Required when an encoder is 'adaptmem' (or set MNEMONICS_ADAPTMEM_PATH)")
+    ev.add_argument("--top-k", type=int, default=10)
+    ev.add_argument("--out", default=None, help="Directory to write per-encoder JSON results")
+
     args = p.parse_args()
 
     if args.cmd == "serve":
@@ -131,6 +145,37 @@ def main() -> None:
         else:
             print(f"\nDry-run, {len(candidates)} candidate(s). Re-run with --apply to delete.")
 
+    elif args.cmd == "eval":
+        import json as _json
+        from pathlib import Path as _Path
+        from mnemonics.eval import run_eval, compare_table
+
+        encoders = args.encoder or ["minilm"]
+        results: dict[str, dict] = {}
+        for enc in encoders:
+            print(f"[eval] running encoder: {enc}")
+            r = run_eval(
+                corpus_path=args.corpus,
+                queries_path=args.queries,
+                encoder=enc,
+                model_path=args.model_path,
+                top_k=args.top_k,
+            )
+            results[r["encoder"]] = r
+            if args.out:
+                out_dir = _Path(args.out).expanduser()
+                out_dir.mkdir(parents=True, exist_ok=True)
+                slug = r["encoder"].replace(":", "_").replace("/", "_")
+                with open(out_dir / f"{slug}.json", "w") as f:
+                    _json.dump(r, f, indent=2, ensure_ascii=False)
+                print(f"[eval] wrote {out_dir / f'{slug}.json'}")
+        print()
+        print(compare_table(results))
+
     else:
         p.print_help()
         sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
