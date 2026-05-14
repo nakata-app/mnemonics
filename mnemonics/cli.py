@@ -23,6 +23,10 @@ def main() -> None:
     i.add_argument("text", nargs="+")
     i.add_argument("--ns", default="default")
     i.add_argument("--path", default="~/.mnemonics")
+    i.add_argument("--dedup", action="store_true", help="Check for near-duplicate memories before saving")
+    i.add_argument("--dedup-threshold", type=float, default=0.92, help="Cosine threshold for near-duplicate (default 0.92)")
+    i.add_argument("--force-new", action="store_true", help="With --dedup: save anyway, don't prompt")
+    i.add_argument("--skip-similar", action="store_true", help="With --dedup: cancel ingest if a near-duplicate exists, don't prompt")
 
     # retrieve
     r = sub.add_parser("retrieve", help="Search memory")
@@ -105,7 +109,31 @@ def main() -> None:
         from mnemonics.store import Store
         from mnemonics.ingest import ingest
         store = Store(args.path)
-        n = ingest(texts=[" ".join(args.text)], store=store, ns=args.ns)
+        joined = " ".join(args.text)
+        if args.dedup:
+            from mnemonics.dedup import find_similar
+            matches = find_similar(joined, store=store, ns=args.ns, threshold=args.dedup_threshold)
+            if matches:
+                print(f"Found {len(matches)} near-duplicate(s) in ns={args.ns} (>= {args.dedup_threshold}):")
+                for m in matches:
+                    preview = m["text"][:120].replace("\n", " ")
+                    print(f"  [sim={m['similarity']:.3f}] id={m['id']}: {preview}")
+                if args.skip_similar:
+                    print("Skip-similar flag set, not ingesting.")
+                    sys.exit(0)
+                if args.force_new:
+                    decision = "n"
+                elif sys.stdin.isatty():
+                    decision = input("Save as new memory anyway? [y/N] ").strip().lower()
+                    decision = "n" if decision in ("y", "yes") else "c"
+                else:
+                    # Non-interactive: refuse to ingest silently. Caller decides.
+                    print("Non-interactive run, not ingesting. Re-run with --force-new or --skip-similar.")
+                    sys.exit(0)
+                if decision == "c":
+                    print("Cancelled.")
+                    sys.exit(0)
+        n = ingest(texts=[joined], store=store, ns=args.ns)
         print(f"Stored {n} chunk(s).")
 
     elif args.cmd == "retrieve":
