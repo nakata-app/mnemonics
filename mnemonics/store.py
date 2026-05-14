@@ -1,7 +1,9 @@
 """Persistent storage: SQLite (metadata) + hnswlib (vectors)."""
 from __future__ import annotations
 
+import contextlib
 import json
+import os
 import sqlite3
 import threading
 from pathlib import Path
@@ -9,6 +11,12 @@ from typing import Any
 
 import hnswlib
 import numpy as np
+
+try:
+    import fcntl  # POSIX advisory file locking — used for cross-process safety
+    _HAS_FCNTL = True
+except ImportError:  # pragma: no cover — Windows path, not supported
+    _HAS_FCNTL = False
 
 
 _SCHEMA = """
@@ -63,11 +71,31 @@ class Store:
         self.dim = dim
         self._lock = threading.Lock()
         self._db = sqlite3.connect(str(self.root / "memories.db"), check_same_thread=False)
+        # busy_timeout MUST come first: switching journal_mode takes a brief
+        # RESERVED lock, and two peer processes opening the DB at the same
+        # instant otherwise race and one gets `database is locked`.
+        self._db.execute("PRAGMA busy_timeout=5000")
+        # WAL is a persistent DB-file property — only one peer needs to flip
+        # it, and the switch itself takes an EXCLUSIVE lock that bypasses
+        # busy_timeout. Skip the PRAGMA if we're already in WAL to avoid
+        # racing with concurrent openers on a fresh DB.
+        current_mode = self._db.execute("PRAGMA journal_mode").fetchone()[0]
+        if str(current_mode).lower() != "wal":
+            try:
+                self._db.execute("PRAGMA journal_mode=WAL")
+            except sqlite3.OperationalError:
+                # A peer just won the race and is mid-switch. Their WAL takes
+                # effect for us too; if not, the next Store() call will retry.
+                pass
+        self._db.execute("PRAGMA synchronous=NORMAL")
         self._db.executescript(_SCHEMA)
         self._migrate()
         self._migrate_fts()
         self._db.commit()
         self._index: dict[str, hnswlib.Index] = {}
+        # Mtime watermark per namespace; we use it to detect peer writes
+        # since our last load and force a reload before we add anything.
+        self._index_mtime: dict[str, float] = {}
 
     def _migrate(self) -> None:
         """Idempotent column additions for older DBs created before the schema bump."""
@@ -92,12 +120,57 @@ class Store:
         if fts_count < mem_count:
             self._db.execute("INSERT INTO memories_fts(memories_fts) VALUES('rebuild')")
 
+    @contextlib.contextmanager
+    def _ns_file_lock(self, ns: str, exclusive: bool = True):
+        """POSIX file lock on `index_<ns>.lock`. Cross-process safe; per-ns scoped.
+
+        Reads share (LOCK_SH), writes are exclusive (LOCK_EX). On systems
+        without fcntl (Windows), this is a no-op and falls back to the
+        in-process threading.Lock alone.
+        """
+        if not _HAS_FCNTL:
+            yield
+            return
+        lock_path = self.root / f"index_{ns}.lock"
+        # Touch + open r+ so concurrent readers don't truncate each other.
+        lock_path.touch(exist_ok=True)
+        fh = open(lock_path, "r+")
+        try:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH)
+            try:
+                yield
+            finally:
+                fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+        finally:
+            fh.close()
+
+    def _reload_if_stale(self, ns: str) -> None:
+        """Force an on-disk reload of the namespace index when a peer has
+        written since we last loaded it. No-op if there is no disk file yet
+        or our cached copy is already current.
+
+        Callers MUST already hold the ns file lock when invoking this.
+        """
+        idx_path = self.root / f"index_{ns}.bin"
+        if not idx_path.exists():
+            return
+        disk_mtime = idx_path.stat().st_mtime
+        cached_mtime = self._index_mtime.get(ns, -1.0)
+        if ns in self._index and disk_mtime <= cached_mtime:
+            return
+        idx = hnswlib.Index(space="cosine", dim=self.dim)
+        idx.load_index(str(idx_path))
+        idx.set_ef(64)
+        self._index[ns] = idx
+        self._index_mtime[ns] = disk_mtime
+
     def _index_for(self, ns: str) -> hnswlib.Index:
         if ns not in self._index:
             idx_path = self.root / f"index_{ns}.bin"
             idx = hnswlib.Index(space="cosine", dim=self.dim)
             if idx_path.exists():
                 idx.load_index(str(idx_path))
+                self._index_mtime[ns] = idx_path.stat().st_mtime
                 idx.set_ef(64)
             else:
                 idx.init_index(max_elements=100_000, ef_construction=200, M=16)
@@ -108,7 +181,13 @@ class Store:
     def add(self, texts: list[str], vectors: np.ndarray, ns: str = "default", meta: list[dict] | None = None) -> list[int]:
         if meta is None:
             meta = [{} for _ in texts]
-        with self._lock:
+        # Order matters: take the file lock OUTSIDE the threading.Lock so a
+        # blocked peer doesn't pin this process's GIL-bound queues. Inside the
+        # file lock we refresh from disk to absorb any peer writes that
+        # happened since our last load — this is the fix for the corrupt
+        # 14.6 GB index we just rebuilt.
+        with self._ns_file_lock(ns, exclusive=True), self._lock:
+            self._reload_if_stale(ns)
             ids = []
             for text, m in zip(texts, meta):
                 cur = self._db.execute(
@@ -119,11 +198,17 @@ class Store:
             self._db.commit()
             idx = self._index_for(ns)
             idx.add_items(vectors, ids)
-            idx.save_index(str(self.root / f"index_{ns}.bin"))
+            idx_path = self.root / f"index_{ns}.bin"
+            idx.save_index(str(idx_path))
+            self._index_mtime[ns] = idx_path.stat().st_mtime
         return ids
 
     def search(self, vector: np.ndarray, ns: str = "default", top_k: int = 5) -> list[dict[str, Any]]:
-        with self._lock:
+        # Shared lock — multiple peers may search the same ns concurrently;
+        # only a writer needs to block them. Reload-if-stale picks up freshly
+        # written rows from a peer between two of our search calls.
+        with self._ns_file_lock(ns, exclusive=False), self._lock:
+            self._reload_if_stale(ns)
             idx = self._index_for(ns)
             n = min(top_k, idx.get_current_count())
             if n == 0:
