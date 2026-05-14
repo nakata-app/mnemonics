@@ -60,6 +60,25 @@ def main() -> None:
     gc.add_argument("--apply", action="store_true", help="Actually delete (default: dry-run, list only)")
     gc.add_argument("--path", default="~/.mnemonics")
 
+    # sync export / import (peer transport)
+    sy = sub.add_parser("sync", help="Export/import portable transport archive between stores")
+    sy_sub = sy.add_subparsers(dest="sync_cmd")
+
+    se = sy_sub.add_parser("export", help="Write a portable .sync.tar.gz of this store")
+    se.add_argument("--out", default=None, help="Output path (default: ~/.mnemonics-sync/<timestamp>.sync.tar.gz)")
+    se.add_argument("--path", default="~/.mnemonics", help="Store directory to export")
+
+    si = sy_sub.add_parser("import", help="Merge a peer's .sync.tar.gz into this store")
+    si.add_argument("archive", help="Path to the .sync.tar.gz produced by `mnemonics sync export`")
+    si.add_argument("--path", default="~/.mnemonics", help="Destination store directory")
+    si.add_argument(
+        "--strategy",
+        default="skip-existing",
+        choices=["skip-existing", "force-new-id", "overwrite"],
+        help="Conflict policy when an incoming row's text hash matches an existing row in the same namespace",
+    )
+    si.add_argument("--only-ns", default=None, help="Restrict import to a single namespace")
+
     # backup
     bk = sub.add_parser("backup", help="Bundle the store into a .tar.gz")
     bk.add_argument("--out", default=None, help="Output archive path (default: ~/.mnemonics-backups/YYYY-MM-DD_HHMMSS.tar.gz)")
@@ -195,6 +214,24 @@ def main() -> None:
             print(f"\nDeleted: {n} row(s).")
         else:
             print(f"\nDry-run, {len(candidates)} candidate(s). Re-run with --apply to delete.")
+
+    elif args.cmd == "sync":
+        if args.sync_cmd == "export":
+            from mnemonics.sync import export_store
+            out_path = export_store(store_path=args.path, out=args.out)
+            print(f"Wrote {out_path} ({out_path.stat().st_size:,} bytes)")
+        elif args.sync_cmd == "import":
+            from mnemonics.sync import import_store
+            summary = import_store(
+                archive=args.archive,
+                store_path=args.path,
+                strategy=args.strategy,
+                only_ns=args.only_ns,
+            )
+            print(f"imported={summary['imported']} skipped={summary['skipped']} overwritten={summary['overwritten']}")
+        else:
+            sy.print_help()
+            sys.exit(1)
 
     elif args.cmd == "backup":
         from mnemonics.backup import backup
