@@ -8,16 +8,23 @@ Encoders:
   minilm           default base (all-MiniLM-L6-v2)
   adaptmem         fine-tuned checkpoint at --model-path or MNEMONICS_ADAPTMEM_PATH
   <any HF id>      treated as a sentence-transformers model id
+
+Retrieval methods (orthogonal to encoder choice):
+  vector           cosine similarity only (default)
+  hybrid           vector top-N + BM25 (SQLite FTS5) top-N, fused with RRF
 """
 from __future__ import annotations
 
 import json
 import math
 import os
+import sqlite3
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+
+_RRF_K = 60.0
 
 
 def reciprocal_rank(hits: list[str], relevant_id: str) -> float:
@@ -78,13 +85,63 @@ def _build_encoder(encoder: str, model_path: str | None) -> Any:
     return SentenceTransformer(encoder)
 
 
+def _build_bm25_index(chunk_texts: list[str]) -> sqlite3.Connection:
+    """Build an in-memory FTS5 index over the corpus. rowid = list index."""
+    conn = sqlite3.connect(":memory:")
+    conn.execute(
+        "CREATE VIRTUAL TABLE fts USING fts5("
+        "text, tokenize='unicode61 remove_diacritics 2')"
+    )
+    conn.executemany(
+        "INSERT INTO fts(rowid, text) VALUES (?, ?)",
+        [(i, t) for i, t in enumerate(chunk_texts)],
+    )
+    return conn
+
+
+def _bm25_rank(
+    conn: sqlite3.Connection,
+    query: str,
+    chunk_ids: list[str],
+    top_k: int,
+) -> list[str]:
+    """Return up to top_k chunk_ids best-matching the query, or [] on no match."""
+    from mnemonics.store import Store  # share the sanitizer
+
+    match = Store._fts_sanitize(query)
+    if not match:
+        return []
+    try:
+        rows = conn.execute(
+            "SELECT rowid FROM fts WHERE fts MATCH ? ORDER BY bm25(fts) LIMIT ?",
+            (match, top_k),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return []
+    return [chunk_ids[r[0]] for r in rows]
+
+
+def rrf_fuse_ids(rankings: list[list[str]], top_k: int, rrf_k: float = _RRF_K) -> list[str]:
+    """Reciprocal Rank Fusion over id-only ranked lists."""
+    score: dict[str, float] = {}
+    for ranking in rankings:
+        for rank, doc_id in enumerate(ranking, start=1):
+            score[doc_id] = score.get(doc_id, 0.0) + 1.0 / (rrf_k + rank)
+    return [doc_id for doc_id, _ in sorted(score.items(), key=lambda kv: kv[1], reverse=True)[:top_k]]
+
+
 def run_eval(
     corpus_path: str | Path,
     queries_path: str | Path,
     encoder: str = "minilm",
     model_path: str | None = None,
     top_k: int = 10,
+    method: str = "vector",
+    candidate_k: int = 20,
 ) -> dict:
+    if method not in ("vector", "hybrid"):
+        raise ValueError(f"unknown method: {method}")
+
     corpus = _load_jsonl(Path(corpus_path))
     queries = _load_jsonl(Path(queries_path))
     enc = _build_encoder(encoder, model_path)
@@ -107,11 +164,19 @@ def run_eval(
         convert_to_numpy=True,
     )
 
+    bm25_conn = _build_bm25_index(chunk_texts) if method == "hybrid" else None
+
     per_query = []
     for q, qv in zip(queries, query_vecs):
         scores = corpus_vecs @ qv
-        top = np.argsort(-scores)[:top_k]
-        hits = [chunk_ids[int(i)] for i in top]
+        if method == "hybrid":
+            vec_top = np.argsort(-scores)[:candidate_k]
+            vec_hits = [chunk_ids[int(i)] for i in vec_top]
+            bm25_hits = _bm25_rank(bm25_conn, q["query"], chunk_ids, candidate_k)
+            hits = rrf_fuse_ids([vec_hits, bm25_hits], top_k=top_k)
+        else:
+            top = np.argsort(-scores)[:top_k]
+            hits = [chunk_ids[int(i)] for i in top]
         rel = q["relevant_id"]
         per_query.append(
             {
@@ -125,8 +190,14 @@ def run_eval(
             }
         )
 
-    label = encoder if encoder in ("minilm", "adaptmem") else f"hf:{encoder}"
-    return {"encoder": label, "agg": aggregate(per_query), "per_query": per_query}
+    enc_label = encoder if encoder in ("minilm", "adaptmem") else f"hf:{encoder}"
+    label = enc_label if method == "vector" else f"{enc_label}+hybrid"
+    return {
+        "encoder": label,
+        "method": method,
+        "agg": aggregate(per_query),
+        "per_query": per_query,
+    }
 
 
 def compare_table(results: dict[str, dict]) -> str:

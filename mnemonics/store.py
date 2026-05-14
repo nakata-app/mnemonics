@@ -23,6 +23,27 @@ CREATE TABLE IF NOT EXISTS memories (
     access_count  INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_ns ON memories(ns);
+
+-- FTS5 contentless-mirror over `memories`, keyed on `id` (used for BM25 lookup
+-- in hybrid retrieval). Triggers keep it in sync; older DBs are backfilled
+-- by Store._migrate_fts().
+CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
+    text,
+    content='memories',
+    content_rowid='id',
+    tokenize='unicode61 remove_diacritics 2'
+);
+
+CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories BEGIN
+    INSERT INTO memories_fts(rowid, text) VALUES (new.id, new.text);
+END;
+CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN
+    INSERT INTO memories_fts(memories_fts, rowid, text) VALUES('delete', old.id, old.text);
+END;
+CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN
+    INSERT INTO memories_fts(memories_fts, rowid, text) VALUES('delete', old.id, old.text);
+    INSERT INTO memories_fts(rowid, text) VALUES (new.id, new.text);
+END;
 """
 
 # Tier semantics:
@@ -44,6 +65,7 @@ class Store:
         self._db = sqlite3.connect(str(self.root / "memories.db"), check_same_thread=False)
         self._db.executescript(_SCHEMA)
         self._migrate()
+        self._migrate_fts()
         self._db.commit()
         self._index: dict[str, hnswlib.Index] = {}
 
@@ -58,6 +80,17 @@ class Store:
             self._db.execute("ALTER TABLE memories ADD COLUMN access_count INTEGER NOT NULL DEFAULT 0")
         # idx_tier must come after migration so the column exists.
         self._db.execute("CREATE INDEX IF NOT EXISTS idx_tier ON memories(tier)")
+
+    def _migrate_fts(self) -> None:
+        """Backfill the FTS5 mirror for DBs that existed before hybrid search.
+
+        Triggers keep new rows in sync, but pre-existing rows aren't indexed
+        until we explicitly rebuild. Cheap when already populated.
+        """
+        fts_count = self._db.execute("SELECT COUNT(*) FROM memories_fts").fetchone()[0]
+        mem_count = self._db.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
+        if fts_count < mem_count:
+            self._db.execute("INSERT INTO memories_fts(memories_fts) VALUES('rebuild')")
 
     def _index_for(self, ns: str) -> hnswlib.Index:
         if ns not in self._index:
@@ -129,6 +162,54 @@ class Store:
                     touched_ids,
                 )
                 self._db.commit()
+        return results
+
+    # FTS5's MATCH grammar treats bare punctuation as syntax errors. We only
+    # need word-level recall, so flatten the query to alphanumerics + space and
+    # OR the surviving tokens together (subset match, not phrase).
+    @staticmethod
+    def _fts_sanitize(query: str) -> str:
+        import re as _re
+        tokens = _re.findall(r"\w+", query, flags=_re.UNICODE)
+        # Quote each token so FTS5 treats it as a literal term (handles digits,
+        # underscores, mixed-case identifiers like "PR1490" or "v0_2_1").
+        return " OR ".join(f'"{t}"' for t in tokens if t)
+
+    def search_bm25(self, query: str, ns: str = "default", top_k: int = 20) -> list[dict[str, Any]]:
+        """BM25 keyword search via SQLite FTS5. Returns rows ordered best-first.
+
+        score is negated so that higher = better, matching the vector path.
+        Empty / punctuation-only queries return [].
+        """
+        match = self._fts_sanitize(query)
+        if not match:
+            return []
+        with self._lock:
+            try:
+                rows = self._db.execute(
+                    "SELECT m.id, m.text, m.meta, m.created, m.tier, m.last_accessed, "
+                    "m.access_count, bm25(memories_fts) AS bm25_raw "
+                    "FROM memories_fts "
+                    "JOIN memories m ON m.id = memories_fts.rowid "
+                    "WHERE memories_fts MATCH ? AND m.ns = ? "
+                    "ORDER BY bm25_raw LIMIT ?",
+                    (match, ns, top_k),
+                ).fetchall()
+            except sqlite3.OperationalError:
+                # Malformed MATCH expression (rare; sanitizer should prevent it).
+                return []
+        results = []
+        for row in rows:
+            results.append({
+                "id": row[0],
+                "text": row[1],
+                "meta": json.loads(row[2]),
+                "created": row[3],
+                "tier": row[4],
+                "last_accessed": row[5],
+                "access_count": row[6],
+                "score": -float(row[7]),  # lower bm25 = better → negate to align with vector
+            })
         return results
 
     def set_tier(self, memory_id: int, tier: int) -> bool:

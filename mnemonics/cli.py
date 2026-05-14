@@ -30,6 +30,8 @@ def main() -> None:
     r.add_argument("--ns", default="default")
     r.add_argument("--top-k", type=int, default=5)
     r.add_argument("--no-decay", action="store_true", help="Disable tier-aware decay scoring")
+    r.add_argument("--hybrid", action="store_true", help="Fuse vector + BM25 (SQLite FTS5) with RRF")
+    r.add_argument("--candidate-k", type=int, default=20, help="Per-channel candidate pool size for hybrid (default 20)")
     r.add_argument("--path", default="~/.mnemonics")
 
     # stats
@@ -65,6 +67,14 @@ def main() -> None:
         help="minilm | adaptmem | <HF id>. Repeat to compare multiple encoders.",
     )
     ev.add_argument("--model-path", default=None, help="Required when an encoder is 'adaptmem' (or set MNEMONICS_ADAPTMEM_PATH)")
+    ev.add_argument(
+        "--method",
+        action="append",
+        default=None,
+        choices=["vector", "hybrid"],
+        help="Retrieval method (default: vector). Repeat to compare vector vs hybrid.",
+    )
+    ev.add_argument("--candidate-k", type=int, default=20, help="Per-channel pool size when method=hybrid (default 20)")
     ev.add_argument("--top-k", type=int, default=10)
     ev.add_argument("--out", default=None, help="Directory to write per-encoder JSON results")
 
@@ -97,6 +107,8 @@ def main() -> None:
             ns=args.ns,
             top_k=args.top_k,
             decay=not args.no_decay,
+            hybrid=args.hybrid,
+            candidate_k=args.candidate_k,
         )
         for r in result["results"]:
             tier_label = {0: "pin", 1: "def", 2: "amb"}.get(r["tier"], "?")
@@ -151,24 +163,28 @@ def main() -> None:
         from mnemonics.eval import run_eval, compare_table
 
         encoders = args.encoder or ["minilm"]
+        methods = args.method or ["vector"]
         results: dict[str, dict] = {}
         for enc in encoders:
-            print(f"[eval] running encoder: {enc}")
-            r = run_eval(
-                corpus_path=args.corpus,
-                queries_path=args.queries,
-                encoder=enc,
-                model_path=args.model_path,
-                top_k=args.top_k,
-            )
-            results[r["encoder"]] = r
-            if args.out:
-                out_dir = _Path(args.out).expanduser()
-                out_dir.mkdir(parents=True, exist_ok=True)
-                slug = r["encoder"].replace(":", "_").replace("/", "_")
-                with open(out_dir / f"{slug}.json", "w") as f:
-                    _json.dump(r, f, indent=2, ensure_ascii=False)
-                print(f"[eval] wrote {out_dir / f'{slug}.json'}")
+            for method in methods:
+                print(f"[eval] encoder={enc} method={method}")
+                r = run_eval(
+                    corpus_path=args.corpus,
+                    queries_path=args.queries,
+                    encoder=enc,
+                    model_path=args.model_path,
+                    top_k=args.top_k,
+                    method=method,
+                    candidate_k=args.candidate_k,
+                )
+                results[r["encoder"]] = r
+                if args.out:
+                    out_dir = _Path(args.out).expanduser()
+                    out_dir.mkdir(parents=True, exist_ok=True)
+                    slug = r["encoder"].replace(":", "_").replace("/", "_").replace("+", "_")
+                    with open(out_dir / f"{slug}.json", "w") as f:
+                        _json.dump(r, f, indent=2, ensure_ascii=False)
+                    print(f"[eval] wrote {out_dir / f'{slug}.json'}")
         print()
         print(compare_table(results))
 
