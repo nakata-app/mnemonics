@@ -56,6 +56,17 @@ def main() -> None:
     gc.add_argument("--apply", action="store_true", help="Actually delete (default: dry-run, list only)")
     gc.add_argument("--path", default="~/.mnemonics")
 
+    # backup
+    bk = sub.add_parser("backup", help="Bundle the store into a .tar.gz")
+    bk.add_argument("--out", default=None, help="Output archive path (default: ~/.mnemonics-backups/YYYY-MM-DD_HHMMSS.tar.gz)")
+    bk.add_argument("--path", default="~/.mnemonics", help="Store directory to back up")
+
+    # restore
+    rs = sub.add_parser("restore", help="Extract a backup archive into a store directory")
+    rs.add_argument("archive", help="Path to the .tar.gz produced by `mnemonics backup`")
+    rs.add_argument("--path", default="~/.mnemonics", help="Destination store directory")
+    rs.add_argument("--force", action="store_true", help="Overwrite an existing non-empty store")
+
     # eval
     ev = sub.add_parser("eval", help="Retrieval eval: MRR / R@5 / R@10 / NDCG@10")
     ev.add_argument("--corpus", required=True, help="Path to corpus.jsonl ({id, text})")
@@ -156,6 +167,26 @@ def main() -> None:
             print(f"\nDeleted: {n} row(s).")
         else:
             print(f"\nDry-run, {len(candidates)} candidate(s). Re-run with --apply to delete.")
+
+    elif args.cmd == "backup":
+        from mnemonics.backup import backup
+        out_path = backup(store_path=args.path, out=args.out)
+        size = out_path.stat().st_size
+        print(f"Wrote {out_path} ({size:,} bytes)")
+
+    elif args.cmd == "restore":
+        from mnemonics.backup import restore
+        try:
+            written = restore(archive=args.archive, store_path=args.path, force=args.force)
+        except FileExistsError as exc:
+            print(f"Refusing to overwrite: {exc}", file=sys.stderr)
+            sys.exit(2)
+        if not written:
+            print("Archive contained no restorable files.")
+        else:
+            for name in written:
+                print(f"  + {name}")
+            print(f"Restored {len(written)} file(s) into {args.path}")
 
     elif args.cmd == "eval":
         import json as _json
