@@ -21,12 +21,15 @@ from __future__ import annotations
 
 import hashlib
 import json
-import sqlite3
 import tarfile
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
+
+# Reuse the same sqlite3-vs-sqlcipher3 routing as Store, so an encrypted
+# memories.db can be exported with the active key in scope.
+from mnemonics.store import _apply_key, sqlite3
 
 Strategy = Literal["skip-existing", "force-new-id", "overwrite"]
 
@@ -61,6 +64,7 @@ def export_store(
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     db = sqlite3.connect(str(src / "memories.db"))
+    _apply_key(db)
     rows = db.execute(
         "SELECT id, ns, text, meta, created, tier FROM memories ORDER BY id"
     ).fetchall()

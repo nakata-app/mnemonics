@@ -4,13 +4,53 @@ from __future__ import annotations
 import contextlib
 import json
 import os
-import sqlite3
 import threading
 from pathlib import Path
 from typing import Any
 
 import hnswlib
 import numpy as np
+
+from mnemonics import crypto
+
+# Swap in sqlcipher3 only when the caller has opted into encryption. Keeping
+# the stdlib path as default means existing plain-text DBs and the 155-test
+# suite are untouched; opt-in is an explicit env-var flip.
+if crypto.encryption_requested():
+    try:
+        import sqlcipher3 as sqlite3  # type: ignore[no-redef]
+    except ImportError as _e:  # pragma: no cover — install-time concern
+        raise RuntimeError(
+            "MNEMONICS_ENCRYPT=1 is set but sqlcipher3 is not installed. "
+            "Install with `pip install mnemonics[encrypt]` or set the env "
+            "var back to 0 to fall back to plain SQLite."
+        ) from _e
+    _ENCRYPTED = True
+else:
+    import sqlite3
+    _ENCRYPTED = False
+
+
+def _apply_key(conn: Any) -> None:
+    """Run ``PRAGMA key`` on a fresh sqlcipher3 connection.
+
+    Uses raw-hex syntax (``PRAGMA key = "x'...'"``) which bypasses key
+    derivation entirely — our keys are already cryptographically random
+    256-bit values, so KDF would just add startup cost without raising
+    the security bar. No-op when encryption is disabled.
+    """
+    if not _ENCRYPTED:
+        return
+    key_hex = crypto.require_key()
+    # Defensive: only allow hex, otherwise the raw-key pragma would fail
+    # opaquely. Surface the misconfiguration explicitly instead.
+    if len(key_hex) != 64 or any(c not in "0123456789abcdefABCDEF" for c in key_hex):
+        raise RuntimeError(
+            "MNEMONICS_DB_KEY must be a 64-character hex string (256-bit). "
+            f"Got length {len(key_hex)}."
+        )
+    conn.execute(f"PRAGMA key = \"x'{key_hex}'\"")
+
 
 try:
     import fcntl  # POSIX advisory file locking — used for cross-process safety
@@ -71,6 +111,7 @@ class Store:
         self.dim = dim
         self._lock = threading.Lock()
         self._db = sqlite3.connect(str(self.root / "memories.db"), check_same_thread=False)
+        _apply_key(self._db)
         # busy_timeout MUST come first: switching journal_mode takes a brief
         # RESERVED lock, and two peer processes opening the DB at the same
         # instant otherwise race and one gets `database is locked`.
