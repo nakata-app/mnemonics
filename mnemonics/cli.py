@@ -90,6 +90,28 @@ def main() -> None:
     rs.add_argument("--path", default="~/.mnemonics", help="Destination store directory")
     rs.add_argument("--force", action="store_true", help="Overwrite an existing non-empty store")
 
+    # encrypt-db
+    ec = sub.add_parser(
+        "encrypt-db",
+        help="Migrate a plain memories.db to an encrypted SQLCipher DB (one-shot)",
+    )
+    ec.add_argument("--path", default="~/.mnemonics", help="Store directory")
+    ec.add_argument(
+        "--key",
+        default=None,
+        help="64-char hex key. Omit to auto-generate and store in the system keyring.",
+    )
+    ec.add_argument(
+        "--no-keyring",
+        action="store_true",
+        help="Skip storing the key in the system keyring (print to stdout instead).",
+    )
+    ec.add_argument(
+        "--force",
+        action="store_true",
+        help="Proceed even if mnemonics MCP processes are running (NOT recommended).",
+    )
+
     # eval
     ev = sub.add_parser("eval", help="Retrieval eval: MRR / R@5 / R@10 / NDCG@10")
     ev.add_argument("--corpus", required=True, help="Path to corpus.jsonl ({id, text})")
@@ -252,6 +274,19 @@ def main() -> None:
             for name in written:
                 print(f"  + {name}")
             print(f"Restored {len(written)} file(s) into {args.path}")
+
+    elif args.cmd == "encrypt-db":
+        from mnemonics.migrate import encrypt_db
+        try:
+            encrypt_db(
+                path=args.path,
+                key_hex=args.key,
+                store_in_keyring=not args.no_keyring,
+                force=args.force,
+            )
+        except RuntimeError as exc:
+            print(f"encrypt-db: {exc}", file=sys.stderr)
+            sys.exit(2)
 
     elif args.cmd == "eval":
         import json as _json
