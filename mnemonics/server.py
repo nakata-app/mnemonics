@@ -237,6 +237,12 @@ def _mcp_loop() -> None:
                 if not isinstance(texts, list):
                     err("texts must be an array of strings, not a single string")
                     continue
+                if not texts:
+                    err("texts must not be empty (did you pass 'text' instead of 'texts'?)")
+                    continue
+                if not all(isinstance(t, str) and t.strip() for t in texts):
+                    err("each item in texts must be a non-empty string")
+                    continue
                 n = _ingest(texts=texts, store=_get_store(), ns=args.get("ns", "default"))
                 ok({"content": [{"type": "text", "text": f"Stored {n} chunks."}]})
 
