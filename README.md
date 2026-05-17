@@ -53,6 +53,21 @@ mnem tier <id> 2          # tier=2, ambient (fast decay)
 mnem retrieve "..." --no-decay   # show raw cosine scores
 ```
 
+## Raw + summary
+
+You can attach an optional one-line summary alongside the raw text. The embedding is still computed from the raw chunk, so vector recall is unchanged, but the BM25 mirror indexes both columns, so a keyword can land a hit via the gist even when the raw transcript reads differently.
+
+```bash
+mnem ingest "The full session transcript, jargon-heavy, full of code refs." \
+    --summary "Zeus HTTP timeout bumped to 300s"
+
+mnem retrieve "timeout" --hybrid
+#   [...] Zeus HTTP timeout bumped to 300s
+#       └─ raw: The full session transcript, jargon-heavy, full of code refs.
+```
+
+Useful when you want to keep the original wording (no summarization loss) but still let keyword search reach the row through a shorter label.
+
 Every retrieval bumps `access_count` and `last_accessed` for the rows it returned, which sets up future reinforcement scoring without any caller action.
 
 ## Python API
@@ -130,11 +145,13 @@ mnem retrieve "deadlines" --ns work
 ```
 texts -> chunk (200w / 40w overlap) -> embed (all-MiniLM-L6-v2)
       -> hnswlib cosine index (per namespace)
-      -> SQLite metadata store (id, ns, text, meta, created,
+      -> SQLite metadata store (id, ns, text, summary, meta, created,
                                 tier, last_accessed, access_count)
+      -> FTS5 mirror (text + summary), BM25 keyword surface
 
 retrieve -> embed query -> knn search -> tier-aware decay -> ranked results
          -> UPDATE last_accessed, access_count on retrieved rows
+         -> --hybrid: fuse vector top-k and BM25 top-k via RRF
 ```
 
 Storage layout under `~/.mnemonics`:

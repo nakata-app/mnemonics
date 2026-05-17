@@ -84,11 +84,20 @@ class _Handler(BaseHTTPRequestHandler):
             if not texts:
                 self._json(400, {"error": "texts must not be empty"})
                 return
+            summaries = body.get("summaries")
+            if summaries is not None and (
+                not isinstance(summaries, list)
+                or len(summaries) != len(texts)
+                or any(s is not None and not isinstance(s, str) for s in summaries)
+            ):
+                self._json(400, {"error": "summaries must be an array of (string|null), same length as texts"})
+                return
             n = _ingest(
                 texts=texts,
                 store=_get_store(),
                 ns=body.get("ns", "default"),
                 meta=body.get("meta"),
+                summaries=summaries,
             )
             self._json(200, {"ingested": n})
 
@@ -155,12 +164,17 @@ def _mcp_loop() -> None:
             ok({"tools": [
                 {
                     "name": "mnemonics_ingest",
-                    "description": "Store text memories into mnemonics. Chunks, embeds and persists.",
+                    "description": "Store text memories into mnemonics. Chunks, embeds and persists. Optional `summaries` parallel to `texts` adds a second keyword surface for BM25 retrieval (e.g. raw transcript + GLM gist); embeddings still come from the raw text.",
                     "inputSchema": {
                         "type": "object",
                         "properties": {
                             "texts": {"type": "array", "items": {"type": "string"}},
                             "ns": {"type": "string", "description": "Namespace (default: 'default')"},
+                            "summaries": {
+                                "type": "array",
+                                "items": {"type": ["string", "null"]},
+                                "description": "Optional, one entry per text. Null entries are stored as no-summary.",
+                            },
                         },
                         "required": ["texts"],
                     },
@@ -243,7 +257,20 @@ def _mcp_loop() -> None:
                 if not all(isinstance(t, str) and t.strip() for t in texts):
                     err("each item in texts must be a non-empty string")
                     continue
-                n = _ingest(texts=texts, store=_get_store(), ns=args.get("ns", "default"))
+                summaries = args.get("summaries")
+                if summaries is not None and (
+                    not isinstance(summaries, list)
+                    or len(summaries) != len(texts)
+                    or any(s is not None and not isinstance(s, str) for s in summaries)
+                ):
+                    err("summaries must be an array of (string|null) the same length as texts")
+                    continue
+                n = _ingest(
+                    texts=texts,
+                    store=_get_store(),
+                    ns=args.get("ns", "default"),
+                    summaries=summaries,
+                )
                 ok({"content": [{"type": "text", "text": f"Stored {n} chunks."}]})
 
             elif name == "mnemonics_retrieve":
@@ -255,12 +282,21 @@ def _mcp_loop() -> None:
                     decay=bool(args.get("decay", True)),
                 )
                 tier_label = {0: "pin", 1: "def", 2: "amb"}
-                lines = [
-                    f"[{r['score']:.3f}] [raw={r['raw_score']:.3f} decay={r['decay_factor']:.2f} "
-                    f"boost={r['boost']:.2f} age={r['age_days']:.0f}d "
-                    f"tier={tier_label.get(r['tier'], '?')}] {r['text'][:200]}"
-                    for r in result["results"]
-                ]
+                lines = []
+                for r in result["results"]:
+                    header = (
+                        f"[{r['score']:.3f}] [raw={r['raw_score']:.3f} decay={r['decay_factor']:.2f} "
+                        f"boost={r['boost']:.2f} age={r['age_days']:.0f}d "
+                        f"tier={tier_label.get(r['tier'], '?')}]"
+                    )
+                    # If a summary is stored alongside the raw chunk, surface
+                    # it on its own line — gist on top, raw evidence below.
+                    summary = r.get("summary")
+                    if summary:
+                        lines.append(f"{header} {summary[:200]}")
+                        lines.append(f"    └─ raw: {r['text'][:200]}")
+                    else:
+                        lines.append(f"{header} {r['text'][:200]}")
                 ok({"content": [{"type": "text", "text": "\n".join(lines)}]})
 
             elif name == "mnemonics_forget":
