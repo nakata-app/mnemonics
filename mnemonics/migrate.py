@@ -140,21 +140,44 @@ def encrypt_db(
         leftover.unlink(missing_ok=True)
     print(f"[4/4] swapped into place → {db}")
 
+    # Defence in depth for the key: any single store failing (Keychain
+    # reset, disk wipe, etc.) must not strand the DB. We always print the
+    # key on stdout once so the operator can copy it into an offsite
+    # password manager, and we write a local 0600 fallback file alongside
+    # the DB. Losing all three at once is the only way to lose access.
+    keyring_status = "skipped"
     if store_in_keyring:
         try:
             crypto.store_key(key_hex)
-            print(
-                "\nKey stored in system keyring under "
-                f"service '{crypto._KEYRING_SERVICE}' / user '{crypto._KEYRING_USER}'."
-            )
+            keyring_status = "stored"
         except Exception as exc:
-            print(
-                f"\nWARNING: failed to store key in keyring ({exc}). "
-                f"Save this key yourself or you will lose access:\n  {key_hex}",
-                file=sys.stderr,
-            )
-    else:
-        print(f"\nKey (save this somewhere safe — losing it loses the DB):\n  {key_hex}")
+            keyring_status = f"failed ({exc})"
+
+    keyfile = root / ".db-key"
+    try:
+        keyfile.write_text(key_hex + "\n", encoding="ascii")
+        os.chmod(keyfile, 0o600)
+        keyfile_status = f"written to {keyfile} (0600)"
+    except Exception as exc:
+        keyfile_status = f"failed ({exc})"
+
+    print()
+    print("=" * 72)
+    print("KEY (you NEED at least one off-Mac copy of this string):")
+    print()
+    print(f"   {key_hex}")
+    print()
+    print("Where this key now lives on this machine:")
+    print(f"  - system keyring:  {keyring_status}")
+    print(f"  - local fallback:  {keyfile_status}")
+    print(f"  - pre-encrypt DB backup: {backup} (decrypts without any key)")
+    print()
+    print("RECOMMENDED: copy the hex string above into 1Password / Bitwarden /")
+    print("a sealed envelope. If the keyring AND the local fallback file are")
+    print("both lost (Mac reset, disk failure), the offsite copy is what saves")
+    print(f"you. The pre-encrypt backup at {backup.name} is also a full")
+    print("rollback path until you delete it.")
+    print("=" * 72)
 
     print(
         "\nNext step: export MNEMONICS_ENCRYPT=1 so the running process "
