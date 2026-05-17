@@ -6,6 +6,21 @@ All notable changes to mnemonics. Format follows [Keep a Changelog](https://keep
 
 ### Added
 
+- **Raw + summary hybrid storage.** Every row now has an optional
+  `summary` column alongside the raw `text`. Embeddings are still
+  computed from the raw chunk, but the FTS5 mirror indexes both
+  columns, so BM25 can hit a row through its full text or a
+  shorter gist. Surfaces:
+  - `mnemonics ingest <text> --summary "<one-line gist>"`
+  - `POST /ingest` accepts `summaries: [string|null]` parallel to
+    `texts`.
+  - MCP `mnemonics_ingest` accepts `summaries`. `mnemonics_retrieve`
+    output prints the summary on top and the raw chunk below it
+    when one exists.
+  - Schema is self-healing: pre-`summary` DBs add the column on
+    next `Store(...)` open, the FTS5 mirror is dropped and rebuilt
+    with the two-column layout, and the existing rows are re-mirrored
+    so BM25 keeps working without manual reindex.
 - **Opt-in DB encryption-at-rest** via SQLCipher. Set `MNEMONICS_ENCRYPT=1`
   and either `MNEMONICS_DB_KEY=<64-char hex>` or a key in the OS keyring
   (macOS Keychain, Linux SecretService, Windows DPAPI), and `Store` swaps
