@@ -1,14 +1,62 @@
 """Persistent storage: SQLite (metadata) + hnswlib (vectors)."""
 from __future__ import annotations
 
+import contextlib
 import json
-import sqlite3
+import os
 import threading
 from pathlib import Path
 from typing import Any
 
 import hnswlib
 import numpy as np
+
+from mnemonics import crypto
+
+# Swap in sqlcipher3 only when the caller has opted into encryption. Keeping
+# the stdlib path as default means existing plain-text DBs and the 155-test
+# suite are untouched; opt-in is an explicit env-var flip.
+if crypto.encryption_requested():
+    try:
+        import sqlcipher3 as sqlite3  # type: ignore[no-redef]
+    except ImportError as _e:  # pragma: no cover — install-time concern
+        raise RuntimeError(
+            "MNEMONICS_ENCRYPT=1 is set but sqlcipher3 is not installed. "
+            "Install with `pip install mnemonics[encrypt]` or set the env "
+            "var back to 0 to fall back to plain SQLite."
+        ) from _e
+    _ENCRYPTED = True
+else:
+    import sqlite3
+    _ENCRYPTED = False
+
+
+def _apply_key(conn: Any) -> None:
+    """Run ``PRAGMA key`` on a fresh sqlcipher3 connection.
+
+    Uses raw-hex syntax (``PRAGMA key = "x'...'"``) which bypasses key
+    derivation entirely — our keys are already cryptographically random
+    256-bit values, so KDF would just add startup cost without raising
+    the security bar. No-op when encryption is disabled.
+    """
+    if not _ENCRYPTED:
+        return
+    key_hex = crypto.require_key()
+    # Defensive: only allow hex, otherwise the raw-key pragma would fail
+    # opaquely. Surface the misconfiguration explicitly instead.
+    if len(key_hex) != 64 or any(c not in "0123456789abcdefABCDEF" for c in key_hex):
+        raise RuntimeError(
+            "MNEMONICS_DB_KEY must be a 64-character hex string (256-bit). "
+            f"Got length {len(key_hex)}."
+        )
+    conn.execute(f"PRAGMA key = \"x'{key_hex}'\"")
+
+
+try:
+    import fcntl  # POSIX advisory file locking — used for cross-process safety
+    _HAS_FCNTL = True
+except ImportError:  # pragma: no cover — Windows path, not supported
+    _HAS_FCNTL = False
 
 
 _SCHEMA = """
@@ -23,6 +71,27 @@ CREATE TABLE IF NOT EXISTS memories (
     access_count  INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_ns ON memories(ns);
+
+-- FTS5 contentless-mirror over `memories`, keyed on `id` (used for BM25 lookup
+-- in hybrid retrieval). Triggers keep it in sync; older DBs are backfilled
+-- by Store._migrate_fts().
+CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
+    text,
+    content='memories',
+    content_rowid='id',
+    tokenize='unicode61 remove_diacritics 2'
+);
+
+CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories BEGIN
+    INSERT INTO memories_fts(rowid, text) VALUES (new.id, new.text);
+END;
+CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN
+    INSERT INTO memories_fts(memories_fts, rowid, text) VALUES('delete', old.id, old.text);
+END;
+CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN
+    INSERT INTO memories_fts(memories_fts, rowid, text) VALUES('delete', old.id, old.text);
+    INSERT INTO memories_fts(rowid, text) VALUES (new.id, new.text);
+END;
 """
 
 # Tier semantics:
@@ -42,10 +111,32 @@ class Store:
         self.dim = dim
         self._lock = threading.Lock()
         self._db = sqlite3.connect(str(self.root / "memories.db"), check_same_thread=False)
+        _apply_key(self._db)
+        # busy_timeout MUST come first: switching journal_mode takes a brief
+        # RESERVED lock, and two peer processes opening the DB at the same
+        # instant otherwise race and one gets `database is locked`.
+        self._db.execute("PRAGMA busy_timeout=5000")
+        # WAL is a persistent DB-file property — only one peer needs to flip
+        # it, and the switch itself takes an EXCLUSIVE lock that bypasses
+        # busy_timeout. Skip the PRAGMA if we're already in WAL to avoid
+        # racing with concurrent openers on a fresh DB.
+        current_mode = self._db.execute("PRAGMA journal_mode").fetchone()[0]
+        if str(current_mode).lower() != "wal":
+            try:
+                self._db.execute("PRAGMA journal_mode=WAL")
+            except sqlite3.OperationalError:
+                # A peer just won the race and is mid-switch. Their WAL takes
+                # effect for us too; if not, the next Store() call will retry.
+                pass
+        self._db.execute("PRAGMA synchronous=NORMAL")
         self._db.executescript(_SCHEMA)
         self._migrate()
+        self._migrate_fts()
         self._db.commit()
         self._index: dict[str, hnswlib.Index] = {}
+        # Mtime watermark per namespace; we use it to detect peer writes
+        # since our last load and force a reload before we add anything.
+        self._index_mtime: dict[str, float] = {}
 
     def _migrate(self) -> None:
         """Idempotent column additions for older DBs created before the schema bump."""
@@ -59,12 +150,68 @@ class Store:
         # idx_tier must come after migration so the column exists.
         self._db.execute("CREATE INDEX IF NOT EXISTS idx_tier ON memories(tier)")
 
+    def _migrate_fts(self) -> None:
+        """Backfill the FTS5 mirror for DBs that existed before hybrid search.
+
+        Triggers keep new rows in sync, but pre-existing rows aren't indexed
+        until we explicitly rebuild. Cheap when already populated.
+        """
+        fts_count = self._db.execute("SELECT COUNT(*) FROM memories_fts").fetchone()[0]
+        mem_count = self._db.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
+        if fts_count < mem_count:
+            self._db.execute("INSERT INTO memories_fts(memories_fts) VALUES('rebuild')")
+
+    @contextlib.contextmanager
+    def _ns_file_lock(self, ns: str, exclusive: bool = True):
+        """POSIX file lock on `index_<ns>.lock`. Cross-process safe; per-ns scoped.
+
+        Reads share (LOCK_SH), writes are exclusive (LOCK_EX). On systems
+        without fcntl (Windows), this is a no-op and falls back to the
+        in-process threading.Lock alone.
+        """
+        if not _HAS_FCNTL:
+            yield
+            return
+        lock_path = self.root / f"index_{ns}.lock"
+        # Touch + open r+ so concurrent readers don't truncate each other.
+        lock_path.touch(exist_ok=True)
+        fh = open(lock_path, "r+")
+        try:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH)
+            try:
+                yield
+            finally:
+                fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+        finally:
+            fh.close()
+
+    def _reload_if_stale(self, ns: str) -> None:
+        """Force an on-disk reload of the namespace index when a peer has
+        written since we last loaded it. No-op if there is no disk file yet
+        or our cached copy is already current.
+
+        Callers MUST already hold the ns file lock when invoking this.
+        """
+        idx_path = self.root / f"index_{ns}.bin"
+        if not idx_path.exists():
+            return
+        disk_mtime = idx_path.stat().st_mtime
+        cached_mtime = self._index_mtime.get(ns, -1.0)
+        if ns in self._index and disk_mtime <= cached_mtime:
+            return
+        idx = hnswlib.Index(space="cosine", dim=self.dim)
+        idx.load_index(str(idx_path))
+        idx.set_ef(64)
+        self._index[ns] = idx
+        self._index_mtime[ns] = disk_mtime
+
     def _index_for(self, ns: str) -> hnswlib.Index:
         if ns not in self._index:
             idx_path = self.root / f"index_{ns}.bin"
             idx = hnswlib.Index(space="cosine", dim=self.dim)
             if idx_path.exists():
                 idx.load_index(str(idx_path))
+                self._index_mtime[ns] = idx_path.stat().st_mtime
                 idx.set_ef(64)
             else:
                 idx.init_index(max_elements=100_000, ef_construction=200, M=16)
@@ -75,7 +222,13 @@ class Store:
     def add(self, texts: list[str], vectors: np.ndarray, ns: str = "default", meta: list[dict] | None = None) -> list[int]:
         if meta is None:
             meta = [{} for _ in texts]
-        with self._lock:
+        # Order matters: take the file lock OUTSIDE the threading.Lock so a
+        # blocked peer doesn't pin this process's GIL-bound queues. Inside the
+        # file lock we refresh from disk to absorb any peer writes that
+        # happened since our last load — this is the fix for the corrupt
+        # 14.6 GB index we just rebuilt.
+        with self._ns_file_lock(ns, exclusive=True), self._lock:
+            self._reload_if_stale(ns)
             ids = []
             for text, m in zip(texts, meta):
                 cur = self._db.execute(
@@ -86,11 +239,17 @@ class Store:
             self._db.commit()
             idx = self._index_for(ns)
             idx.add_items(vectors, ids)
-            idx.save_index(str(self.root / f"index_{ns}.bin"))
+            idx_path = self.root / f"index_{ns}.bin"
+            idx.save_index(str(idx_path))
+            self._index_mtime[ns] = idx_path.stat().st_mtime
         return ids
 
     def search(self, vector: np.ndarray, ns: str = "default", top_k: int = 5) -> list[dict[str, Any]]:
-        with self._lock:
+        # Shared lock — multiple peers may search the same ns concurrently;
+        # only a writer needs to block them. Reload-if-stale picks up freshly
+        # written rows from a peer between two of our search calls.
+        with self._ns_file_lock(ns, exclusive=False), self._lock:
+            self._reload_if_stale(ns)
             idx = self._index_for(ns)
             n = min(top_k, idx.get_current_count())
             if n == 0:
@@ -129,6 +288,54 @@ class Store:
                     touched_ids,
                 )
                 self._db.commit()
+        return results
+
+    # FTS5's MATCH grammar treats bare punctuation as syntax errors. We only
+    # need word-level recall, so flatten the query to alphanumerics + space and
+    # OR the surviving tokens together (subset match, not phrase).
+    @staticmethod
+    def _fts_sanitize(query: str) -> str:
+        import re as _re
+        tokens = _re.findall(r"\w+", query, flags=_re.UNICODE)
+        # Quote each token so FTS5 treats it as a literal term (handles digits,
+        # underscores, mixed-case identifiers like "PR1490" or "v0_2_1").
+        return " OR ".join(f'"{t}"' for t in tokens if t)
+
+    def search_bm25(self, query: str, ns: str = "default", top_k: int = 20) -> list[dict[str, Any]]:
+        """BM25 keyword search via SQLite FTS5. Returns rows ordered best-first.
+
+        score is negated so that higher = better, matching the vector path.
+        Empty / punctuation-only queries return [].
+        """
+        match = self._fts_sanitize(query)
+        if not match:
+            return []
+        with self._lock:
+            try:
+                rows = self._db.execute(
+                    "SELECT m.id, m.text, m.meta, m.created, m.tier, m.last_accessed, "
+                    "m.access_count, bm25(memories_fts) AS bm25_raw "
+                    "FROM memories_fts "
+                    "JOIN memories m ON m.id = memories_fts.rowid "
+                    "WHERE memories_fts MATCH ? AND m.ns = ? "
+                    "ORDER BY bm25_raw LIMIT ?",
+                    (match, ns, top_k),
+                ).fetchall()
+            except sqlite3.OperationalError:
+                # Malformed MATCH expression (rare; sanitizer should prevent it).
+                return []
+        results = []
+        for row in rows:
+            results.append({
+                "id": row[0],
+                "text": row[1],
+                "meta": json.loads(row[2]),
+                "created": row[3],
+                "tier": row[4],
+                "last_accessed": row[5],
+                "access_count": row[6],
+                "score": -float(row[7]),  # lower bm25 = better → negate to align with vector
+            })
         return results
 
     def set_tier(self, memory_id: int, tier: int) -> bool:

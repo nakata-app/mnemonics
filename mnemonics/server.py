@@ -60,7 +60,7 @@ class _Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         path = self.path.split("?")[0]
         if path == "/health":
-            self._json(200, {"status": "ok", "version": "0.2.1"})
+            self._json(200, {"status": "ok", "version": "0.3.0"})
         elif path == "/namespaces":
             self._json(200, {"namespaces": _get_store().list_namespaces()})
         elif path == "/count":
@@ -147,7 +147,7 @@ def _mcp_loop() -> None:
         if method == "initialize":
             ok({
                 "protocolVersion": "2024-11-05",
-                "serverInfo": {"name": "mnemonics", "version": "0.2.1"},
+                "serverInfo": {"name": "mnemonics", "version": "0.3.0"},
                 "capabilities": {"tools": {}},
             })
 
@@ -236,6 +236,12 @@ def _mcp_loop() -> None:
                 texts = args.get("texts", [])
                 if not isinstance(texts, list):
                     err("texts must be an array of strings, not a single string")
+                    continue
+                if not texts:
+                    err("texts must not be empty (did you pass 'text' instead of 'texts'?)")
+                    continue
+                if not all(isinstance(t, str) and t.strip() for t in texts):
+                    err("each item in texts must be a non-empty string")
                     continue
                 n = _ingest(texts=texts, store=_get_store(), ns=args.get("ns", "default"))
                 ok({"content": [{"type": "text", "text": f"Stored {n} chunks."}]})

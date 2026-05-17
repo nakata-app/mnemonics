@@ -155,7 +155,16 @@ index_<ns>.bin     hnswlib index for each namespace
   export HF_HUB_OFFLINE=1
   ```
 
-- DB encryption-at-rest (SQLCipher) is not currently enabled. The SQLite file at `~/.mnemonics/memories.db` is plaintext on disk; protect it with full-disk encryption (FileVault on macOS) until first-class encryption support lands.
+- **DB encryption-at-rest** is opt-in via SQLCipher (added in 0.3.0). The default install keeps `~/.mnemonics/memories.db` as plaintext, so full-disk encryption (FileVault, LUKS) still matters for the default path. To turn it on:
+
+  ```bash
+  # macOS: brew install sqlcipher first (Linux: apt install libsqlcipher-dev)
+  pip install 'mnemonics[encrypt]'
+  mnemonics encrypt-db          # one-shot migrate ~/.mnemonics/memories.db
+  export MNEMONICS_ENCRYPT=1    # add to your shell rc so future runs see it
+  ```
+
+  The migration auto-generates a 256-bit key and stores it in the OS keyring (macOS Keychain, Linux SecretService, Windows DPAPI). Pass `--key <hex>` to supply your own, or `--no-keyring` to print the key for manual storage. The pre-encryption DB is preserved as `memories.db.preencrypt-<timestamp>` so the operation is reversible. Losing the key after the original backup is gone loses the DB.
 
 ## License
 
