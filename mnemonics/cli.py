@@ -27,6 +27,11 @@ def main() -> None:
     i.add_argument("--dedup-threshold", type=float, default=0.92, help="Cosine threshold for near-duplicate (default 0.92)")
     i.add_argument("--force-new", action="store_true", help="With --dedup: save anyway, don't prompt")
     i.add_argument("--skip-similar", action="store_true", help="With --dedup: cancel ingest if a near-duplicate exists, don't prompt")
+    i.add_argument(
+        "--summary",
+        default=None,
+        help="Optional one-line gist stored alongside the raw text. Searched by BM25 in addition to the chunk body.",
+    )
 
     # retrieve
     r = sub.add_parser("retrieve", help="Search memory")
@@ -174,7 +179,8 @@ def main() -> None:
                 if decision == "c":
                     print("Cancelled.")
                     sys.exit(0)
-        n = ingest(texts=[joined], store=store, ns=args.ns)
+        summaries = [args.summary] if args.summary else None
+        n = ingest(texts=[joined], store=store, ns=args.ns, summaries=summaries)
         print(f"Stored {n} chunk(s).")
 
     elif args.cmd == "retrieve":
@@ -192,12 +198,18 @@ def main() -> None:
         )
         for r in result["results"]:
             tier_label = {0: "pin", 1: "def", 2: "amb"}.get(r["tier"], "?")
-            print(
+            header = (
                 f"  [{r['score']:.3f}] "
                 f"[raw={r['raw_score']:.3f} decay={r['decay_factor']:.2f} "
                 f"boost={r['boost']:.2f} age={r['age_days']:.0f}d "
-                f"tier={tier_label}] {r['text'][:120]}"
+                f"tier={tier_label}]"
             )
+            summary = r.get("summary")
+            if summary:
+                print(f"{header} {summary[:120]}")
+                print(f"      └─ raw: {r['text'][:120]}")
+            else:
+                print(f"{header} {r['text'][:120]}")
 
     elif args.cmd == "stats":
         from mnemonics.store import Store

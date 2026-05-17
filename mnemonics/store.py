@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS memories (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     ns            TEXT NOT NULL DEFAULT 'default',
     text          TEXT NOT NULL,
+    summary       TEXT,
     meta          TEXT NOT NULL DEFAULT '{}',
     created       TEXT NOT NULL DEFAULT (datetime('now')),
     tier          INTEGER NOT NULL DEFAULT 1,
@@ -72,25 +73,27 @@ CREATE TABLE IF NOT EXISTS memories (
 );
 CREATE INDEX IF NOT EXISTS idx_ns ON memories(ns);
 
--- FTS5 contentless-mirror over `memories`, keyed on `id` (used for BM25 lookup
--- in hybrid retrieval). Triggers keep it in sync; older DBs are backfilled
--- by Store._migrate_fts().
+-- FTS5 contentless-mirror over `memories`, keyed on `id`. Indexes both raw
+-- `text` and optional `summary` so BM25 can match either layer in hybrid
+-- retrieval. Older DBs that still carry a single-column mirror are dropped
+-- and rebuilt by Store._migrate_fts() so the schema stays self-healing.
 CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
     text,
+    summary,
     content='memories',
     content_rowid='id',
     tokenize='unicode61 remove_diacritics 2'
 );
 
 CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories BEGIN
-    INSERT INTO memories_fts(rowid, text) VALUES (new.id, new.text);
+    INSERT INTO memories_fts(rowid, text, summary) VALUES (new.id, new.text, new.summary);
 END;
 CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN
-    INSERT INTO memories_fts(memories_fts, rowid, text) VALUES('delete', old.id, old.text);
+    INSERT INTO memories_fts(memories_fts, rowid, text, summary) VALUES('delete', old.id, old.text, old.summary);
 END;
 CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN
-    INSERT INTO memories_fts(memories_fts, rowid, text) VALUES('delete', old.id, old.text);
-    INSERT INTO memories_fts(rowid, text) VALUES (new.id, new.text);
+    INSERT INTO memories_fts(memories_fts, rowid, text, summary) VALUES('delete', old.id, old.text, old.summary);
+    INSERT INTO memories_fts(rowid, text, summary) VALUES (new.id, new.text, new.summary);
 END;
 """
 
@@ -147,18 +150,54 @@ class Store:
             self._db.execute("ALTER TABLE memories ADD COLUMN last_accessed TEXT")
         if "access_count" not in cols:
             self._db.execute("ALTER TABLE memories ADD COLUMN access_count INTEGER NOT NULL DEFAULT 0")
+        if "summary" not in cols:
+            # NULL-default keeps the column reversible for older rows; ingest
+            # writes summary only when the caller hands one in.
+            self._db.execute("ALTER TABLE memories ADD COLUMN summary TEXT")
         # idx_tier must come after migration so the column exists.
         self._db.execute("CREATE INDEX IF NOT EXISTS idx_tier ON memories(tier)")
 
     def _migrate_fts(self) -> None:
-        """Backfill the FTS5 mirror for DBs that existed before hybrid search.
+        """Heal the FTS5 mirror across schema generations.
 
-        Triggers keep new rows in sync, but pre-existing rows aren't indexed
-        until we explicitly rebuild. Cheap when already populated.
+        Two cases to cover:
+          1. Pre-hybrid DBs: FTS table did not exist, triggers just created it,
+             but the existing `memories` rows are not indexed yet.
+          2. Pre-summary DBs: FTS table exists but only has the `text` column,
+             so the new triggers that reference `summary` would fail. Drop
+             and rebuild with the two-column schema; triggers re-fire on
+             rebuild and pre-existing rows get re-indexed in one pass.
+
+        We do not lean on FTS5's own ``'rebuild'`` command for case (2):
+        empirically the first invocation after a drop/recreate writes the
+        row payloads but skips index update under some SQLite builds, leaving
+        rows present but unmatched. A direct INSERT into the contentless
+        mirror is deterministic across versions.
         """
+        fts_cols = [
+            row[1]
+            for row in self._db.execute("PRAGMA table_info(memories_fts)").fetchall()
+        ]
+        schema_was_replaced = False
+        if "summary" not in fts_cols:
+            # Drop the old single-column mirror and the triggers that wrote to
+            # it; the schema script will recreate both with the new shape.
+            self._db.execute("DROP TRIGGER IF EXISTS memories_ai")
+            self._db.execute("DROP TRIGGER IF EXISTS memories_ad")
+            self._db.execute("DROP TRIGGER IF EXISTS memories_au")
+            self._db.execute("DROP TABLE IF EXISTS memories_fts")
+            self._db.executescript(_SCHEMA)
+            schema_was_replaced = True
         fts_count = self._db.execute("SELECT COUNT(*) FROM memories_fts").fetchone()[0]
         mem_count = self._db.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
-        if fts_count < mem_count:
+        if schema_was_replaced and mem_count > 0:
+            # Explicit re-mirror: walk `memories` and insert text+summary into
+            # the freshly created FTS table. Avoids the rebuild-skip bug.
+            self._db.execute(
+                "INSERT INTO memories_fts(rowid, text, summary) "
+                "SELECT id, text, summary FROM memories"
+            )
+        elif fts_count < mem_count:
             self._db.execute("INSERT INTO memories_fts(memories_fts) VALUES('rebuild')")
 
     @contextlib.contextmanager
@@ -219,9 +258,20 @@ class Store:
             self._index[ns] = idx
         return self._index[ns]
 
-    def add(self, texts: list[str], vectors: np.ndarray, ns: str = "default", meta: list[dict] | None = None) -> list[int]:
+    def add(
+        self,
+        texts: list[str],
+        vectors: np.ndarray,
+        ns: str = "default",
+        meta: list[dict] | None = None,
+        summaries: list[str | None] | None = None,
+    ) -> list[int]:
         if meta is None:
             meta = [{} for _ in texts]
+        if summaries is None:
+            summaries = [None for _ in texts]
+        if len(summaries) != len(texts):
+            raise ValueError("summaries length must match texts length")
         # Order matters: take the file lock OUTSIDE the threading.Lock so a
         # blocked peer doesn't pin this process's GIL-bound queues. Inside the
         # file lock we refresh from disk to absorb any peer writes that
@@ -230,10 +280,10 @@ class Store:
         with self._ns_file_lock(ns, exclusive=True), self._lock:
             self._reload_if_stale(ns)
             ids = []
-            for text, m in zip(texts, meta):
+            for text, m, summary in zip(texts, meta, summaries):
                 cur = self._db.execute(
-                    "INSERT INTO memories (ns, text, meta) VALUES (?, ?, ?)",
-                    (ns, text, json.dumps(m)),
+                    "INSERT INTO memories (ns, text, summary, meta) VALUES (?, ?, ?, ?)",
+                    (ns, text, summary, json.dumps(m)),
                 )
                 ids.append(cur.lastrowid)
             self._db.commit()
@@ -258,7 +308,7 @@ class Store:
             row_ids = [int(x) for x in labels[0]]
             placeholders = ",".join("?" * len(row_ids))
             rows = self._db.execute(
-                f"SELECT id, text, meta, created, tier, last_accessed, access_count "
+                f"SELECT id, text, summary, meta, created, tier, last_accessed, access_count "
                 f"FROM memories WHERE id IN ({placeholders})",
                 row_ids,
             ).fetchall()
@@ -271,11 +321,12 @@ class Store:
                 results.append({
                     "id": row[0],
                     "text": row[1],
-                    "meta": json.loads(row[2]),
-                    "created": row[3],
-                    "tier": row[4],
-                    "last_accessed": row[5],
-                    "access_count": row[6],
+                    "summary": row[2],
+                    "meta": json.loads(row[3]),
+                    "created": row[4],
+                    "tier": row[5],
+                    "last_accessed": row[6],
+                    "access_count": row[7],
                     "score": float(1 - dist),
                 })
             # Touch retrieved rows: bump access_count, update last_accessed.
@@ -312,9 +363,12 @@ class Store:
             return []
         with self._lock:
             try:
+                # MATCH without a column qualifier searches every indexed
+                # column in the FTS table, so BM25 already covers both `text`
+                # and `summary` once the schema bump completes.
                 rows = self._db.execute(
-                    "SELECT m.id, m.text, m.meta, m.created, m.tier, m.last_accessed, "
-                    "m.access_count, bm25(memories_fts) AS bm25_raw "
+                    "SELECT m.id, m.text, m.summary, m.meta, m.created, m.tier, "
+                    "m.last_accessed, m.access_count, bm25(memories_fts) AS bm25_raw "
                     "FROM memories_fts "
                     "JOIN memories m ON m.id = memories_fts.rowid "
                     "WHERE memories_fts MATCH ? AND m.ns = ? "
@@ -329,12 +383,13 @@ class Store:
             results.append({
                 "id": row[0],
                 "text": row[1],
-                "meta": json.loads(row[2]),
-                "created": row[3],
-                "tier": row[4],
-                "last_accessed": row[5],
-                "access_count": row[6],
-                "score": -float(row[7]),  # lower bm25 = better → negate to align with vector
+                "summary": row[2],
+                "meta": json.loads(row[3]),
+                "created": row[4],
+                "tier": row[5],
+                "last_accessed": row[6],
+                "access_count": row[7],
+                "score": -float(row[8]),  # lower bm25 = better → negate to align with vector
             })
         return results
 

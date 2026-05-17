@@ -168,3 +168,108 @@ def test_multiple_namespaces_independent_indices(tmp_store):
     rb = tmp_store.search(v2[0], ns="B", top_k=3)
     assert {r["text"] for r in ra} == {"a0", "a1", "a2"}
     assert {r["text"] for r in rb} == {"b0", "b1", "b2"}
+
+
+# ── summary column (raw + gist hybrid) ───────────────────────────────────────
+
+def test_add_default_summary_is_none(tmp_store):
+    tmp_store.add(["raw only"], make_vecs(1))
+    results = tmp_store.search(make_vecs(1)[0])
+    assert results[0]["summary"] is None
+
+
+def test_summary_roundtrip(tmp_store):
+    tmp_store.add(
+        ["raw transcript"],
+        make_vecs(1),
+        summaries=["one-line gist"],
+    )
+    results = tmp_store.search(make_vecs(1)[0])
+    assert results[0]["summary"] == "one-line gist"
+    assert results[0]["text"] == "raw transcript"
+
+
+def test_summary_length_mismatch_raises(tmp_store):
+    with pytest.raises(ValueError):
+        tmp_store.add(["a", "b"], make_vecs(2), summaries=["only one"])
+
+
+def test_bm25_matches_summary_only_term(tmp_store):
+    # Raw chunk has no overlap with the query word; the only path to a hit is
+    # the BM25 mirror picking up the summary column.
+    tmp_store.add(
+        ["raw transcript content here"],
+        make_vecs(1),
+        summaries=["zeppelin disaster review"],
+    )
+    hits = tmp_store.search_bm25("zeppelin", top_k=5)
+    assert len(hits) == 1
+    assert hits[0]["summary"] == "zeppelin disaster review"
+
+
+def test_bm25_still_matches_raw_text(tmp_store):
+    tmp_store.add(
+        ["the actual word is unicorn"],
+        make_vecs(1),
+        summaries=["unrelated gist"],
+    )
+    hits = tmp_store.search_bm25("unicorn", top_k=5)
+    assert len(hits) == 1
+    assert "unicorn" in hits[0]["text"]
+
+
+def test_summary_survives_reload(tmp_path):
+    s1 = Store(tmp_path)
+    s1.add(["raw"], make_vecs(1), summaries=["gist"])
+    del s1
+    s2 = Store(tmp_path)
+    hits = s2.search_bm25("gist", top_k=5)
+    assert hits and hits[0]["summary"] == "gist"
+
+
+def test_migration_adds_summary_column(tmp_path):
+    """Pre-summary DBs must self-heal without losing rows or BM25 coverage."""
+    import sqlite3 as _sqlite3
+
+    legacy_db = tmp_path / "memories.db"
+    # Re-create the v0.2.x schema, exactly as it shipped: single-column FTS
+    # mirror, no `summary` column on `memories`. Inserting through it proves
+    # the post-migration store can still see the row via BM25.
+    conn = _sqlite3.connect(legacy_db)
+    conn.executescript("""
+        CREATE TABLE memories (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            ns            TEXT NOT NULL DEFAULT 'default',
+            text          TEXT NOT NULL,
+            meta          TEXT NOT NULL DEFAULT '{}',
+            created       TEXT NOT NULL DEFAULT (datetime('now')),
+            tier          INTEGER NOT NULL DEFAULT 1,
+            last_accessed TEXT,
+            access_count  INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE VIRTUAL TABLE memories_fts USING fts5(
+            text,
+            content='memories',
+            content_rowid='id',
+            tokenize='unicode61 remove_diacritics 2'
+        );
+        INSERT INTO memories (text) VALUES ('legacy row about pterodactyls');
+        INSERT INTO memories_fts(rowid, text)
+            SELECT id, text FROM memories;
+    """)
+    conn.commit()
+    conn.close()
+
+    # Re-open through Store; _migrate + _migrate_fts must add the column and
+    # rebuild the FTS mirror with the two-column layout.
+    store = Store(tmp_path)
+    cols = {row[1] for row in store._db.execute("PRAGMA table_info(memories)").fetchall()}
+    assert "summary" in cols
+
+    fts_cols = {row[1] for row in store._db.execute("PRAGMA table_info(memories_fts)").fetchall()}
+    assert "summary" in fts_cols
+
+    # Pre-existing row should still be reachable via BM25 after the rebuild.
+    hits = store.search_bm25("pterodactyls", top_k=5)
+    assert hits and hits[0]["text"] == "legacy row about pterodactyls"
+    assert hits[0]["summary"] is None
