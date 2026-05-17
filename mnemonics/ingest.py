@@ -1,6 +1,7 @@
 """Ingest text into the store: chunk → embed → save."""
 from __future__ import annotations
 
+import os
 import re
 from typing import Any
 
@@ -12,12 +13,22 @@ _encoder: Any = None
 _encoder_name: str = "all-MiniLM-L6-v2"
 
 
+def _resolve_model(model: str) -> str:
+    # MNEMONICS_ADAPTMEM_PATH swaps the default base encoder with a fine-tuned
+    # adaptmem checkpoint at runtime. Same 384-dim contract, drop-in.
+    adaptmem_path = os.environ.get("MNEMONICS_ADAPTMEM_PATH")
+    if adaptmem_path and model == "all-MiniLM-L6-v2":
+        return adaptmem_path
+    return model
+
+
 def _get_encoder(model: str = _encoder_name) -> Any:
     global _encoder, _encoder_name
-    if _encoder is None or model != _encoder_name:
+    resolved = _resolve_model(model)
+    if _encoder is None or resolved != _encoder_name:
         from sentence_transformers import SentenceTransformer
-        _encoder = SentenceTransformer(model)
-        _encoder_name = model
+        _encoder = SentenceTransformer(resolved)
+        _encoder_name = resolved
     return _encoder
 
 

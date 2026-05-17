@@ -1,6 +1,6 @@
 [project]
 name = "mnemonics"
-version = "0.2.1"
+version = "0.3.0"
 description = "Local-first AI memory — semantic retrieval over your own SQLite + HNSW index."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -25,6 +25,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.5"]
+encrypt = ["sqlcipher3>=0.5", "keyring>=24"]
 
 [project.scripts]
 mnemonics = "mnemonics.cli:main"

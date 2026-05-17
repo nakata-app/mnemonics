@@ -2,6 +2,35 @@
 
 All notable changes to mnemonics. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-05-17
+
+### Added
+
+- **Opt-in DB encryption-at-rest** via SQLCipher. Set `MNEMONICS_ENCRYPT=1`
+  and either `MNEMONICS_DB_KEY=<64-char hex>` or a key in the OS keyring
+  (macOS Keychain, Linux SecretService, Windows DPAPI), and `Store` swaps
+  stdlib `sqlite3` for `sqlcipher3` transparently. FTS5 search continues
+  to work; HNSW vector indexes are untouched and not encrypted (they hold
+  no plaintext beyond row IDs).
+- **`mnemonics encrypt-db`** one-shot migration command. Snapshots the
+  existing plain DB at `memories.db.preencrypt-<timestamp>`, builds an
+  encrypted copy via `sqlcipher_export()`, verifies the row count, then
+  atomically swaps the file. Aborts if any `mnemonics mcp` process is
+  running, unless `--force` is passed.
+- **`mnemonics.crypto`** module: `resolve_key()`, `generate_key()`,
+  `store_key()`, `clear_key()`, `require_key()` for callers who want to
+  manage keys programmatically.
+- **`mnemonics[encrypt]`** extra: `pip install 'mnemonics[encrypt]'`
+  pulls in `sqlcipher3` and `keyring`. macOS users need
+  `brew install sqlcipher` first; Linux users `apt install libsqlcipher-dev`.
+
+### Fixed
+
+- MCP `mnemonics_ingest` now rejects empty `texts`, non-string items, and
+  whitespace-only strings with an explicit error. Previously these silently
+  returned `Stored 0 chunks.`, mimicking a system bug. The HTTP `/ingest`
+  endpoint already had this check; this brings the two paths in line.
+
 ## [0.2.1] - 2026-05-08
 
 ### Fixed
