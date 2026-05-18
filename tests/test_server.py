@@ -178,6 +178,32 @@ def test_retrieve_passes_top_k(tmp_store):
     assert call_kwargs["top_k"] == 10
 
 
+def test_retrieve_default_hybrid_false(tmp_store):
+    fake_result = {"results": []}
+    with patch("mnemonics.server._retrieve", return_value=fake_result) as mock_ret:
+        http_call(tmp_store, "POST", "/retrieve", {"query": "q"})
+    call_kwargs = mock_ret.call_args[1]
+    assert call_kwargs["hybrid"] is False
+    assert call_kwargs["candidate_k"] == 20
+
+
+def test_retrieve_passes_hybrid(tmp_store):
+    fake_result = {"results": []}
+    with patch("mnemonics.server._retrieve", return_value=fake_result) as mock_ret:
+        http_call(tmp_store, "POST", "/retrieve", {"query": "q", "hybrid": True, "candidate_k": 50})
+    call_kwargs = mock_ret.call_args[1]
+    assert call_kwargs["hybrid"] is True
+    assert call_kwargs["candidate_k"] == 50
+
+
+def test_retrieve_rejects_zero_candidate_k(tmp_store):
+    with patch("mnemonics.server._retrieve") as mock_ret:
+        code, data = http_call(tmp_store, "POST", "/retrieve", {"query": "q", "candidate_k": 0})
+    assert code == 400
+    assert "candidate_k" in data["error"]
+    mock_ret.assert_not_called()
+
+
 # ── DELETE /memory/<id> ───────────────────────────────────────────────────────
 
 def test_delete_existing(populated_store):
@@ -255,6 +281,39 @@ def test_mcp_ingest(tmp_store):
     assert "Stored 3" in resp[0]["result"]["content"][0]["text"]
 
 
+def test_mcp_ingest_accepts_singular_text_string(tmp_store):
+    with patch("mnemonics.server._ingest", return_value=1) as mock_ingest:
+        resp = _mcp(tmp_store, {
+            "jsonrpc": "2.0", "id": 31,
+            "method": "tools/call",
+            "params": {"name": "mnemonics_ingest", "arguments": {"text": "hello"}},
+        })
+    assert "Stored 1" in resp[0]["result"]["content"][0]["text"]
+    assert mock_ingest.call_args.kwargs["texts"] == ["hello"]
+
+
+def test_mcp_ingest_accepts_singular_text_list(tmp_store):
+    with patch("mnemonics.server._ingest", return_value=2) as mock_ingest:
+        resp = _mcp(tmp_store, {
+            "jsonrpc": "2.0", "id": 32,
+            "method": "tools/call",
+            "params": {"name": "mnemonics_ingest", "arguments": {"text": ["a", "b"]}},
+        })
+    assert "Stored 2" in resp[0]["result"]["content"][0]["text"]
+    assert mock_ingest.call_args.kwargs["texts"] == ["a", "b"]
+
+
+def test_mcp_ingest_accepts_texts_as_bare_string(tmp_store):
+    with patch("mnemonics.server._ingest", return_value=1) as mock_ingest:
+        resp = _mcp(tmp_store, {
+            "jsonrpc": "2.0", "id": 33,
+            "method": "tools/call",
+            "params": {"name": "mnemonics_ingest", "arguments": {"texts": "hello"}},
+        })
+    assert "Stored 1" in resp[0]["result"]["content"][0]["text"]
+    assert mock_ingest.call_args.kwargs["texts"] == ["hello"]
+
+
 def test_mcp_retrieve(tmp_store):
     fake = {"results": [{
         "id": 1, "score": 0.42, "raw_score": 0.50, "decay_factor": 0.90,
@@ -268,6 +327,58 @@ def test_mcp_retrieve(tmp_store):
         })
     text = resp[0]["result"]["content"][0]["text"]
     assert "raw=" in text and "decay=" in text and "boost=" in text and "tier=" in text
+
+
+def test_mcp_retrieve_default_hybrid_false(tmp_store):
+    fake = {"results": []}
+    with patch("mnemonics.server._retrieve", return_value=fake) as mock_ret:
+        _mcp(tmp_store, {
+            "jsonrpc": "2.0", "id": 41,
+            "method": "tools/call",
+            "params": {"name": "mnemonics_retrieve", "arguments": {"query": "test"}},
+        })
+    kwargs = mock_ret.call_args.kwargs
+    assert kwargs["hybrid"] is False
+    assert kwargs["candidate_k"] == 20
+
+
+def test_mcp_retrieve_passes_hybrid(tmp_store):
+    fake = {"results": []}
+    with patch("mnemonics.server._retrieve", return_value=fake) as mock_ret:
+        _mcp(tmp_store, {
+            "jsonrpc": "2.0", "id": 42,
+            "method": "tools/call",
+            "params": {
+                "name": "mnemonics_retrieve",
+                "arguments": {"query": "test", "hybrid": True, "candidate_k": 30},
+            },
+        })
+    kwargs = mock_ret.call_args.kwargs
+    assert kwargs["hybrid"] is True
+    assert kwargs["candidate_k"] == 30
+
+
+def test_mcp_retrieve_rejects_zero_candidate_k(tmp_store):
+    with patch("mnemonics.server._retrieve") as mock_ret:
+        resp = _mcp(tmp_store, {
+            "jsonrpc": "2.0", "id": 43,
+            "method": "tools/call",
+            "params": {
+                "name": "mnemonics_retrieve",
+                "arguments": {"query": "test", "candidate_k": 0},
+            },
+        })
+    assert "error" in resp[0]
+    assert "candidate_k" in resp[0]["error"]["message"]
+    mock_ret.assert_not_called()
+
+
+def test_mcp_retrieve_schema_advertises_hybrid(tmp_store):
+    resp = _mcp(tmp_store, {"jsonrpc": "2.0", "id": 44, "method": "tools/list", "params": {}})
+    retrieve_tool = next(t for t in resp[0]["result"]["tools"] if t["name"] == "mnemonics_retrieve")
+    props = retrieve_tool["inputSchema"]["properties"]
+    assert "hybrid" in props and props["hybrid"]["type"] == "boolean"
+    assert "candidate_k" in props and props["candidate_k"]["type"] == "integer"
 
 
 def test_mcp_pin(populated_store):
