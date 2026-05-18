@@ -111,15 +111,20 @@ class _Handler(BaseHTTPRequestHandler):
             if candidate_k < 1:
                 self._json(400, {"error": "candidate_k must be >= 1"})
                 return
-            result = _retrieve(
-                query=query,
-                store=_get_store(),
-                ns=body.get("ns", "default"),
-                top_k=int(body.get("top_k", 5)),
-                decay=bool(body.get("decay", True)),
-                hybrid=hybrid,
-                candidate_k=candidate_k,
-            )
+            try:
+                result = _retrieve(
+                    query=query,
+                    store=_get_store(),
+                    ns=body.get("ns", "default"),
+                    top_k=int(body.get("top_k", 5)),
+                    decay=bool(body.get("decay", True)),
+                    hybrid=hybrid,
+                    candidate_k=candidate_k,
+                    rerank=bool(body.get("rerank", False)),
+                )
+            except RuntimeError as e:
+                self._json(400, {"error": str(e)})
+                return
             self._json(200, result)
 
         else:
@@ -184,12 +189,11 @@ def _mcp_loop() -> None:
                                 "description": "Optional, one entry per text. Null entries are stored as no-summary.",
                             },
                         },
-                        "anyOf": [{"required": ["texts"]}, {"required": ["text"]}],
                     },
                 },
                 {
                     "name": "mnemonics_retrieve",
-                    "description": "Hybrid semantic + keyword search (vector cosine fused with BM25 via Reciprocal Rank Fusion) with tier-aware decay. Pinned (tier 0) memories never decay; tier 1 has 90-day half-life, tier 2 has 14-day. Set decay=false to see raw scores. Set hybrid=false to fall back to vector-only retrieval (rarely needed; hybrid wins or ties in every measured query class).",
+                    "description": "Hybrid semantic + keyword search (vector cosine fused with BM25 via Reciprocal Rank Fusion) with tier-aware decay. Pinned (tier 0) memories never decay; tier 1 has 90-day half-life, tier 2 has 14-day. Set decay=false to see raw scores. Set hybrid=false to fall back to vector-only retrieval (rarely needed; hybrid wins or ties in every measured query class). Set rerank=true to add an AdaptMem cross-encoder rerank stage over the widened candidate band (requires adaptmem installed).",
                     "inputSchema": {
                         "type": "object",
                         "properties": {
@@ -199,6 +203,7 @@ def _mcp_loop() -> None:
                             "decay": {"type": "boolean", "description": "Apply decay scoring (default true)"},
                             "hybrid": {"type": "boolean", "description": "Fuse vector + BM25 via RRF (default true)"},
                             "candidate_k": {"type": "integer", "description": "Per-channel pool size when hybrid=true (default 20)"},
+                            "rerank": {"type": "boolean", "description": "Cross-encoder rerank via AdaptMem over the candidate band (default false)"},
                         },
                         "required": ["query"],
                     },
@@ -297,15 +302,20 @@ def _mcp_loop() -> None:
                 if candidate_k < 1:
                     err("candidate_k must be >= 1")
                     continue
-                result = _retrieve(
-                    query=args["query"],
-                    store=_get_store(),
-                    ns=args.get("ns", "default"),
-                    top_k=int(args.get("top_k", 5)),
-                    decay=bool(args.get("decay", True)),
-                    hybrid=bool(args.get("hybrid", True)),
-                    candidate_k=candidate_k,
-                )
+                try:
+                    result = _retrieve(
+                        query=args["query"],
+                        store=_get_store(),
+                        ns=args.get("ns", "default"),
+                        top_k=int(args.get("top_k", 5)),
+                        decay=bool(args.get("decay", True)),
+                        hybrid=bool(args.get("hybrid", True)),
+                        candidate_k=candidate_k,
+                        rerank=bool(args.get("rerank", False)),
+                    )
+                except RuntimeError as e:
+                    err(str(e))
+                    continue
                 tier_label = {0: "pin", 1: "def", 2: "amb"}
                 lines = []
                 for r in result["results"]:
