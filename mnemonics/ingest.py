@@ -13,6 +13,69 @@ _encoder: Any = None
 _encoder_name: str = "all-MiniLM-L6-v2"
 
 
+# Preference / memory / concern phrase patterns. When ingest's
+# augment_preferences=True, each input text is scanned with these regexes;
+# matches become a synthetic "User has mentioned: ..." chunk that the
+# retriever can hit when the question's wording is paraphrastic and the raw
+# session text alone fails to match.
+_PREF_PATTERNS = [
+    re.compile(p, re.IGNORECASE) for p in (
+        r"i(?:'ve been| have been) having (?:trouble|issues?|problems?) with ([^,\.!?]{5,80})",
+        r"i(?:'ve been| have been) feeling ([^,\.!?]{5,60})",
+        r"i(?:'ve been| have been) (?:struggling|dealing) with ([^,\.!?]{5,80})",
+        r"i(?:'ve been| have been) (?:worried|concerned) about ([^,\.!?]{5,80})",
+        r"i(?:'m| am) (?:worried|concerned) about ([^,\.!?]{5,80})",
+        r"i prefer ([^,\.!?]{5,60})",
+        r"i usually ([^,\.!?]{5,60})",
+        r"i(?:'ve been| have been) (?:trying|attempting) to ([^,\.!?]{5,80})",
+        r"i(?:'ve been| have been) (?:considering|thinking about) ([^,\.!?]{5,80})",
+        r"lately[,\s]+(?:i've been|i have been|i'm|i am) ([^,\.!?]{5,80})",
+        r"recently[,\s]+(?:i've been|i have been|i'm|i am) ([^,\.!?]{5,80})",
+        r"i(?:'ve been| have been) (?:working on|focused on|interested in) ([^,\.!?]{5,80})",
+        r"i want to ([^,\.!?]{5,60})",
+        r"i(?:'m| am) looking (?:to|for) ([^,\.!?]{5,60})",
+        r"i(?:'m| am) thinking (?:about|of) ([^,\.!?]{5,60})",
+        r"i(?:'ve been| have been) (?:noticing|experiencing) ([^,\.!?]{5,80})",
+        r"i (?:still )?remember (?:the |my )?([^,\.!?]{5,80})",
+        r"i used to ([^,\.!?]{5,60})",
+        r"when i was (?:in high school|in college|young|a kid|growing up)[,\s]+([^,\.!?]{5,80})",
+        r"growing up[,\s]+([^,\.!?]{5,80})",
+    )
+]
+
+# Preserve any leading "TAG=value|" pseudo-namespace prefix the caller used on
+# the input (e.g. "SID=abc|...") so synthetic preference docs still carry the
+# same identifier and downstream code that parses out a session id sees a
+# match. No-op when no prefix is present.
+_INPUT_PREFIX_RE = re.compile(r"^([A-Za-z][A-Za-z_0-9]*=[^|\s]+\|)")
+
+
+def extract_preferences(text: str) -> list[str]:
+    """Return distinct preference / memory / concern mentions for synth indexing.
+
+    Caps at 12 to keep the synth doc tight. Empty list when nothing fires.
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+    for pat in _PREF_PATTERNS:
+        for m in pat.finditer(text):
+            if not m.groups():
+                continue
+            clean = m.group(1).strip().rstrip(".,;!? ")
+            if 5 <= len(clean) <= 80 and clean.lower() not in seen:
+                seen.add(clean.lower())
+                out.append(clean)
+                if len(out) >= 12:
+                    return out
+    return out
+
+
+def _build_preference_doc(text: str, prefs: list[str]) -> str:
+    m = _INPUT_PREFIX_RE.match(text)
+    prefix = m.group(1) if m else ""
+    return f"{prefix}User has mentioned: " + "; ".join(prefs)
+
+
 def _resolve_model(model: str) -> str:
     # MNEMONICS_ADAPTMEM_PATH swaps the default base encoder with a fine-tuned
     # adaptmem checkpoint at runtime. Same 384-dim contract, drop-in.
@@ -54,6 +117,7 @@ def ingest(
     model: str = "all-MiniLM-L6-v2",
     chunk_size: int = 200,
     chunk_overlap: int = 40,
+    augment_preferences: bool = False,
 ) -> int:
     """Chunk, embed and store texts. Returns total chunks stored.
 
@@ -62,6 +126,13 @@ def ingest(
     BM25 over the FTS mirror can find a chunk either via its raw words or
     via the higher-level gist. Vector embeddings stay over the raw chunk —
     the summary is a parallel keyword surface, not a replacement.
+
+    When `augment_preferences=True`, each input text is scanned for
+    preference/memory/concern phrasings ("I prefer X", "I remember Y",
+    "growing up Z"). Matches collapse into one synthetic
+    "User has mentioned: ..." chunk that is indexed alongside the raw
+    chunks. The synth chunk carries meta["kind"] = "preference" so
+    callers can tell augmented rows apart from raw ones.
     """
     # Guard: a single string is iterable in Python, would be ingested char-by-char.
     if isinstance(texts, str):
@@ -80,6 +151,12 @@ def ingest(
         all_chunks.extend(chunks)
         all_meta.extend([m] * len(chunks))
         all_summaries.extend([summary] * len(chunks))
+        if augment_preferences:
+            prefs = extract_preferences(text)
+            if prefs:
+                all_chunks.append(_build_preference_doc(text, prefs))
+                all_meta.append(m | {"kind": "preference"})
+                all_summaries.append(summary)
 
     if not all_chunks:
         return 0

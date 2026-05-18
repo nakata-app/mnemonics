@@ -134,3 +134,72 @@ def test_ingest_batch_size_param(tmp_store, mock_enc):
     call_kwargs = enc.encode.call_args[1]
     assert call_kwargs.get("batch_size") == 64
     assert call_kwargs.get("normalize_embeddings") is True
+
+
+# ── extract_preferences + augment_preferences ────────────────────────────────
+
+def test_extract_preferences_basic_patterns():
+    from mnemonics.ingest import extract_preferences
+    text = "I prefer chai over coffee. I've been working on a new puzzle. I remember the high school debate team."
+    out = extract_preferences(text)
+    assert any("chai" in p for p in out)
+    assert any("puzzle" in p for p in out)
+    assert any("debate" in p.lower() or "high school" in p.lower() for p in out)
+
+
+def test_extract_preferences_dedup():
+    from mnemonics.ingest import extract_preferences
+    text = "I prefer tea over coffee. I prefer tea over coffee. I prefer tea over coffee."
+    out = extract_preferences(text)
+    assert len(out) == 1
+
+
+def test_extract_preferences_empty_on_no_match():
+    from mnemonics.ingest import extract_preferences
+    assert extract_preferences("today is sunny. that is all.") == []
+
+
+def test_extract_preferences_caps_at_12():
+    from mnemonics.ingest import extract_preferences
+    text = ". ".join(f"I prefer item{i}xyz long enough" for i in range(20))
+    out = extract_preferences(text)
+    assert len(out) <= 12
+
+
+def test_build_preference_doc_preserves_prefix():
+    from mnemonics.ingest import _build_preference_doc
+    out = _build_preference_doc("SID=abc123|some session content", ["a thing", "b thing"])
+    assert out.startswith("SID=abc123|")
+    assert "User has mentioned" in out
+    assert "a thing" in out and "b thing" in out
+
+
+def test_build_preference_doc_no_prefix_when_absent():
+    from mnemonics.ingest import _build_preference_doc
+    out = _build_preference_doc("plain text no prefix", ["foo"])
+    assert out == "User has mentioned: foo"
+
+
+def test_ingest_augment_preferences_adds_synth_chunk(tmp_store, mock_enc):
+    # 1 raw chunk (short text) + 1 synth pref chunk = 2 vectors
+    mock_enc.return_value = _mock_encoder(2)
+    n = ingest(
+        ["I prefer chai over coffee in the morning before sunrise"],
+        tmp_store,
+        augment_preferences=True,
+    )
+    assert n == 2
+
+
+def test_ingest_augment_preferences_no_synth_when_no_match(tmp_store, mock_enc):
+    enc = _mock_encoder(1)
+    mock_enc.return_value = enc
+    n = ingest(["random sentence with nothing to extract"], tmp_store, augment_preferences=True)
+    assert n == 1  # only the raw chunk, no synth
+
+
+def test_ingest_augment_off_is_default(tmp_store, mock_enc):
+    enc = _mock_encoder(1)
+    mock_enc.return_value = enc
+    n = ingest(["I prefer chai over coffee always"], tmp_store)  # augment_preferences default False
+    assert n == 1  # no synth chunk
