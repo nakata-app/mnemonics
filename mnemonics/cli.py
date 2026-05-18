@@ -40,7 +40,7 @@ def main() -> None:
     r.add_argument("--top-k", type=int, default=5)
     r.add_argument("--no-decay", action="store_true", help="Disable tier-aware decay scoring")
     r.add_argument("--no-hybrid", dest="hybrid", action="store_false", default=True, help="Disable hybrid; fall back to vector-only retrieval")
-    r.add_argument("--candidate-k", type=int, default=20, help="Per-channel candidate pool size for hybrid (default 20)")
+    r.add_argument("--candidate-k", type=int, default=50, help="Per-channel candidate pool size for hybrid (default 50)")
     r.add_argument("--rerank", action="store_true", help="Cross-encoder rerank via AdaptMem over the widened candidate band (requires adaptmem)")
     r.add_argument("--path", default="~/.mnemonics")
 
@@ -136,7 +136,7 @@ def main() -> None:
         choices=["vector", "hybrid"],
         help="Retrieval method (default: vector). Repeat to compare vector vs hybrid.",
     )
-    ev.add_argument("--candidate-k", type=int, default=20, help="Per-channel pool size when method=hybrid (default 20)")
+    ev.add_argument("--candidate-k", type=int, default=50, help="Per-channel pool size when method=hybrid (default 50)")
     ev.add_argument("--top-k", type=int, default=10)
     ev.add_argument("--out", default=None, help="Directory to write per-encoder JSON results")
 

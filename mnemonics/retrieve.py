@@ -166,7 +166,7 @@ def retrieve(
     model: str = "all-MiniLM-L6-v2",
     decay: bool = True,
     hybrid: bool = True,
-    candidate_k: int = 20,
+    candidate_k: int = 50,
     rerank: bool = False,
     boost_signals: bool = True,
 ) -> dict[str, Any]:

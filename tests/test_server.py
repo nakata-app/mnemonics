@@ -184,7 +184,7 @@ def test_retrieve_default_hybrid_true(tmp_store):
         http_call(tmp_store, "POST", "/retrieve", {"query": "q"})
     call_kwargs = mock_ret.call_args[1]
     assert call_kwargs["hybrid"] is True
-    assert call_kwargs["candidate_k"] == 20
+    assert call_kwargs["candidate_k"] == 50
 
 
 def test_retrieve_explicit_hybrid_false_honored(tmp_store):
@@ -347,7 +347,7 @@ def test_mcp_retrieve_default_hybrid_true(tmp_store):
         })
     kwargs = mock_ret.call_args.kwargs
     assert kwargs["hybrid"] is True
-    assert kwargs["candidate_k"] == 20
+    assert kwargs["candidate_k"] == 50
 
 
 def test_mcp_retrieve_explicit_hybrid_false_honored(tmp_store):

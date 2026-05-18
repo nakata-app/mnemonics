@@ -107,7 +107,7 @@ class _Handler(BaseHTTPRequestHandler):
                 self._json(400, {"error": "query must not be empty"})
                 return
             hybrid = bool(body.get("hybrid", True))
-            candidate_k = int(body.get("candidate_k", 20))
+            candidate_k = int(body.get("candidate_k", 50))
             if candidate_k < 1:
                 self._json(400, {"error": "candidate_k must be >= 1"})
                 return
@@ -202,7 +202,7 @@ def _mcp_loop() -> None:
                             "top_k": {"type": "integer"},
                             "decay": {"type": "boolean", "description": "Apply decay scoring (default true)"},
                             "hybrid": {"type": "boolean", "description": "Fuse vector + BM25 via RRF (default true)"},
-                            "candidate_k": {"type": "integer", "description": "Per-channel pool size when hybrid=true (default 20)"},
+                            "candidate_k": {"type": "integer", "description": "Per-channel pool size when hybrid=true (default 50)"},
                             "rerank": {"type": "boolean", "description": "Cross-encoder rerank via AdaptMem over the candidate band (default false)"},
                         },
                         "required": ["query"],
@@ -298,7 +298,7 @@ def _mcp_loop() -> None:
                 ok({"content": [{"type": "text", "text": f"Stored {n} chunks."}]})
 
             elif name == "mnemonics_retrieve":
-                candidate_k = int(args.get("candidate_k", 20))
+                candidate_k = int(args.get("candidate_k", 50))
                 if candidate_k < 1:
                     err("candidate_k must be >= 1")
                     continue
