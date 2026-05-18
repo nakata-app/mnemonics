@@ -257,3 +257,83 @@ def test_rerank_empty_results_returns_empty(tmp_store, mock_enc, monkeypatch):
     result = retrieve("q", tmp_store, top_k=5, rerank=True)
     assert result["results"] == []
     assert stub.last_texts is None  # CE never invoked
+
+
+# ── signal boost (quoted phrase + person name) ────────────────────────────────
+
+
+def test_extract_quoted_phrases_single_and_double():
+    from mnemonics.retrieve import _extract_quoted_phrases
+    q = "what did you say about 'sexual compulsions' and \"binge eating\" earlier"
+    out = _extract_quoted_phrases(q)
+    assert "sexual compulsions" in out
+    assert "binge eating" in out
+
+
+def test_extract_quoted_phrases_too_short_skipped():
+    from mnemonics.retrieve import _extract_quoted_phrases
+    # Single-char and 2-char quoted content must not match (min length is 3)
+    assert _extract_quoted_phrases("only 'a' here") == []
+    assert _extract_quoted_phrases("only 'no'") == []
+
+
+def test_extract_person_names_basic():
+    from mnemonics.retrieve import _extract_person_names
+    out = _extract_person_names("What did I do with Rachel on Wednesday?")
+    assert "rachel" in out
+    assert "wednesday" not in out  # filtered by _NOT_NAMES
+
+
+def test_extract_person_names_question_words_filtered():
+    from mnemonics.retrieve import _extract_person_names
+    assert _extract_person_names("What is the answer?") == []
+
+
+def test_signal_boost_quoted_match_lifts():
+    from mnemonics.retrieve import _signal_boost
+    score = _signal_boost("session mentions sexual compulsions clearly", ["sexual compulsions"], [])
+    assert abs(score - (1.0 + 0.60)) < 1e-6
+
+
+def test_signal_boost_name_match_smaller_lift():
+    from mnemonics.retrieve import _signal_boost
+    score = _signal_boost("I went to dinner with rachel", [], ["rachel"])
+    assert abs(score - (1.0 + 0.25)) < 1e-6
+
+
+def test_signal_boost_no_signals_is_noop():
+    from mnemonics.retrieve import _signal_boost
+    assert _signal_boost("any text", [], []) == 1.0
+
+
+def test_retrieve_boost_signals_attaches_field_on_match(populated_store, mock_enc):
+    """signal_boost field gets a >1.0 value for any doc matching quoted phrase."""
+    store, docs, vecs = populated_store
+    mock_enc.return_value = _enc_returning(vecs[0])
+    q = "where did you mention 'Photosynthesis converts sunlight'?"
+    # boost_signals=True is default
+    result = retrieve(q, store, top_k=5, hybrid=False, decay=False)
+    photo = next(r for r in result["results"] if "Photosynthesis" in r["text"])
+    assert photo["signal_boost"] > 1.0
+    # Non-matching docs keep signal_boost = 1.0
+    other = next(r for r in result["results"] if "Eiffel" in r["text"])
+    assert other["signal_boost"] == 1.0
+
+
+def test_retrieve_boost_signals_off_is_baseline(populated_store, mock_enc):
+    """Setting boost_signals=False should suppress the boost."""
+    store, docs, vecs = populated_store
+    mock_enc.return_value = _enc_returning(vecs[0])
+    q = "where did you mention 'Photosynthesis converts sunlight'?"
+    result = retrieve(q, store, top_k=5, hybrid=False, decay=False, boost_signals=False)
+    for r in result["results"]:
+        assert r["signal_boost"] == 1.0
+
+
+def test_retrieve_boost_signals_no_match_is_noop(populated_store, mock_enc):
+    """Quoted phrase that no doc contains should leave order unchanged."""
+    store, docs, vecs = populated_store
+    mock_enc.return_value = _enc_returning(vecs[0])
+    base = retrieve("nothing matches here", store, top_k=5, hybrid=False, decay=False, boost_signals=False)
+    boosted = retrieve("nothing 'xyz' matches", store, top_k=5, hybrid=False, decay=False, boost_signals=True)
+    assert [r["id"] for r in base["results"]] == [r["id"] for r in boosted["results"]]

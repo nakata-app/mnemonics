@@ -3,11 +3,51 @@ from __future__ import annotations
 
 import math
 import os
+import re
 from datetime import datetime, timezone
 from typing import Any
 
 from mnemonics.store import Store
 from mnemonics.ingest import _get_encoder
+
+# Question-signal extractors. Lifted from longmemeval analysis: quoted phrases
+# and proper-noun person names that the bi-encoder under-weights are reliably
+# recoverable via exact-match boost.
+_QUOTED_RE = (re.compile(r"'([^']{3,60})'"), re.compile(r'"([^"]{3,60})"'))
+_NAME_RE = re.compile(r"\b[A-Z][a-z]{2,15}\b")
+_NOT_NAMES = frozenset({
+    "What","When","Where","Who","How","Which","Did","Do","Was","Were","Have","Has",
+    "Had","Is","Are","The","My","Our","Their","Can","Could","Would","Should","Will",
+    "Shall","May","Might","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday",
+    "Sunday","January","February","March","April","May","June","July","August",
+    "September","October","November","December","In","On","At","For","To","Of","With",
+    "By","From","And","But","I","It","Its","This","That","These","Those","Previously",
+    "Recently","Also","Just","Very","More",
+})
+
+
+def _extract_quoted_phrases(query: str) -> list[str]:
+    phrases: list[str] = []
+    for pat in _QUOTED_RE:
+        phrases.extend(pat.findall(query))
+    return [p.strip().lower() for p in phrases if len(p.strip()) >= 3]
+
+
+def _extract_person_names(query: str) -> list[str]:
+    return [w.lower() for w in set(_NAME_RE.findall(query)) if w not in _NOT_NAMES]
+
+
+def _signal_boost(text: str, quoted: list[str], names: list[str]) -> float:
+    """Multiplicative boost for rows whose text contains question-side signals.
+    Returns 1.0 (no-op) when no signals are present or matched.
+    Strong (1.6x) on exact quoted-phrase match; moderate (1.25x) on name match.
+    """
+    if not quoted and not names:
+        return 1.0
+    t = text.lower()
+    q_hit = sum(1 for p in quoted if p in t) / max(len(quoted), 1) if quoted else 0.0
+    n_hit = sum(1 for n in names if n in t) / max(len(names), 1) if names else 0.0
+    return 1.0 + 0.60 * q_hit + 0.25 * n_hit
 
 # Lazy-cached AdaptMem instance for CE rerank. We hold only the CrossEncoder
 # state; no bi-encoder index is needed (mnemonics owns its own HNSW + BM25).
@@ -128,6 +168,7 @@ def retrieve(
     hybrid: bool = True,
     candidate_k: int = 20,
     rerank: bool = False,
+    boost_signals: bool = True,
 ) -> dict[str, Any]:
     """Search the store for query. Tier-aware decay + reinforcement applied unless decay=False.
 
@@ -140,6 +181,11 @@ def retrieve(
     then the AdaptMem cross-encoder rescores (query, text) pairs and the
     final list is truncated to `top_k` sorted by ce_score desc. Requires the
     `adaptmem` package; env `MNEMONICS_RERANK_MODEL` overrides the CE model.
+
+    When `boost_signals=True` (default), exact-match boost is applied for
+    quoted phrases ('X' / "X") and proper-noun person names (capitalized
+    mid-sentence) extracted from the query. No-op when no signals are found
+    or no candidate text matches; never penalizes.
     """
     enc = _get_encoder(model)
     qvec = enc.encode([query], normalize_embeddings=True, convert_to_numpy=True)[0]
@@ -150,6 +196,9 @@ def retrieve(
         results = _rrf_fuse([vec_results, bm25_results], top_k=fusion_top)
     else:
         results = store.search(qvec, ns=ns, top_k=fusion_top)
+
+    quoted = _extract_quoted_phrases(query) if boost_signals else []
+    names = _extract_person_names(query) if boost_signals else []
 
     for r in results:
         r["raw_score"] = round(r["score"], 4)
@@ -165,6 +214,12 @@ def retrieve(
             r["decay_factor"] = 1.0
             r["boost"] = 1.0
             r["score"] = r["raw_score"]
+        if boost_signals and (quoted or names):
+            sig = _signal_boost(r["text"], quoted, names)
+            r["signal_boost"] = round(sig, 4)
+            r["score"] = round(r["score"] * sig, 4)
+        else:
+            r["signal_boost"] = 1.0
 
     if rerank:
         results = _ce_rerank(query, results, top_k=top_k)
