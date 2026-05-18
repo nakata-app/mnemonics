@@ -203,3 +203,128 @@ def test_ingest_augment_off_is_default(tmp_store, mock_enc):
     mock_enc.return_value = enc
     n = ingest(["I prefer chai over coffee always"], tmp_store)  # augment_preferences default False
     assert n == 1  # no synth chunk
+
+
+# ── extract_facts + augment_assistant_facts ─────────────────────────────────
+
+def test_extract_facts_percent():
+    from mnemonics.ingest import extract_facts
+    text = "[user] hi\n[assistant] About 20% of the executives at the conference were women."
+    out = extract_facts(text)
+    assert any("20%" in s for s in out)
+
+
+def test_extract_facts_dollar():
+    from mnemonics.ingest import extract_facts
+    text = "[user] how much?\n[assistant] You saved $50 by taking the train."
+    out = extract_facts(text)
+    # Either the $50 amount or the 'you saved' clause should be captured
+    assert any("$50" in s for s in out) or any("saved" in s.lower() for s in out)
+
+
+def test_extract_facts_unit_quantity():
+    from mnemonics.ingest import extract_facts
+    text = "[user] q\n[assistant] The meeting lasted 3 hours and the trip was 28 miles."
+    out = extract_facts(text)
+    assert any("3 hours" in s for s in out)
+    assert any("28 miles" in s for s in out)
+
+
+def test_extract_facts_skips_user_turns():
+    """Pure numeric in a user turn should NOT be captured (assistant-only)."""
+    from mnemonics.ingest import extract_facts
+    text = "[user] I'm 30 years old and earn 50%.\n[assistant] Got it, what next?"
+    out = extract_facts(text)
+    # The user line had "30 years" and "50%" — should be filtered out.
+    assert not any("30 years" in s for s in out)
+    assert not any("50%" in s for s in out)
+
+
+def test_extract_facts_no_role_marker_scans_whole_text():
+    """Backward compat: plain text with no [role] markers still gets scanned."""
+    from mnemonics.ingest import extract_facts
+    text = "raw note: total cost is $1,234.56 with 15% tax."
+    out = extract_facts(text)
+    assert any("$1,234" in s for s in out)
+
+
+def test_extract_facts_empty_when_no_numbers():
+    from mnemonics.ingest import extract_facts
+    text = "[user] hi\n[assistant] Thanks for sharing your thoughts on this topic."
+    assert extract_facts(text) == []
+
+
+def test_extract_facts_dedup():
+    from mnemonics.ingest import extract_facts
+    text = "[assistant] price is $50. also $50 fee. and again $50."
+    out = extract_facts(text)
+    # Each $50 sits in different surrounding context so might dedupe by snippet —
+    # we only assert at most 12 cap and no exact duplicates.
+    assert len(out) == len(set(s.lower() for s in out))
+
+
+def test_extract_facts_caps_at_12():
+    from mnemonics.ingest import extract_facts
+    # 20 different dollar amounts in assistant turn
+    text = "[assistant] " + ". ".join(f"item {i} costs $1{i:02d}" for i in range(20))
+    out = extract_facts(text)
+    assert len(out) <= 12
+
+
+def test_extract_facts_ignores_you_need_to():
+    """'you need to X' is instructional, not a fact — must not match."""
+    from mnemonics.ingest import extract_facts
+    text = "[assistant] you need to consider both options and you need to plan ahead."
+    out = extract_facts(text)
+    assert not any("need to" in s.lower() for s in out)
+
+
+def test_build_fact_doc_preserves_prefix():
+    from mnemonics.ingest import _build_fact_doc
+    out = _build_fact_doc("SID=xyz|some session", ["20% of execs", "$50 saved"])
+    assert out.startswith("SID=xyz|")
+    assert "Key facts" in out
+    assert "20% of execs" in out
+    assert "$50 saved" in out
+
+
+def test_ingest_augment_assistant_facts_adds_synth_chunk(tmp_store, mock_enc):
+    mock_enc.return_value = _mock_encoder(2)
+    n = ingest(
+        ["[user] hi\n[assistant] 20% of execs were women and the trip was 28 miles."],
+        tmp_store,
+        augment_assistant_facts=True,
+    )
+    assert n == 2  # 1 raw + 1 synth fact chunk
+
+
+def test_ingest_augment_assistant_facts_no_synth_when_no_match(tmp_store, mock_enc):
+    mock_enc.return_value = _mock_encoder(1)
+    n = ingest(
+        ["[user] hi\n[assistant] Sure, I can help with that."],
+        tmp_store,
+        augment_assistant_facts=True,
+    )
+    assert n == 1  # no synth, no numeric facts present
+
+
+def test_ingest_augment_assistant_facts_off_by_default(tmp_store, mock_enc):
+    mock_enc.return_value = _mock_encoder(1)
+    n = ingest(
+        ["[assistant] price is $50 and trip was 28 miles"],
+        tmp_store,
+    )
+    assert n == 1  # default False, no synth
+
+
+def test_ingest_can_stack_both_augments(tmp_store, mock_enc):
+    """When both flags on and both fire, get raw + pref + fact = 3."""
+    mock_enc.return_value = _mock_encoder(3)
+    n = ingest(
+        ["[user] I prefer chai in the morning before work\n"
+         "[assistant] Great, that's 20% of typical coffee drinkers."],
+        tmp_store,
+        augment_preferences=True,
+        augment_assistant_facts=True,
+    )
+    assert n == 3

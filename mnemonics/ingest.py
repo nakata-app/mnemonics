@@ -56,6 +56,36 @@ _PREF_PATTERNS = [
 _INPUT_PREFIX_RE = re.compile(r"^([A-Za-z][A-Za-z_0-9]*=[^|\s]+\|)")
 
 
+# Numeric and declarative fact patterns. When ingest's
+# augment_assistant_facts=True, the assistant-role turns in a session are
+# scanned for these; the surrounding ~60-char snippet becomes part of a
+# synthetic "Key facts: ..." chunk. Questions like "what % were women?" or
+# "how much did I save on the train?" embed near the numeric snippet even
+# when the raw chunk gets buried in a long session.
+_FACT_PATTERNS = [
+    re.compile(p, re.IGNORECASE) for p in (
+        # Percentages: "20%", "10-20%", "20 percent"
+        r"\d+(?:[-–]\d+)?(?:\.\d+)?\s*(?:%|percent\b)",
+        # Dollar amounts: "$120", "$1,234.56", "$80-$100"
+        r"\$\s?\d+(?:,\d{3})*(?:\.\d+)?(?:\s?[-–]\s?\$?\d+(?:,\d{3})*(?:\.\d+)?)?",
+        # Quantities with units (durations, distances, weights, calories)
+        r"\b\d+(?:,\d{3})*(?:[-–]\d+(?:,\d{3})*)?(?:\.\d+)?\s*(?:hours?|hrs?|minutes?|mins?|seconds?|days?|weeks?|months?|years?|miles?|km|kilometers?|kg|kilograms?|lbs?|pounds?|grams?|mg|liters?|gallons?|gal|calories?|kcal|°[CF]|degrees?)\b",
+        # Second-person assistant-confirmation: "you saved $50", "you spent 2 hours"
+        # Restricted to verbs that imply a stated past/computed value (not "you need to").
+        r"\byou\s+(?:saved|spent|paid|earned|owe|received|got|made|gained|lost|traveled|covered|burned)\s+[^.!?\n]{2,60}",
+        # "Your X is/was Y" / "The X is Y" — narrow metric-keyword set
+        r"\b(?:your|the)\s+(?:total|result|answer|sum|average|count|distance|cost|price|fee|amount|duration|score|rate|ratio|share|salary|income|budget)\s+(?:of\s+[^.!?\n]{1,30}\s+)?(?:is|was|comes? to|equals?|amounts? to)\s+[^.!?\n]{2,40}",
+    )
+]
+
+
+# Role marker as emitted by callers that flatten conversations into a single
+# string ("[user] ...\n[assistant] ...\n"). We split on this when scanning
+# for assistant-only facts; absent any markers we fall back to scanning the
+# whole text.
+_ROLE_LINE_RE = re.compile(r"^\[(user|assistant|system|tool)\]\s?", re.MULTILINE)
+
+
 def extract_preferences(text: str) -> list[str]:
     """Return distinct preference / memory / concern mentions for synth indexing.
 
@@ -80,6 +110,77 @@ def _build_preference_doc(text: str, prefs: list[str]) -> str:
     m = _INPUT_PREFIX_RE.match(text)
     prefix = m.group(1) if m else ""
     return f"{prefix}User has mentioned: " + "; ".join(prefs)
+
+
+def _assistant_segments(text: str) -> list[str]:
+    """Return assistant-role content segments from a role-tagged transcript.
+
+    Falls back to ``[text]`` when no role markers are present so legacy
+    callers (raw notes, single-author docs) still get scanned.
+    """
+    if not _ROLE_LINE_RE.search(text):
+        return [text]
+    parts: list[str] = []
+    cur_role: str | None = None
+    buf: list[str] = []
+    for line in text.splitlines():
+        m = _ROLE_LINE_RE.match(line)
+        if m:
+            if cur_role == "assistant" and buf:
+                parts.append("\n".join(buf).strip())
+            cur_role = m.group(1)
+            buf = [line[m.end():]]
+        else:
+            buf.append(line)
+    if cur_role == "assistant" and buf:
+        parts.append("\n".join(buf).strip())
+    return [p for p in parts if p]
+
+
+def extract_facts(text: str) -> list[str]:
+    """Return distinct numeric/declarative fact snippets from assistant turns.
+
+    Match spans that overlap or sit within 5 chars of each other are merged
+    before snipping, so "70°F to 80°F" or "$80 (was $100)" yield one snippet
+    rather than two near-duplicates. Each snippet is bounded to ~80 chars of
+    surrounding context so the embedding keeps the numeric token next to
+    its referent (currency name, what was being measured). Caps at 12 to
+    keep the synth chunk tight.
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+    for seg in _assistant_segments(text):
+        spans: list[tuple[int, int]] = []
+        for pat in _FACT_PATTERNS:
+            for m in pat.finditer(seg):
+                spans.append((m.start(), m.end()))
+        if not spans:
+            continue
+        spans.sort()
+        # Merge overlapping or near-overlapping (gap <= 5 chars) spans.
+        merged: list[tuple[int, int]] = []
+        for s, e in spans:
+            if merged and s <= merged[-1][1] + 5:
+                merged[-1] = (merged[-1][0], max(merged[-1][1], e))
+            else:
+                merged.append((s, e))
+        for s, e in merged:
+            lo = max(0, s - 25)
+            hi = min(len(seg), e + 25)
+            snip = seg[lo:hi].strip()
+            snip = re.sub(r"\s+", " ", snip).rstrip(".,;!? ")
+            if 8 <= len(snip) <= 140 and snip.lower() not in seen:
+                seen.add(snip.lower())
+                out.append(snip)
+                if len(out) >= 12:
+                    return out
+    return out
+
+
+def _build_fact_doc(text: str, facts: list[str]) -> str:
+    m = _INPUT_PREFIX_RE.match(text)
+    prefix = m.group(1) if m else ""
+    return f"{prefix}Key facts: " + "; ".join(facts)
 
 
 def _resolve_model(model: str) -> str:
@@ -124,6 +225,7 @@ def ingest(
     chunk_size: int = 200,
     chunk_overlap: int = 40,
     augment_preferences: bool = False,
+    augment_assistant_facts: bool = False,
 ) -> int:
     """Chunk, embed and store texts. Returns total chunks stored.
 
@@ -162,6 +264,12 @@ def ingest(
             if prefs:
                 all_chunks.append(_build_preference_doc(text, prefs))
                 all_meta.append(m | {"kind": "preference"})
+                all_summaries.append(summary)
+        if augment_assistant_facts:
+            facts = extract_facts(text)
+            if facts:
+                all_chunks.append(_build_fact_doc(text, facts))
+                all_meta.append(m | {"kind": "fact"})
                 all_summaries.append(summary)
 
     if not all_chunks:

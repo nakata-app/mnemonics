@@ -59,7 +59,10 @@ def _session_id_of(meta: str | None) -> str | None:
 
 def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                        candidate_k: int = 20,
-                       augment_preferences: bool = False) -> dict:
+                       augment_preferences: bool = False,
+                       augment_assistant_facts: bool = False,
+                       chunk_size: int = 200, chunk_overlap: int = 40,
+                       per_q_out: Path | None = None) -> dict:
     """Run mnemonics retrieve() across every question, return aggregated metrics."""
     from mnemonics.store import Store
     from mnemonics.ingest import ingest
@@ -68,6 +71,7 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
     ks = [1, 5, 10]
     hits = {k: 0 for k in ks}
     by_type = defaultdict(lambda: {"n": 0, **{f"hit@{k}": 0 for k in ks}})
+    per_q: list[dict] = []
     t0 = time.time()
     for i, q in enumerate(questions):
         # Fresh store per question — LongMemEval is per-question independent.
@@ -79,7 +83,10 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                 texts.append(f"SID={sid}|{_session_text(sess)}")
             if not texts:
                 continue
-            ingest(texts=texts, store=store, ns="lme", augment_preferences=augment_preferences)
+            ingest(texts=texts, store=store, ns="lme",
+                   augment_preferences=augment_preferences,
+                   augment_assistant_facts=augment_assistant_facts,
+                   chunk_size=chunk_size, chunk_overlap=chunk_overlap)
             try:
                 result = retrieve(
                     query=q["question"],
@@ -101,12 +108,26 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
 
             qtype = q.get("question_type", "unknown")
             by_type[qtype]["n"] += 1
+            q_hits = {}
             for k in ks:
-                if any(sid in answer_sids for sid in retrieved_sids[:k]):
+                hit = any(sid in answer_sids for sid in retrieved_sids[:k])
+                q_hits[k] = hit
+                if hit:
                     hits[k] += 1
                     by_type[qtype][f"hit@{k}"] += 1
+            if per_q_out is not None:
+                per_q.append({
+                    "qid": q.get("question_id"),
+                    "qtype": qtype,
+                    "question": q.get("question"),
+                    "answer": q.get("answer"),
+                    "answer_sids": list(answer_sids),
+                    "retrieved_top10_sids": retrieved_sids[:10],
+                    "hit@1": q_hits[1], "hit@5": q_hits[5], "hit@10": q_hits[10],
+                })
 
-        if (i + 1) % 5 == 0:
+        step = 1 if len(questions) <= 10 else 5
+        if (i + 1) % step == 0:
             elapsed = time.time() - t0
             rate = (i + 1) / elapsed
             eta = (len(questions) - i - 1) / max(rate, 1e-6)
@@ -132,6 +153,8 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
             for t, v in by_type.items()
         },
     }
+    if per_q_out is not None:
+        per_q_out.write_text(json.dumps(per_q, indent=2))
     return out
 
 
@@ -163,9 +186,15 @@ def main():
     ap.add_argument("--mode", choices=["both", "no_rerank", "rerank"], default="both")
     ap.add_argument("--augment-preferences", action="store_true",
                     help="Pass augment_preferences=True to ingest (synth pref docs)")
+    ap.add_argument("--augment-assistant-facts", action="store_true",
+                    help="Pass augment_assistant_facts=True to ingest (synth numeric-fact docs over assistant turns)")
     ap.add_argument("--candidate-k", type=int, default=20,
                     help="Per-channel candidate band before fusion (default 20, MemPalace uses 50)")
+    ap.add_argument("--chunk-size", type=int, default=200, help="Words per ingest chunk (default 200)")
+    ap.add_argument("--chunk-overlap", type=int, default=40, help="Overlap words between adjacent chunks (default 40)")
     ap.add_argument("--out", type=Path, default=Path("/tmp/mnemonics_vs_mempalace.json"))
+    ap.add_argument("--per-q-out", type=Path, default=None,
+                    help="Optional path to dump per-question hit/miss records")
     ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args()
 
@@ -189,17 +218,22 @@ def main():
     results = {"n_questions": len(questions), "mempalace_full": mempalace_baseline_summary()}
 
     if args.mode in ("both", "no_rerank"):
-        print(f"\n=== Mnemonics (no CE rerank) augment_prefs={args.augment_preferences} cand_k={args.candidate_k} ===", flush=True)
+        print(f"\n=== Mnemonics (no CE rerank) augment_prefs={args.augment_preferences} augment_facts={args.augment_assistant_facts} cand_k={args.candidate_k} chunk={args.chunk_size}/{args.chunk_overlap} ===", flush=True)
         results["mnemonics_no_rerank"] = evaluate_mnemonics(
             questions, rerank=False, candidate_k=args.candidate_k,
             augment_preferences=args.augment_preferences,
+            augment_assistant_facts=args.augment_assistant_facts,
+            chunk_size=args.chunk_size, chunk_overlap=args.chunk_overlap,
         )
 
     if args.mode in ("both", "rerank"):
-        print(f"\n=== Mnemonics (CE rerank) augment_prefs={args.augment_preferences} cand_k={args.candidate_k} ===", flush=True)
+        print(f"\n=== Mnemonics (CE rerank) augment_prefs={args.augment_preferences} augment_facts={args.augment_assistant_facts} cand_k={args.candidate_k} chunk={args.chunk_size}/{args.chunk_overlap} ===", flush=True)
         results["mnemonics_rerank"] = evaluate_mnemonics(
             questions, rerank=True, candidate_k=args.candidate_k,
             augment_preferences=args.augment_preferences,
+            augment_assistant_facts=args.augment_assistant_facts,
+            chunk_size=args.chunk_size, chunk_overlap=args.chunk_overlap,
+            per_q_out=args.per_q_out,
         )
 
     args.out.write_text(json.dumps(results, indent=2))
