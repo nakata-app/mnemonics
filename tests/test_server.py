@@ -178,13 +178,21 @@ def test_retrieve_passes_top_k(tmp_store):
     assert call_kwargs["top_k"] == 10
 
 
-def test_retrieve_default_hybrid_false(tmp_store):
+def test_retrieve_default_hybrid_true(tmp_store):
     fake_result = {"results": []}
     with patch("mnemonics.server._retrieve", return_value=fake_result) as mock_ret:
         http_call(tmp_store, "POST", "/retrieve", {"query": "q"})
     call_kwargs = mock_ret.call_args[1]
-    assert call_kwargs["hybrid"] is False
+    assert call_kwargs["hybrid"] is True
     assert call_kwargs["candidate_k"] == 20
+
+
+def test_retrieve_explicit_hybrid_false_honored(tmp_store):
+    fake_result = {"results": []}
+    with patch("mnemonics.server._retrieve", return_value=fake_result) as mock_ret:
+        http_call(tmp_store, "POST", "/retrieve", {"query": "q", "hybrid": False})
+    call_kwargs = mock_ret.call_args[1]
+    assert call_kwargs["hybrid"] is False
 
 
 def test_retrieve_passes_hybrid(tmp_store):
@@ -329,7 +337,7 @@ def test_mcp_retrieve(tmp_store):
     assert "raw=" in text and "decay=" in text and "boost=" in text and "tier=" in text
 
 
-def test_mcp_retrieve_default_hybrid_false(tmp_store):
+def test_mcp_retrieve_default_hybrid_true(tmp_store):
     fake = {"results": []}
     with patch("mnemonics.server._retrieve", return_value=fake) as mock_ret:
         _mcp(tmp_store, {
@@ -338,8 +346,20 @@ def test_mcp_retrieve_default_hybrid_false(tmp_store):
             "params": {"name": "mnemonics_retrieve", "arguments": {"query": "test"}},
         })
     kwargs = mock_ret.call_args.kwargs
-    assert kwargs["hybrid"] is False
+    assert kwargs["hybrid"] is True
     assert kwargs["candidate_k"] == 20
+
+
+def test_mcp_retrieve_explicit_hybrid_false_honored(tmp_store):
+    fake = {"results": []}
+    with patch("mnemonics.server._retrieve", return_value=fake) as mock_ret:
+        _mcp(tmp_store, {
+            "jsonrpc": "2.0", "id": 411,
+            "method": "tools/call",
+            "params": {"name": "mnemonics_retrieve", "arguments": {"query": "test", "hybrid": False}},
+        })
+    kwargs = mock_ret.call_args.kwargs
+    assert kwargs["hybrid"] is False
 
 
 def test_mcp_retrieve_passes_hybrid(tmp_store):

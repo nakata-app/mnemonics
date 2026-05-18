@@ -106,7 +106,7 @@ class _Handler(BaseHTTPRequestHandler):
             if not query:
                 self._json(400, {"error": "query must not be empty"})
                 return
-            hybrid = bool(body.get("hybrid", False))
+            hybrid = bool(body.get("hybrid", True))
             candidate_k = int(body.get("candidate_k", 20))
             if candidate_k < 1:
                 self._json(400, {"error": "candidate_k must be >= 1"})
@@ -189,7 +189,7 @@ def _mcp_loop() -> None:
                 },
                 {
                     "name": "mnemonics_retrieve",
-                    "description": "Semantic search with tier-aware decay. Pinned (tier 0) memories never decay; tier 1 has 90-day half-life, tier 2 has 14-day. Set decay=false to see raw cosine scores. Set hybrid=true to fuse vector cosine with BM25 keyword (SQLite FTS5) via Reciprocal Rank Fusion — useful when exact tokens (API names, version strings, identifiers) matter as much as semantic similarity.",
+                    "description": "Hybrid semantic + keyword search (vector cosine fused with BM25 via Reciprocal Rank Fusion) with tier-aware decay. Pinned (tier 0) memories never decay; tier 1 has 90-day half-life, tier 2 has 14-day. Set decay=false to see raw scores. Set hybrid=false to fall back to vector-only retrieval (rarely needed; hybrid wins or ties in every measured query class).",
                     "inputSchema": {
                         "type": "object",
                         "properties": {
@@ -197,7 +197,7 @@ def _mcp_loop() -> None:
                             "ns": {"type": "string"},
                             "top_k": {"type": "integer"},
                             "decay": {"type": "boolean", "description": "Apply decay scoring (default true)"},
-                            "hybrid": {"type": "boolean", "description": "Fuse vector + BM25 via RRF (default false)"},
+                            "hybrid": {"type": "boolean", "description": "Fuse vector + BM25 via RRF (default true)"},
                             "candidate_k": {"type": "integer", "description": "Per-channel pool size when hybrid=true (default 20)"},
                         },
                         "required": ["query"],
@@ -303,7 +303,7 @@ def _mcp_loop() -> None:
                     ns=args.get("ns", "default"),
                     top_k=int(args.get("top_k", 5)),
                     decay=bool(args.get("decay", True)),
-                    hybrid=bool(args.get("hybrid", False)),
+                    hybrid=bool(args.get("hybrid", True)),
                     candidate_k=candidate_k,
                 )
                 tier_label = {0: "pin", 1: "def", 2: "amb"}
