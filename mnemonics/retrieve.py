@@ -83,7 +83,7 @@ def retrieve(
     top_k: int = 5,
     model: str = "all-MiniLM-L6-v2",
     decay: bool = True,
-    hybrid: bool = False,
+    hybrid: bool = True,
     candidate_k: int = 20,
 ) -> dict[str, Any]:
     """Search the store for query. Tier-aware decay + reinforcement applied unless decay=False.

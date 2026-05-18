@@ -4,17 +4,45 @@ All notable changes to mnemonics. Format follows [Keep a Changelog](https://keep
 
 ## [0.3.0] - 2026-05-17
 
+### Changed
+
+- **Default retrieval method flipped to hybrid (BREAKING, behavior).**
+  `retrieve()`, MCP `mnemonics_retrieve`, HTTP `POST /retrieve`, and the
+  `mnemonics retrieve` CLI now default to hybrid (vector cosine + BM25
+  fused via RRF). Vector-only is reachable via `hybrid=false`
+  (library/MCP/HTTP) or `--no-hybrid` (CLI).
+
+  Evidence: 400-chunk gold set sampled from real production memories,
+  210 queries across three classes (exact-token, sentence-fragment,
+  shuffled-keywords). Hybrid won every class with zero regressions
+  (no query lost 2+ rank positions vs vector-only):
+
+  ```
+  metric   vector  hybrid    delta
+  mrr      0.330   0.676    +0.347
+  r@5      0.381   0.943    +0.562
+  r@10     0.471   1.000    +0.529
+  ndcg@10  0.363   0.757    +0.394
+  ```
+
+  Raw per-query results held off-repo (the gold set was sampled from
+  private user memory). Methodology reproducible: sample ~400 chunks
+  200..2000 chars, build queries in three classes (exact-token,
+  sentence-fragment, shuffled-content-words), run
+  `mnemonics.eval.run_eval` with `method=vector` and `method=hybrid`.
+
+  To preserve old behavior, pass `hybrid=false` (library/server) or use
+  `--no-hybrid` (CLI).
+
 ### Added
 
-- **Hybrid retrieval exposed on MCP and HTTP.** `mnemonics_retrieve`
-  (MCP) and `POST /retrieve` (HTTP) now accept `hybrid: bool` (default
-  `false`) and `candidate_k: int` (default `20`). When `hybrid=true`,
-  the request fuses the vector cosine top-`candidate_k` with the BM25
-  (SQLite FTS5) top-`candidate_k` via Reciprocal Rank Fusion, then
-  applies the existing tier-aware decay + reinforcement pass on the
-  top-`top_k`. Useful when exact tokens (API names, version strings,
-  identifiers) matter alongside semantic similarity. The default
-  stays vector-only so existing callers see no behavior change.
+- **Hybrid retrieval parameters exposed on MCP and HTTP.**
+  `mnemonics_retrieve` (MCP) and `POST /retrieve` (HTTP) accept
+  `hybrid: bool` and `candidate_k: int` (default `20`). When
+  `hybrid=true`, the request fuses the vector cosine top-`candidate_k`
+  with the BM25 (SQLite FTS5) top-`candidate_k` via Reciprocal Rank
+  Fusion, then applies the existing tier-aware decay + reinforcement
+  pass on the top-`top_k`.
 - **Raw + summary hybrid storage.** Every row now has an optional
   `summary` column alongside the raw `text`. Embeddings are still
   computed from the raw chunk, but the FTS5 mirror indexes both

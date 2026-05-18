@@ -39,7 +39,7 @@ def main() -> None:
     r.add_argument("--ns", default="default")
     r.add_argument("--top-k", type=int, default=5)
     r.add_argument("--no-decay", action="store_true", help="Disable tier-aware decay scoring")
-    r.add_argument("--hybrid", action="store_true", help="Fuse vector + BM25 (SQLite FTS5) with RRF")
+    r.add_argument("--no-hybrid", dest="hybrid", action="store_false", default=True, help="Disable hybrid; fall back to vector-only retrieval")
     r.add_argument("--candidate-k", type=int, default=20, help="Per-channel candidate pool size for hybrid (default 20)")
     r.add_argument("--path", default="~/.mnemonics")
 
