@@ -106,13 +106,25 @@ class _Handler(BaseHTTPRequestHandler):
             if not query:
                 self._json(400, {"error": "query must not be empty"})
                 return
-            result = _retrieve(
-                query=query,
-                store=_get_store(),
-                ns=body.get("ns", "default"),
-                top_k=int(body.get("top_k", 5)),
-                decay=bool(body.get("decay", True)),
-            )
+            hybrid = bool(body.get("hybrid", True))
+            candidate_k = int(body.get("candidate_k", 20))
+            if candidate_k < 1:
+                self._json(400, {"error": "candidate_k must be >= 1"})
+                return
+            try:
+                result = _retrieve(
+                    query=query,
+                    store=_get_store(),
+                    ns=body.get("ns", "default"),
+                    top_k=int(body.get("top_k", 5)),
+                    decay=bool(body.get("decay", True)),
+                    hybrid=hybrid,
+                    candidate_k=candidate_k,
+                    rerank=bool(body.get("rerank", False)),
+                )
+            except RuntimeError as e:
+                self._json(400, {"error": str(e)})
+                return
             self._json(200, result)
 
         else:
@@ -164,11 +176,12 @@ def _mcp_loop() -> None:
             ok({"tools": [
                 {
                     "name": "mnemonics_ingest",
-                    "description": "Store text memories into mnemonics. Chunks, embeds and persists. Optional `summaries` parallel to `texts` adds a second keyword surface for BM25 retrieval (e.g. raw transcript + GLM gist); embeddings still come from the raw text.",
+                    "description": "Store text memories into mnemonics. Chunks, embeds and persists. Pass `texts` as an array of strings, or `text` as a single string (alias). Optional `summaries` parallel to `texts` adds a second keyword surface for BM25 retrieval (e.g. raw transcript + GLM gist); embeddings still come from the raw text.",
                     "inputSchema": {
                         "type": "object",
                         "properties": {
-                            "texts": {"type": "array", "items": {"type": "string"}},
+                            "texts": {"type": "array", "items": {"type": "string"}, "description": "Array of memory strings to store."},
+                            "text": {"type": "string", "description": "Convenience alias for `texts: [text]`. Either `text` or `texts` is required."},
                             "ns": {"type": "string", "description": "Namespace (default: 'default')"},
                             "summaries": {
                                 "type": "array",
@@ -176,12 +189,11 @@ def _mcp_loop() -> None:
                                 "description": "Optional, one entry per text. Null entries are stored as no-summary.",
                             },
                         },
-                        "required": ["texts"],
                     },
                 },
                 {
                     "name": "mnemonics_retrieve",
-                    "description": "Semantic search with tier-aware decay. Pinned (tier 0) memories never decay; tier 1 has 90-day half-life, tier 2 has 14-day. Set decay=false to see raw cosine scores.",
+                    "description": "Hybrid semantic + keyword search (vector cosine fused with BM25 via Reciprocal Rank Fusion) with tier-aware decay. Pinned (tier 0) memories never decay; tier 1 has 90-day half-life, tier 2 has 14-day. Set decay=false to see raw scores. Set hybrid=false to fall back to vector-only retrieval (rarely needed; hybrid wins or ties in every measured query class). Set rerank=true to add an AdaptMem cross-encoder rerank stage over the widened candidate band (requires adaptmem installed).",
                     "inputSchema": {
                         "type": "object",
                         "properties": {
@@ -189,6 +201,9 @@ def _mcp_loop() -> None:
                             "ns": {"type": "string"},
                             "top_k": {"type": "integer"},
                             "decay": {"type": "boolean", "description": "Apply decay scoring (default true)"},
+                            "hybrid": {"type": "boolean", "description": "Fuse vector + BM25 via RRF (default true)"},
+                            "candidate_k": {"type": "integer", "description": "Per-channel pool size when hybrid=true (default 20)"},
+                            "rerank": {"type": "boolean", "description": "Cross-encoder rerank via AdaptMem over the candidate band (default false)"},
                         },
                         "required": ["query"],
                     },
@@ -247,9 +262,18 @@ def _mcp_loop() -> None:
             args = params.get("arguments", {})
 
             if name == "mnemonics_ingest":
-                texts = args.get("texts", [])
+                texts = args.get("texts")
+                # Defensive: accept singular `text` (string or list) as alias for `texts`.
+                # Empirically a common caller mistake; silent-drop here cost real memories.
+                if texts is None and "text" in args:
+                    alias = args["text"]
+                    texts = [alias] if isinstance(alias, str) else alias
+                if isinstance(texts, str):
+                    texts = [texts]
+                if texts is None:
+                    texts = []
                 if not isinstance(texts, list):
-                    err("texts must be an array of strings, not a single string")
+                    err("texts must be an array of strings (or a single string)")
                     continue
                 if not texts:
                     err("texts must not be empty (did you pass 'text' instead of 'texts'?)")
@@ -274,13 +298,24 @@ def _mcp_loop() -> None:
                 ok({"content": [{"type": "text", "text": f"Stored {n} chunks."}]})
 
             elif name == "mnemonics_retrieve":
-                result = _retrieve(
-                    query=args["query"],
-                    store=_get_store(),
-                    ns=args.get("ns", "default"),
-                    top_k=int(args.get("top_k", 5)),
-                    decay=bool(args.get("decay", True)),
-                )
+                candidate_k = int(args.get("candidate_k", 20))
+                if candidate_k < 1:
+                    err("candidate_k must be >= 1")
+                    continue
+                try:
+                    result = _retrieve(
+                        query=args["query"],
+                        store=_get_store(),
+                        ns=args.get("ns", "default"),
+                        top_k=int(args.get("top_k", 5)),
+                        decay=bool(args.get("decay", True)),
+                        hybrid=bool(args.get("hybrid", True)),
+                        candidate_k=candidate_k,
+                        rerank=bool(args.get("rerank", False)),
+                    )
+                except RuntimeError as e:
+                    err(str(e))
+                    continue
                 tier_label = {0: "pin", 1: "def", 2: "amb"}
                 lines = []
                 for r in result["results"]:

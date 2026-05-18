@@ -152,3 +152,108 @@ def test_results_ordered_by_score_desc(populated_store, mock_enc):
     result = retrieve("q", store, top_k=5)
     scores = [r["score"] for r in result["results"]]
     assert scores == sorted(scores, reverse=True)
+
+
+# ── CE rerank (adaptmem) ──────────────────────────────────────────────────────
+
+
+class _StubAM:
+    """Stub AdaptMem.rerank() — returns canned (index, score) tuples."""
+
+    def __init__(self, scores_for_text: dict[str, float]):
+        self._scores = scores_for_text
+        self.last_query: str | None = None
+        self.last_texts: list[str] | None = None
+
+    def rerank(self, query, candidates, top_k=None):
+        self.last_query = query
+        self.last_texts = list(candidates)
+        ranked = sorted(
+            enumerate(self._scores.get(t, 0.0) for t in candidates),
+            key=lambda x: -float(x[1]),
+        )
+        if top_k is not None:
+            ranked = ranked[:top_k]
+        return [(i, float(s)) for i, s in ranked]
+
+
+def test_rerank_reorders_and_attaches_ce_score(populated_store, mock_enc, monkeypatch):
+    store, docs, vecs = populated_store
+    mock_enc.return_value = _enc_returning(vecs[0])
+    # Stub the cached AdaptMem instance — CE strongly prefers the photosynthesis doc.
+    stub = _StubAM({
+        "The Eiffel Tower is located in Paris, France.": 0.10,
+        "Python is a high-level programming language created by Guido van Rossum.": 0.20,
+        "The speed of light is approximately 299,792 km/s in vacuum.": 0.30,
+        "Photosynthesis converts sunlight into chemical energy in plants.": 0.95,
+        "Machine learning is a subset of artificial intelligence.": 0.40,
+    })
+    monkeypatch.setattr("mnemonics.retrieve._get_rerank_am", lambda model=None: stub)
+
+    result = retrieve("q", store, top_k=3, rerank=True)
+    # CE pushes photosynthesis to position 0 regardless of vector order.
+    assert result["results"][0]["text"] == "Photosynthesis converts sunlight into chemical energy in plants."
+    assert result["results"][0]["ce_score"] == 0.95
+    # `score` is replaced with ce_score under rerank.
+    assert result["results"][0]["score"] == 0.95
+    # raw_score (bi-encoder/RRF) is preserved as observation.
+    assert "raw_score" in result["results"][0]
+    # top_k is honored.
+    assert len(result["results"]) == 3
+
+
+def test_rerank_off_does_not_call_ce(populated_store, mock_enc, monkeypatch):
+    store, docs, vecs = populated_store
+    mock_enc.return_value = _enc_returning(vecs[0])
+    sentinel = {"called": False}
+
+    def _should_not_be_called(model=None):
+        sentinel["called"] = True
+        raise AssertionError("CE must not load when rerank=False")
+
+    monkeypatch.setattr("mnemonics.retrieve._get_rerank_am", _should_not_be_called)
+    retrieve("q", store, top_k=3, rerank=False)
+    assert sentinel["called"] is False
+
+
+def test_rerank_widens_candidate_band_before_truncate(populated_store, mock_enc, monkeypatch):
+    """rerank=True keeps the full candidate_k band so CE can rescue buried hits."""
+    store, docs, vecs = populated_store
+    mock_enc.return_value = _enc_returning(vecs[0])
+    stub = _StubAM({})  # all 0.0 — order irrelevant
+    monkeypatch.setattr("mnemonics.retrieve._get_rerank_am", lambda model=None: stub)
+    retrieve("q", store, top_k=2, candidate_k=20, rerank=True)
+    # All 5 docs (or fewer if store has less) must reach CE — not just top_k=2.
+    assert stub.last_texts is not None
+    assert len(stub.last_texts) >= min(5, 20)
+
+
+def test_rerank_raises_when_adaptmem_missing(populated_store, mock_enc, monkeypatch):
+    """Clear error, not silent fallback, when adaptmem is unavailable."""
+    store, docs, vecs = populated_store
+    mock_enc.return_value = _enc_returning(vecs[0])
+    # Reset module-level cache so the import is reattempted.
+    monkeypatch.setattr("mnemonics.retrieve._rerank_am", None)
+    monkeypatch.setattr("mnemonics.retrieve._rerank_model_name", None)
+    import builtins
+    real_import = builtins.__import__
+
+    def _block_adaptmem(name, *a, **kw):
+        if name == "adaptmem":
+            raise ImportError("simulated missing adaptmem")
+        return real_import(name, *a, **kw)
+
+    monkeypatch.setattr(builtins, "__import__", _block_adaptmem)
+    with pytest.raises(RuntimeError, match="rerank=True requires the 'adaptmem' package"):
+        retrieve("q", store, top_k=3, rerank=True)
+
+
+def test_rerank_empty_results_returns_empty(tmp_store, mock_enc, monkeypatch):
+    """rerank over an empty store returns [] without touching CE."""
+    import numpy as np
+    mock_enc.return_value = _enc_returning(np.zeros(DIM, dtype="float32"))
+    stub = _StubAM({})
+    monkeypatch.setattr("mnemonics.retrieve._get_rerank_am", lambda model=None: stub)
+    result = retrieve("q", tmp_store, top_k=5, rerank=True)
+    assert result["results"] == []
+    assert stub.last_texts is None  # CE never invoked
