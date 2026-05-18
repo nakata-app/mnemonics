@@ -40,6 +40,12 @@ _PREF_PATTERNS = [
         r"i used to ([^,\.!?]{5,60})",
         r"when i was (?:in high school|in college|young|a kid|growing up)[,\s]+([^,\.!?]{5,80})",
         r"growing up[,\s]+([^,\.!?]{5,80})",
+        # Generic past-tense action + object: "I bought a new sofa", "I repainted my walls a lighter gray"
+        r"i (?:just |recently |finally |already )?(?:bought|purchased|got|received|earned|completed|finished|made|painted|repainted|baked|cooked|tried|visited|moved to|started|joined|left|quit|sold|wrote|installed|fixed|lost|found|met|adopted) ([^,\.!?]{5,80})",
+        # Receive-from-person: "my sister gave me a stand mixer", "Dad sent me a card"
+        r"(?:my |our )?(?:mom|mother|dad|father|sister|brother|wife|husband|partner|son|daughter|friend|aunt|uncle|cousin|grandma|grandpa|boss|colleague|coworker|neighbor|teacher|[A-Z][a-z]+) (?:gave|sent|brought|gifted|got) me ([^,\.!?]{5,80})",
+        # Occasion gifts: "for my birthday I got a new bike"
+        r"for (?:my |our )?(?:birthday|christmas|anniversary|wedding|graduation|housewarming)[,\s]+([^,\.!?]{5,80})",
     )
 ]
 
