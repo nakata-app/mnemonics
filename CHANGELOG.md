@@ -6,6 +6,15 @@ All notable changes to mnemonics. Format follows [Keep a Changelog](https://keep
 
 ### Added
 
+- **Hybrid retrieval exposed on MCP and HTTP.** `mnemonics_retrieve`
+  (MCP) and `POST /retrieve` (HTTP) now accept `hybrid: bool` (default
+  `false`) and `candidate_k: int` (default `20`). When `hybrid=true`,
+  the request fuses the vector cosine top-`candidate_k` with the BM25
+  (SQLite FTS5) top-`candidate_k` via Reciprocal Rank Fusion, then
+  applies the existing tier-aware decay + reinforcement pass on the
+  top-`top_k`. Useful when exact tokens (API names, version strings,
+  identifiers) matter alongside semantic similarity. The default
+  stays vector-only so existing callers see no behavior change.
 - **Raw + summary hybrid storage.** Every row now has an optional
   `summary` column alongside the raw `text`. Embeddings are still
   computed from the raw chunk, but the FTS5 mirror indexes both
