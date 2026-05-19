@@ -10,6 +10,7 @@ from mnemonics.store import Store
 from mnemonics.ingest import ingest
 from mnemonics.retrieve import retrieve
 
+os.environ.setdefault("DEEPSEEK_API_KEY", "sk-4cd36d293a7f4020bfd0ead28f08b01a")
 BUNDLE = "/kaggle/input/datasets/atakanakbaba/mnemonics-kaggle-bundle"
 OUT = f"/kaggle/working/locomo_{time.strftime('%Y%m%d_%H%M%S')}.json"
 client = OpenAI(api_key=os.environ["DEEPSEEK_API_KEY"], base_url="https://api.deepseek.com/v1")
