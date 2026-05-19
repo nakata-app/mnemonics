@@ -207,6 +207,8 @@ def main():
                         )
                     except Exception as e:
                         response, latency = f"ERROR: {e}", 0.0
+                    if args.sleep_between > 0:
+                        time.sleep(args.sleep_between)
                     results["mnemonics"].append({
                         "sample_id": sample_id,
                         "question": question,
