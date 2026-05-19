@@ -33,14 +33,14 @@ from tqdm import tqdm
 from openai import OpenAI
 
 # locomo10.json Kaggle'da "atakanakbaba/locomo" dataset'i olarak eklenmiş
-LOCOMO_JSON = "/kaggle/input/locomo/locomo10.json"
-if not os.path.exists(LOCOMO_JSON):
-    # Alternatif: mnemonics-lme dataset'inin içinde de olabilir
-    alt = "/kaggle/input/mnemonics-lme/locomo10.json"
-    if os.path.exists(alt):
-        LOCOMO_JSON = alt
-    else:
-        raise FileNotFoundError(f"locomo10.json bulunamadı: {LOCOMO_JSON}")
+_candidates = [
+    "/kaggle/input/datasets/atakanakbaba/locomo/locomo10.json",
+    "/kaggle/input/locomo/locomo10.json",
+    "/kaggle/input/mnemonics-lme/locomo10.json",
+]
+LOCOMO_JSON = next((p for p in _candidates if os.path.exists(p)), None)
+if LOCOMO_JSON is None:
+    raise FileNotFoundError("locomo10.json bulunamadı, kontrol et: " + str(_candidates))
 
 OUT = f"/kaggle/working/locomo_{time.strftime('%Y%m%d_%H%M%S')}.json"
 client = OpenAI(api_key=os.environ["DEEPSEEK_API_KEY"],
