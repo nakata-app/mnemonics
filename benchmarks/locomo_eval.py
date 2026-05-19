@@ -168,6 +168,7 @@ def main():
     ap.add_argument("--convs", type=int, default=0, help="Cap conversations for smoke (0=all)")
     ap.add_argument("--model", default="meta/llama-3.3-70b-instruct")
     ap.add_argument("--base-url", default="https://integrate.api.nvidia.com/v1")
+    ap.add_argument("--sleep-between", type=float, default=0.0, help="Sleep seconds between NIM calls")
     args = ap.parse_args()
 
     api_key = os.environ.get("NVIDIA_API_KEY")
