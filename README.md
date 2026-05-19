@@ -2,13 +2,21 @@
 
 `/nɪˈmɒnɪks/`, *ni-MON-iks* (the "m" is silent, like "memories" with an N).
 
-**Local-first AI memory with tier-aware decay.**
+**Agent memory infrastructure. Local-first, tier-aware, MCP-ready.**
 
-Mnemonics is a small memory layer that stores text, retrieves it with semantic search, and decays old entries the way a brain does, slowly for the things you use often, faster for ambient noise. No cloud, no telemetry, no daemon required.
+Mnemonics is a memory layer for AI agents: ingest conversations or facts, retrieve the relevant ones at inference time, decay old entries the way a brain does. Works as a Python library, a REST server, or an MCP server, plug it into any agent framework in under 10 lines.
+
+```
+pip install mnemonics
+```
+
+→ [Agent integration guide](AGENTS.md) · [Benchmarks](#benchmarks) · [MCP setup](#mcp-claude-code--cursor--metis)
 
 ## Why
 
-Most AI memory tools push your conversations to a hosted service. Mnemonics doesn't. Your index, your DB, your machine. The library is small enough to read in one sitting, and every retrieval is fully transparent: you see the raw cosine score, the decay factor, the age, and the tier on every result, so nothing is silently demoted behind your back.
+Most AI memory tools push your data to a hosted service. Mnemonics doesn't. Your index, your DB, your machine. Every retrieval is fully transparent: you see the raw cosine score, the decay factor, the age, and the tier on every result, nothing is silently demoted behind your back.
+
+Works with LangChain, CrewAI, AutoGen, LlamaIndex, or any framework that can call a Python function or hit an HTTP endpoint. See [AGENTS.md](AGENTS.md) for drop-in examples.
 
 ## Install
 
