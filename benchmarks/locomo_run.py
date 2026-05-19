@@ -1,19 +1,51 @@
 import subprocess, sys, os, json, time, tempfile
-from tqdm import tqdm
-from openai import OpenAI
 
-subprocess.run(["pip", "uninstall", "mnemonics", "-y"], capture_output=True)
-subprocess.run(["pip", "install", "hnswlib", "-q"], capture_output=True)
-sys.path.insert(0, "/kaggle/working/mnemonics")
+# 1) PyPI versiyonu varsa sök (eskisi çakışıyor)
+subprocess.run([sys.executable, "-m", "pip", "uninstall", "mnemonics", "-y"],
+               capture_output=True)
 
+# 2) Repoyu çek (yoksa)
+REPO = "/kaggle/working/mnemonics"
+if not os.path.exists(f"{REPO}/mnemonics/__init__.py"):
+    subprocess.run(["git", "clone", "--depth", "1",
+                    "https://github.com/nakata-app/mnemonics.git", REPO],
+                   check=True)
+
+# 3) Bağımlılıkları yükle
+subprocess.run([sys.executable, "-m", "pip", "install", "-q",
+                "sentence-transformers", "hnswlib", "rank-bm25", "tqdm"],
+               check=True)
+
+# 4) sys.modules'dan eski cache'i temizle, sonra path'e ekle
+for k in list(sys.modules):
+    if "mnemonics" in k:
+        del sys.modules[k]
+if REPO not in sys.path:
+    sys.path.insert(0, REPO)
+
+# 5) Import testi
 from mnemonics.store import Store
 from mnemonics.ingest import ingest
 from mnemonics.retrieve import retrieve
+print("mnemonics import OK")
 
-BUNDLE = "/kaggle/input/datasets/atakanakbaba/mnemonics-kaggle-bundle"
+from tqdm import tqdm
+from openai import OpenAI
+
+# locomo10.json Kaggle'da "atakanakbaba/locomo" dataset'i olarak eklenmiş
+LOCOMO_JSON = "/kaggle/input/locomo/locomo10.json"
+if not os.path.exists(LOCOMO_JSON):
+    # Alternatif: mnemonics-lme dataset'inin içinde de olabilir
+    alt = "/kaggle/input/mnemonics-lme/locomo10.json"
+    if os.path.exists(alt):
+        LOCOMO_JSON = alt
+    else:
+        raise FileNotFoundError(f"locomo10.json bulunamadı: {LOCOMO_JSON}")
+
 OUT = f"/kaggle/working/locomo_{time.strftime('%Y%m%d_%H%M%S')}.json"
-client = OpenAI(api_key=os.environ["DEEPSEEK_API_KEY"], base_url="https://api.deepseek.com/v1")
-data = json.load(open(f"{BUNDLE}/locomo10.json"))
+client = OpenAI(api_key=os.environ["DEEPSEEK_API_KEY"],
+                base_url="https://api.deepseek.com/v1")
+data = json.load(open(LOCOMO_JSON))
 results = {"mnemonics": []}
 
 for conv in tqdm(data, desc="conv"):
@@ -54,11 +86,15 @@ for conv in tqdm(data, desc="conv"):
                 continue
             q = qa["question"]
             gt = qa["answer"]
-            hits_a = retrieve(query=q, store=store, ns=f"loc_{sid}_{spk_a}", top_k=30, rerank=False)
-            hits_b = retrieve(query=q, store=store, ns=f"loc_{sid}_{spk_b}", top_k=30, rerank=False)
+            hits_a = retrieve(query=q, store=store, ns=f"loc_{sid}_{spk_a}",
+                              top_k=30, rerank=False)
+            hits_b = retrieve(query=q, store=store, ns=f"loc_{sid}_{spk_b}",
+                              top_k=30, rerank=False)
             mem_a = "\n".join(f"- {r['text']}" for r in hits_a.get("results", []))
             mem_b = "\n".join(f"- {r['text']}" for r in hits_b.get("results", []))
-            prompt = f"Memories {spk_a}:\n{mem_a}\n\nMemories {spk_b}:\n{mem_b}\n\nQuestion: {q}\nAnswer in 5 words max:"
+            prompt = (f"Memories {spk_a}:\n{mem_a}\n\n"
+                      f"Memories {spk_b}:\n{mem_b}\n\n"
+                      f"Question: {q}\nAnswer in 5 words max:")
             answer = "ERROR"
             for attempt in range(5):
                 try:
