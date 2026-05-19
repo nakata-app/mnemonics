@@ -139,13 +139,22 @@ def answer_question(
         speaker_2_memories=format_memories(hits_b),
         question=question,
     )
-    resp = client.chat.completions.create(
-        model=model,
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=120,
-        temperature=0,
-    )
-    return resp.choices[0].message.content.strip(), time.time() - t0
+    for attempt in range(5):
+        try:
+            resp = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=120,
+                temperature=0,
+            )
+            return resp.choices[0].message.content.strip(), time.time() - t0
+        except Exception as e:
+            if "429" in str(e) and attempt < 4:
+                import time as _t
+                _t.sleep(15 * (attempt + 1))
+            else:
+                raise
+    raise RuntimeError("max retries exceeded")
 
 
 def main():
