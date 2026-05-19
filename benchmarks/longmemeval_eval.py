@@ -244,7 +244,7 @@ def main():
         if not v:
             continue
         print(
-            f"{key:25} n={v.get('n'):<4} "
+            f"{key:25} n={v.get('n') or 0:<4} "
             f"R@1={v.get('R@1')}  R@5={v.get('R@5')}  R@10={v.get('R@10')}"
         )
 
