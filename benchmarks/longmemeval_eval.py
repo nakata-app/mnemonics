@@ -63,6 +63,7 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                        augment_assistant_facts: bool = False,
                        chunk_size: int = 200, chunk_overlap: int = 40,
                        use_doc_filter: bool = False,
+                       doc_top_k: int | None = None,
                        per_q_out: Path | None = None) -> dict:
     """Run mnemonics retrieve() across every question, return aggregated metrics."""
     from mnemonics.store import Store
@@ -97,6 +98,7 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                     candidate_k=candidate_k,
                     rerank=rerank,
                     use_doc_filter=use_doc_filter,
+                    doc_top_k=doc_top_k,
                 )
             except RuntimeError as e:
                 print(f"  q{i} ERROR: {e}", file=sys.stderr)
@@ -196,6 +198,8 @@ def main():
     ap.add_argument("--chunk-overlap", type=int, default=40, help="Overlap words between adjacent chunks (default 40)")
     ap.add_argument("--use-doc-filter", action="store_true",
                     help="Enable Stage-1 session-level doc filter before fusion")
+    ap.add_argument("--doc-top-k", type=int, default=None,
+                    help="How many sessions the doc filter keeps (default 10; LME haystack ~50)")
     ap.add_argument("--out", type=Path, default=Path("/tmp/mnemonics_vs_mempalace.json"))
     ap.add_argument("--per-q-out", type=Path, default=None,
                     help="Optional path to dump per-question hit/miss records")
@@ -229,6 +233,7 @@ def main():
             augment_assistant_facts=args.augment_assistant_facts,
             chunk_size=args.chunk_size, chunk_overlap=args.chunk_overlap,
             use_doc_filter=args.use_doc_filter,
+            doc_top_k=args.doc_top_k,
         )
 
     if args.mode in ("both", "rerank"):
@@ -239,6 +244,7 @@ def main():
             augment_assistant_facts=args.augment_assistant_facts,
             chunk_size=args.chunk_size, chunk_overlap=args.chunk_overlap,
             use_doc_filter=args.use_doc_filter,
+            doc_top_k=args.doc_top_k,
             per_q_out=args.per_q_out,
         )
 
