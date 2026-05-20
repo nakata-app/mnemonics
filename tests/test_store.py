@@ -273,3 +273,40 @@ def test_migration_adds_summary_column(tmp_path):
     hits = store.search_bm25("pterodactyls", top_k=5)
     assert hits and hits[0]["text"] == "legacy row about pterodactyls"
     assert hits[0]["summary"] is None
+
+
+# ── session-level doc index (add_doc / search_docs) ──────────────────────────
+
+def test_add_doc_returns_ids_and_persists(tmp_store):
+    """add_doc inserts SQLite rows + saves the doc HNSW; search_docs reads it back."""
+    vecs = make_vecs(3, seed=11)
+    sidxs = [10, 20, 30]
+    ids = tmp_store.add_doc(
+        ["session A about cats", "session B about cars", "session C about cooking"],
+        vecs,
+        source_idxs=sidxs,
+        meta=[{"sid": "A"}, {"sid": "B"}, {"sid": "C"}],
+    )
+    assert len(ids) == 3
+    assert ids == sorted(ids)
+    # doc index file written next to chunk index.
+    assert (tmp_store.root / "index_default_docs.bin").exists()
+    # Top-1 query with the second vector returns its source_idx.
+    hits = tmp_store.search_docs(vecs[1], top_k=1)
+    assert hits == [20]
+
+
+def test_search_docs_empty_and_namespace_isolation(tmp_store):
+    """Empty doc index returns []; ns scoping isolates doc-level lookups."""
+    # No doc rows yet for any ns → empty list, not error.
+    assert tmp_store.search_docs(make_vecs(1)[0]) == []
+    # Populate doc index in two namespaces with deliberately different vectors.
+    v_ns1 = make_vecs(2, seed=1)
+    v_ns2 = make_vecs(2, seed=2)
+    tmp_store.add_doc(["ns1-A", "ns1-B"], v_ns1, ns="ns1", source_idxs=[0, 1])
+    tmp_store.add_doc(["ns2-A", "ns2-B"], v_ns2, ns="ns2", source_idxs=[0, 1])
+    # Querying ns1 with its own vector must hit ns1 row, never ns2.
+    hits_ns1 = tmp_store.search_docs(v_ns1[0], ns="ns1", top_k=5)
+    assert 0 in hits_ns1 and len(hits_ns1) <= 2
+    # ns3 has no doc index file → still empty.
+    assert tmp_store.search_docs(v_ns1[0], ns="ns3") == []

@@ -95,6 +95,16 @@ CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN
     INSERT INTO memories_fts(memories_fts, rowid, text, summary) VALUES('delete', old.id, old.text, old.summary);
     INSERT INTO memories_fts(rowid, text, summary) VALUES (new.id, new.text, new.summary);
 END;
+
+CREATE TABLE IF NOT EXISTS documents (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    ns          TEXT NOT NULL DEFAULT 'default',
+    text        TEXT NOT NULL,
+    source_idx  INTEGER NOT NULL DEFAULT 0,
+    meta        TEXT NOT NULL DEFAULT '{}',
+    created     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_docs_ns ON documents(ns, source_idx);
 """
 
 # Tier semantics:
@@ -140,6 +150,11 @@ class Store:
         # Mtime watermark per namespace; we use it to detect peer writes
         # since our last load and force a reload before we add anything.
         self._index_mtime: dict[str, float] = {}
+        # Session-level (doc) HNSW index, parallel to the chunk index above.
+        # One doc vector per ingested input text; used by retrieve() as a
+        # Stage-1 filter to keep only chunks whose source session matches.
+        self._doc_index: dict[str, hnswlib.Index] = {}
+        self._doc_index_mtime: dict[str, float] = {}
 
     def _migrate(self) -> None:
         """Idempotent column additions for older DBs created before the schema bump."""
@@ -258,6 +273,36 @@ class Store:
             self._index[ns] = idx
         return self._index[ns]
 
+    def _reload_doc_if_stale(self, ns: str) -> None:
+        """Doc-index sibling of _reload_if_stale. Caller must hold the ns file lock."""
+        idx_path = self.root / f"index_{ns}_docs.bin"
+        if not idx_path.exists():
+            return
+        disk_mtime = idx_path.stat().st_mtime
+        cached_mtime = self._doc_index_mtime.get(ns, -1.0)
+        if ns in self._doc_index and disk_mtime <= cached_mtime:
+            return
+        idx = hnswlib.Index(space="cosine", dim=self.dim)
+        idx.load_index(str(idx_path))
+        idx.set_ef(64)
+        self._doc_index[ns] = idx
+        self._doc_index_mtime[ns] = disk_mtime
+
+    def _doc_index_for(self, ns: str) -> hnswlib.Index:
+        if ns not in self._doc_index:
+            idx_path = self.root / f"index_{ns}_docs.bin"
+            idx = hnswlib.Index(space="cosine", dim=self.dim)
+            if idx_path.exists():
+                idx.load_index(str(idx_path))
+                self._doc_index_mtime[ns] = idx_path.stat().st_mtime
+                idx.set_ef(64)
+            else:
+                # 100K caps total session count per ns — same order as memories.
+                idx.init_index(max_elements=100_000, ef_construction=200, M=16)
+                idx.set_ef(64)
+            self._doc_index[ns] = idx
+        return self._doc_index[ns]
+
     def add(
         self,
         texts: list[str],
@@ -293,6 +338,79 @@ class Store:
             idx.save_index(str(idx_path))
             self._index_mtime[ns] = idx_path.stat().st_mtime
         return ids
+
+    def add_doc(
+        self,
+        texts: list[str],
+        vectors: np.ndarray,
+        ns: str = "default",
+        source_idxs: list[int] | None = None,
+        meta: list[dict] | None = None,
+    ) -> list[int]:
+        """Insert session-level documents and embed them in the doc-index.
+
+        One row per input session (caller decides chunking upstream — typical
+        usage is the first 400 words of each ingested text). The HNSW label
+        we store is the SQLite row id, so search_docs() can SELECT back the
+        canonical `source_idx` even after future deletions reshuffle rows.
+        """
+        if source_idxs is None:
+            source_idxs = list(range(len(texts)))
+        if meta is None:
+            meta = [{} for _ in texts]
+        if not (len(texts) == len(source_idxs) == len(meta)):
+            raise ValueError("texts, source_idxs and meta must be the same length")
+        with self._ns_file_lock(ns, exclusive=True), self._lock:
+            self._reload_doc_if_stale(ns)
+            ids: list[int] = []
+            for text, sidx, m in zip(texts, source_idxs, meta):
+                cur = self._db.execute(
+                    "INSERT INTO documents (ns, text, source_idx, meta) VALUES (?, ?, ?, ?)",
+                    (ns, text, int(sidx), json.dumps(m)),
+                )
+                ids.append(cur.lastrowid)
+            self._db.commit()
+            idx = self._doc_index_for(ns)
+            idx.add_items(vectors, ids)
+            idx_path = self.root / f"index_{ns}_docs.bin"
+            idx.save_index(str(idx_path))
+            self._doc_index_mtime[ns] = idx_path.stat().st_mtime
+        return ids
+
+    def search_docs(self, vector: np.ndarray, ns: str = "default", top_k: int = 50) -> list[int]:
+        """Return the source_idx values of the top-k sessions for `vector`.
+
+        Used as a Stage-1 filter in retrieve(): caller intersects this set
+        against chunk-level results' meta["source_idx"]. Returns [] when the
+        doc index is empty (e.g. legacy ns ingested before doc support).
+        """
+        with self._ns_file_lock(ns, exclusive=False), self._lock:
+            self._reload_doc_if_stale(ns)
+            idx_path = self.root / f"index_{ns}_docs.bin"
+            if not idx_path.exists() and ns not in self._doc_index:
+                return []
+            idx = self._doc_index_for(ns)
+            n = min(top_k, idx.get_current_count())
+            if n == 0:
+                return []
+            labels, _distances = idx.knn_query(vector, k=n)
+            row_ids = [int(x) for x in labels[0]]
+            placeholders = ",".join("?" * len(row_ids))
+            rows = self._db.execute(
+                f"SELECT id, source_idx FROM documents WHERE id IN ({placeholders})",
+                row_ids,
+            ).fetchall()
+            by_id = {r[0]: r[1] for r in rows}
+            # Preserve HNSW order; drop ids whose SQLite row went missing (post-delete).
+            out: list[int] = []
+            seen: set[int] = set()
+            for rid in labels[0]:
+                sidx = by_id.get(int(rid))
+                if sidx is None or sidx in seen:
+                    continue
+                seen.add(sidx)
+                out.append(int(sidx))
+        return out
 
     def search(self, vector: np.ndarray, ns: str = "default", top_k: int = 5) -> list[dict[str, Any]]:
         # Shared lock — multiple peers may search the same ns concurrently;

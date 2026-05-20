@@ -53,11 +53,28 @@ def test_chunk_single_word():
 # ── ingest (mocked encoder) ──────────────────────────────────────────────────
 
 def _mock_encoder(n_chunks: int) -> MagicMock:
+    """Mock encoder that returns deterministic vectors sized to the input list.
+
+    Two callers now hit encode() per ingest: the chunk pass (whose length is
+    `n_chunks`) and the doc pass (one row per input text). Sizing dynamically
+    keeps hnswlib's label/vector check happy in both. Legacy assertions that
+    read `enc.encode.return_value[0]` still see the chunk-sized vectors.
+    """
     enc = MagicMock()
     rng = np.random.default_rng(0)
     vecs = rng.random((n_chunks, DIM)).astype("float32")
     vecs = vecs / np.linalg.norm(vecs, axis=1, keepdims=True)
-    enc.encode.return_value = vecs
+
+    def _encode(items, **kw):
+        n = len(items)
+        if n == n_chunks:
+            return vecs
+        r = np.random.default_rng(1000 + n)
+        v = r.random((n, DIM)).astype("float32")
+        return v / np.linalg.norm(v, axis=1, keepdims=True)
+
+    enc.encode.side_effect = _encode
+    enc.encode.return_value = vecs  # back-compat for tests that read this attr
     return enc
 
 
@@ -121,10 +138,11 @@ def test_ingest_multiple_docs_all_stored(tmp_store, mock_enc):
     assert tmp_store.count() == 10
 
 
-def test_ingest_calls_encode_once(tmp_store, mock_enc):
+def test_ingest_calls_encode_twice(tmp_store, mock_enc):
+    # Two passes: one batch over chunks, one batch over per-input doc texts.
     mock_enc.return_value = _mock_encoder(3)
     ingest(["a", "b", "c"], tmp_store)
-    assert mock_enc.return_value.encode.call_count == 1
+    assert mock_enc.return_value.encode.call_count == 2
 
 
 def test_ingest_batch_size_param(tmp_store, mock_enc):
