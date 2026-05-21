@@ -46,6 +46,24 @@ _PREF_PATTERNS = [
         r"(?:my |our )?(?:mom|mother|dad|father|sister|brother|wife|husband|partner|son|daughter|friend|aunt|uncle|cousin|grandma|grandpa|boss|colleague|coworker|neighbor|teacher|[A-Z][a-z]+) (?:gave|sent|brought|gifted|got) me ([^,\.!?]{5,80})",
         # Occasion gifts: "for my birthday I got a new bike"
         r"for (?:my |our )?(?:birthday|christmas|anniversary|wedding|graduation|housewarming)[,\s]+([^,\.!?]{5,80})",
+        # Attendance: "I attended a production of The Glass Menagerie", "I went to see X"
+        r"i (?:just |recently )?attended ([^,\.!?]{5,80})",
+        r"i (?:just |recently )?went to (?:see |watch |attend )?([^,\.!?]{5,80})",
+        # My favorite X (preserves "favorite" context): "my favorite Japanese short-grain rice"
+        r"(?:my|our) (favorite [^,\.!?]{5,50})",
+        # Event venue: "concert at the Xfinity Center", "wedding at the Grand Ballroom"
+        r"(?:concert|show|wedding|ceremony|event|performance|game|match|play) (?:was )?at (?:the )?([^,\.!?\n]{5,60})",
+        # "it was at the X": follow-up location reference
+        r"it was at (?:the )?([A-Z][^,\.!?\n]{3,55})",
+        # Upgrade facts: "I upgraded to 500 Mbps"
+        r"i upgraded (?:\w+ )?to ([^,\.!?]{5,60})",
+        # Platform usage: "on Spotify lately", "on Netflix recently"
+        r"on ([A-Z][a-zA-Z0-9+]{2,20}) (?:lately|recently|a lot|all the time)",
+        # Study / academic location: "study abroad program at the University of Melbourne"
+        r"study abroad (?:program )?at (?:the )?([^,\.!?\n]{5,80})",
+        # Positive experiences: "I love X", "I enjoy X", "I always go for X"
+        r"i (?:love|enjoy|adore) ([^,\.!?]{5,60})",
+        r"i always (?:go for|choose|pick|prefer|get) ([^,\.!?]{5,60})",
     )
 ]
 
