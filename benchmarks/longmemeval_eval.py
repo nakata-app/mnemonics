@@ -35,10 +35,29 @@ import time
 from collections import defaultdict
 from pathlib import Path
 
-DATA = Path("/Users/macmini/Projects/metis-pair/benchmarks/data/longmemeval/longmemeval_s_cleaned.json")
-MEMPALACE_BASELINE = Path(
-    "/Users/macmini/Projects/adaptmem/benchmarks/structural_memory_eval/"
-    "entity_graph_result.json"
+def _resolve_path(env_key: str, *candidates: Path) -> Path:
+    """Env var varsa onu kullan, yoksa var olan ilk candidate'i döndür."""
+    from_env = os.environ.get(env_key, "")
+    if from_env:
+        return Path(from_env)
+    for c in candidates:
+        if c.exists():
+            return c
+    return candidates[0]  # yoksa ilkini döndür, çağıran hata verir
+
+_THIS_DIR = Path(__file__).parent
+
+DATA = _resolve_path(
+    "LME_DATA",
+    Path("/Users/macmini/Projects/metis-pair/benchmarks/data/longmemeval/longmemeval_s_cleaned.json"),
+    _THIS_DIR / "data" / "longmemeval" / "longmemeval_s_cleaned.json",
+    Path("/kaggle/input/longmemeval/longmemeval_s_cleaned.json"),
+)
+MEMPALACE_BASELINE = _resolve_path(
+    "LME_BASELINE",
+    Path("/Users/macmini/Projects/adaptmem/benchmarks/structural_memory_eval/entity_graph_result.json"),
+    _THIS_DIR / "data" / "entity_graph_result.json",
+    Path("/kaggle/input/longmemeval/entity_graph_result.json"),
 )
 
 
