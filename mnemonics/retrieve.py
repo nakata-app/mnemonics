@@ -170,7 +170,6 @@ def retrieve(
     rerank: bool = False,
     boost_signals: bool = True,
     use_doc_filter: bool = False,
-    doc_top_k: int | None = None,
 ) -> dict[str, Any]:
     """Search the store for query. Tier-aware decay + reinforcement applied unless decay=False.
 
@@ -193,14 +192,13 @@ def retrieve(
     qvec = enc.encode([query], normalize_embeddings=True, convert_to_numpy=True)[0]
     fusion_top = candidate_k if rerank else top_k
 
-    # Stage 1: session-level filter. Pull the top doc_top_k *sessions* by
-    # doc embedding (default 10, much tighter than candidate_k=50), then keep
-    # only chunks whose meta.source_idx belongs to one of those sessions.
-    # Falls back to no-op when the doc index is empty.
+    # Stage 1: session-level filter. Pull the top candidate_k *sessions* by
+    # doc embedding, then keep only chunks whose meta.source_idx belongs to
+    # one of those sessions. Falls back to no-op when the doc index is empty
+    # (legacy ns ingested before doc support).
     candidate_source_idxs: set[int] | None = None
     if use_doc_filter:
-        effective_doc_k = doc_top_k if doc_top_k is not None else 10
-        doc_hits = store.search_docs(qvec, ns=ns, top_k=effective_doc_k)
+        doc_hits = store.search_docs(qvec, ns=ns, top_k=candidate_k)
         if doc_hits:
             candidate_source_idxs = set(doc_hits)
 
