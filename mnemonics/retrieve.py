@@ -169,7 +169,6 @@ def retrieve(
     candidate_k: int = 50,
     rerank: bool = False,
     boost_signals: bool = True,
-    use_doc_filter: bool = False,
 ) -> dict[str, Any]:
     """Search the store for query. Tier-aware decay + reinforcement applied unless decay=False.
 
@@ -191,28 +190,12 @@ def retrieve(
     enc = _get_encoder(model)
     qvec = enc.encode([query], normalize_embeddings=True, convert_to_numpy=True)[0]
     fusion_top = candidate_k if rerank else top_k
-
-    # Stage 1: session-level filter. Pull the top candidate_k *sessions* by
-    # doc embedding, then keep only chunks whose meta.source_idx belongs to
-    # one of those sessions. Falls back to no-op when the doc index is empty
-    # (legacy ns ingested before doc support).
-    candidate_source_idxs: set[int] | None = None
-    if use_doc_filter:
-        doc_hits = store.search_docs(qvec, ns=ns, top_k=candidate_k)
-        if doc_hits:
-            candidate_source_idxs = set(doc_hits)
-
-    def _filter_by_session(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        if candidate_source_idxs is None:
-            return items
-        return [it for it in items if it["meta"].get("source_idx") in candidate_source_idxs]
-
     if hybrid:
-        vec_results = _filter_by_session(store.search(qvec, ns=ns, top_k=candidate_k))
-        bm25_results = _filter_by_session(store.search_bm25(query, ns=ns, top_k=candidate_k))
+        vec_results = store.search(qvec, ns=ns, top_k=candidate_k)
+        bm25_results = store.search_bm25(query, ns=ns, top_k=candidate_k)
         results = _rrf_fuse([vec_results, bm25_results], top_k=fusion_top)
     else:
-        results = _filter_by_session(store.search(qvec, ns=ns, top_k=fusion_top))
+        results = store.search(qvec, ns=ns, top_k=fusion_top)
 
     quoted = _extract_quoted_phrases(query) if boost_signals else []
     names = _extract_person_names(query) if boost_signals else []

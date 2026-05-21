@@ -62,7 +62,6 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                        augment_preferences: bool = False,
                        augment_assistant_facts: bool = False,
                        chunk_size: int = 200, chunk_overlap: int = 40,
-                       use_doc_filter: bool = False,
                        per_q_out: Path | None = None) -> dict:
     """Run mnemonics retrieve() across every question, return aggregated metrics."""
     from mnemonics.store import Store
@@ -96,7 +95,6 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                     top_k=top_k,
                     candidate_k=candidate_k,
                     rerank=rerank,
-                    use_doc_filter=use_doc_filter,
                 )
             except RuntimeError as e:
                 print(f"  q{i} ERROR: {e}", file=sys.stderr)
@@ -194,8 +192,6 @@ def main():
                     help="Per-channel candidate band before fusion (default 20, MemPalace uses 50)")
     ap.add_argument("--chunk-size", type=int, default=200, help="Words per ingest chunk (default 200)")
     ap.add_argument("--chunk-overlap", type=int, default=40, help="Overlap words between adjacent chunks (default 40)")
-    ap.add_argument("--use-doc-filter", action="store_true",
-                    help="Enable Stage-1 session-level doc filter before fusion")
     ap.add_argument("--out", type=Path, default=Path("/tmp/mnemonics_vs_mempalace.json"))
     ap.add_argument("--per-q-out", type=Path, default=None,
                     help="Optional path to dump per-question hit/miss records")
@@ -222,23 +218,21 @@ def main():
     results = {"n_questions": len(questions), "mempalace_full": mempalace_baseline_summary()}
 
     if args.mode in ("both", "no_rerank"):
-        print(f"\n=== Mnemonics (no CE rerank) augment_prefs={args.augment_preferences} augment_facts={args.augment_assistant_facts} cand_k={args.candidate_k} chunk={args.chunk_size}/{args.chunk_overlap} doc_filter={args.use_doc_filter} ===", flush=True)
+        print(f"\n=== Mnemonics (no CE rerank) augment_prefs={args.augment_preferences} augment_facts={args.augment_assistant_facts} cand_k={args.candidate_k} chunk={args.chunk_size}/{args.chunk_overlap} ===", flush=True)
         results["mnemonics_no_rerank"] = evaluate_mnemonics(
             questions, rerank=False, candidate_k=args.candidate_k,
             augment_preferences=args.augment_preferences,
             augment_assistant_facts=args.augment_assistant_facts,
             chunk_size=args.chunk_size, chunk_overlap=args.chunk_overlap,
-            use_doc_filter=args.use_doc_filter,
         )
 
     if args.mode in ("both", "rerank"):
-        print(f"\n=== Mnemonics (CE rerank) augment_prefs={args.augment_preferences} augment_facts={args.augment_assistant_facts} cand_k={args.candidate_k} chunk={args.chunk_size}/{args.chunk_overlap} doc_filter={args.use_doc_filter} ===", flush=True)
+        print(f"\n=== Mnemonics (CE rerank) augment_prefs={args.augment_preferences} augment_facts={args.augment_assistant_facts} cand_k={args.candidate_k} chunk={args.chunk_size}/{args.chunk_overlap} ===", flush=True)
         results["mnemonics_rerank"] = evaluate_mnemonics(
             questions, rerank=True, candidate_k=args.candidate_k,
             augment_preferences=args.augment_preferences,
             augment_assistant_facts=args.augment_assistant_facts,
             chunk_size=args.chunk_size, chunk_overlap=args.chunk_overlap,
-            use_doc_filter=args.use_doc_filter,
             per_q_out=args.per_q_out,
         )
 

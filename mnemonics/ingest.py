@@ -278,22 +278,4 @@ def ingest(
     vecs = enc.encode(all_chunks, batch_size=64, show_progress_bar=False,
                       normalize_embeddings=True, convert_to_numpy=True)
     store.add(all_chunks, vecs, ns=ns, meta=all_meta, summaries=all_summaries)
-
-    # Session-level doc embeddings: one vector per input text (first 400 words).
-    # Used by retrieve(use_doc_filter=True) as a Stage-1 session filter.
-    doc_texts: list[str] = []
-    doc_source_idxs: list[int] = []
-    doc_metas: list[dict] = []
-    for i, text in enumerate(texts):
-        words = text.split()
-        doc_text = " ".join(words[:400])
-        m = (meta[i] if meta else {}) | {"source_idx": i}
-        doc_texts.append(doc_text)
-        doc_source_idxs.append(i)
-        doc_metas.append(m)
-
-    if doc_texts:
-        doc_vecs = enc.encode(doc_texts, batch_size=64, show_progress_bar=False,
-                              normalize_embeddings=True, convert_to_numpy=True)
-        store.add_doc(doc_texts, doc_vecs, ns=ns, source_idxs=doc_source_idxs, meta=doc_metas)
     return len(all_chunks)
