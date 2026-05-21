@@ -188,7 +188,7 @@ def test_rerank_reorders_and_attaches_ce_score(populated_store, mock_enc, monkey
         "Photosynthesis converts sunlight into chemical energy in plants.": 0.95,
         "Machine learning is a subset of artificial intelligence.": 0.40,
     })
-    monkeypatch.setattr("mnemonics.retrieve._get_rerank_am", lambda model=None: stub)
+    monkeypatch.setattr("mnemonics.retrieve._get_rerank_ce", lambda model=None: stub)
 
     result = retrieve("q", store, top_k=3, rerank=True)
     # CE pushes photosynthesis to position 0 regardless of vector order.
@@ -211,7 +211,7 @@ def test_rerank_off_does_not_call_ce(populated_store, mock_enc, monkeypatch):
         sentinel["called"] = True
         raise AssertionError("CE must not load when rerank=False")
 
-    monkeypatch.setattr("mnemonics.retrieve._get_rerank_am", _should_not_be_called)
+    monkeypatch.setattr("mnemonics.retrieve._get_rerank_ce", _should_not_be_called)
     retrieve("q", store, top_k=3, rerank=False)
     assert sentinel["called"] is False
 
@@ -221,20 +221,22 @@ def test_rerank_widens_candidate_band_before_truncate(populated_store, mock_enc,
     store, docs, vecs = populated_store
     mock_enc.return_value = _enc_returning(vecs[0])
     stub = _StubAM({})  # all 0.0 — order irrelevant
-    monkeypatch.setattr("mnemonics.retrieve._get_rerank_am", lambda model=None: stub)
+    monkeypatch.setattr("mnemonics.retrieve._get_rerank_ce", lambda model=None: stub)
     retrieve("q", store, top_k=2, candidate_k=20, rerank=True)
     # All 5 docs (or fewer if store has less) must reach CE — not just top_k=2.
     assert stub.last_texts is not None
     assert len(stub.last_texts) >= min(5, 20)
 
 
-def test_rerank_raises_when_adaptmem_missing(populated_store, mock_enc, monkeypatch):
-    """Clear error, not silent fallback, when adaptmem is unavailable."""
+def test_rerank_falls_back_to_sentence_transformers_when_adaptmem_missing(
+    populated_store, mock_enc, monkeypatch
+):
+    """If adaptmem is unavailable, rerank falls back to bare CrossEncoder."""
     store, docs, vecs = populated_store
     mock_enc.return_value = _enc_returning(vecs[0])
-    # Reset module-level cache so the import is reattempted.
-    monkeypatch.setattr("mnemonics.retrieve._rerank_am", None)
+    monkeypatch.setattr("mnemonics.retrieve._rerank_ce", None)
     monkeypatch.setattr("mnemonics.retrieve._rerank_model_name", None)
+
     import builtins
     real_import = builtins.__import__
 
@@ -243,9 +245,18 @@ def test_rerank_raises_when_adaptmem_missing(populated_store, mock_enc, monkeypa
             raise ImportError("simulated missing adaptmem")
         return real_import(name, *a, **kw)
 
+    class _StubCE:
+        def __init__(self, model_name):
+            self.model_name = model_name
+        def predict(self, pairs, show_progress_bar=False):
+            return [0.5 - i * 0.01 for i in range(len(pairs))]
+
+    import sentence_transformers
+    monkeypatch.setattr(sentence_transformers, "CrossEncoder", _StubCE)
     monkeypatch.setattr(builtins, "__import__", _block_adaptmem)
-    with pytest.raises(RuntimeError, match="rerank=True requires the 'adaptmem' package"):
-        retrieve("q", store, top_k=3, rerank=True)
+    out = retrieve("q", store, top_k=3, rerank=True)
+    assert len(out) <= 3
+    assert all("ce_score" in r for r in out)
 
 
 def test_rerank_empty_results_returns_empty(tmp_store, mock_enc, monkeypatch):
@@ -253,7 +264,7 @@ def test_rerank_empty_results_returns_empty(tmp_store, mock_enc, monkeypatch):
     import numpy as np
     mock_enc.return_value = _enc_returning(np.zeros(DIM, dtype="float32"))
     stub = _StubAM({})
-    monkeypatch.setattr("mnemonics.retrieve._get_rerank_am", lambda model=None: stub)
+    monkeypatch.setattr("mnemonics.retrieve._get_rerank_ce", lambda model=None: stub)
     result = retrieve("q", tmp_store, top_k=5, rerank=True)
     assert result["results"] == []
     assert stub.last_texts is None  # CE never invoked

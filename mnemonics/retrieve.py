@@ -49,37 +49,59 @@ def _signal_boost(text: str, quoted: list[str], names: list[str]) -> float:
     n_hit = sum(1 for n in names if n in t) / max(len(names), 1) if names else 0.0
     return 1.0 + 0.60 * q_hit + 0.25 * n_hit
 
-# Lazy-cached AdaptMem instance for CE rerank. We hold only the CrossEncoder
-# state; no bi-encoder index is needed (mnemonics owns its own HNSW + BM25).
-_rerank_am: Any = None
+# Lazy-cached CrossEncoder for rerank. Loaded once per process and reused.
+# Tries AdaptMem.rerank first (Atakan's local repo has it); falls back to a
+# bare sentence_transformers.CrossEncoder. The fallback keeps Kaggle/Colab
+# runs working where the PyPI adaptmem release lacks the rerank method.
+_rerank_ce: Any = None
 _rerank_model_name: str | None = None
 
 
-def _get_rerank_am(model: str | None = None) -> Any:
-    """Return a cached AdaptMem instance whose CE is ready to score pairs."""
-    global _rerank_am, _rerank_model_name
-    try:
-        from adaptmem import AdaptMem
-    except ImportError as e:
-        raise RuntimeError(
-            "rerank=True requires the 'adaptmem' package. Install with "
-            "`pip install adaptmem` or set rerank=False."
-        ) from e
+def _get_rerank_ce(model: str | None = None) -> Any:
+    """Return a cached CrossEncoder instance (via AdaptMem if available, else bare ST)."""
+    global _rerank_ce, _rerank_model_name
     name = model or os.environ.get(
         "MNEMONICS_RERANK_MODEL", "cross-encoder/ms-marco-MiniLM-L-12-v2"
     )
-    if _rerank_am is None or _rerank_model_name != name:
-        _rerank_am = AdaptMem(rerank_model=name)
-        _rerank_model_name = name
-    return _rerank_am
+    if _rerank_ce is not None and _rerank_model_name == name:
+        return _rerank_ce
+    # Prefer AdaptMem if it exposes rerank (lets future AdaptMem versions
+    # inject FT'd CE heads). Otherwise use sentence-transformers directly.
+    try:
+        from adaptmem import AdaptMem
+        am = AdaptMem(rerank_model=name)
+        if hasattr(am, "rerank"):
+            _rerank_ce = am
+            _rerank_model_name = name
+            return _rerank_ce
+    except Exception:
+        pass
+    try:
+        from sentence_transformers import CrossEncoder
+    except ImportError as e:
+        raise RuntimeError(
+            "rerank=True requires either 'adaptmem' (with rerank support) or "
+            "'sentence-transformers'. Install with `pip install sentence-transformers`."
+        ) from e
+    _rerank_ce = CrossEncoder(name)
+    _rerank_model_name = name
+    return _rerank_ce
 
 
 def _ce_rerank(query: str, results: list[dict[str, Any]], top_k: int) -> list[dict[str, Any]]:
     """Cross-encoder rerank: attach ce_score, replace score, return top_k sorted desc."""
     if not results:
         return []
-    am = _get_rerank_am()
-    ranked = am.rerank(query, [r["text"] for r in results])
+    ce = _get_rerank_ce()
+    texts = [r["text"] for r in results]
+    if hasattr(ce, "rerank"):
+        # AdaptMem-style: returns [(idx, score), ...] already sorted desc
+        ranked = ce.rerank(query, texts)
+    else:
+        # Bare CrossEncoder: score pairs, sort ourselves
+        pairs = [(query, t) for t in texts]
+        scores = ce.predict(pairs, show_progress_bar=False)
+        ranked = sorted(enumerate(scores), key=lambda x: -float(x[1]))
     out: list[dict[str, Any]] = []
     for idx, ce_score in ranked:
         item = dict(results[idx])
