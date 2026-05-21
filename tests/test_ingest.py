@@ -138,12 +138,11 @@ def test_ingest_multiple_docs_all_stored(tmp_store, mock_enc):
     assert tmp_store.count() == 10
 
 
-def test_ingest_calls_encode_once(tmp_store, mock_enc):
-    # Single batch covers both chunk index and doc-level mean-pool (the mean
-    # is computed from the same chunk vectors, no second encode pass).
+def test_ingest_calls_encode_twice(tmp_store, mock_enc):
+    # Two passes: one batch over chunks, one batch over per-input doc texts.
     mock_enc.return_value = _mock_encoder(3)
     ingest(["a", "b", "c"], tmp_store)
-    assert mock_enc.return_value.encode.call_count == 1
+    assert mock_enc.return_value.encode.call_count == 2
 
 
 def test_ingest_batch_size_param(tmp_store, mock_enc):
