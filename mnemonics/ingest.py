@@ -279,21 +279,41 @@ def ingest(
                       normalize_embeddings=True, convert_to_numpy=True)
     store.add(all_chunks, vecs, ns=ns, meta=all_meta, summaries=all_summaries)
 
-    # Session-level doc embeddings: one vector per input text (first 400 words).
-    # Used by retrieve(use_doc_filter=True) as a Stage-1 session filter.
+    # Session-level doc embeddings: mean-pool of the session's chunk vectors
+    # we already computed above. Reuses `vecs`, no extra encode pass. Covers
+    # the whole session instead of the first 400 words (MiniLM truncates at
+    # 256 tokens, so the previous "first 400 words" call captured only the
+    # opening sentences and Stage-1 filtering was effectively blind).
+    # Augmented synth chunks (kind=preference/fact) are excluded from the
+    # mean so the doc vector reflects raw conversation, not derived rows.
+    by_source: dict[int, list] = {}
+    for v, m in zip(vecs, all_meta):
+        if "kind" in m:
+            continue
+        sidx = m.get("source_idx")
+        if sidx is None:
+            continue
+        by_source.setdefault(sidx, []).append(v)
+
     doc_texts: list[str] = []
     doc_source_idxs: list[int] = []
     doc_metas: list[dict] = []
+    doc_vec_rows: list[np.ndarray] = []
     for i, text in enumerate(texts):
-        words = text.split()
-        doc_text = " ".join(words[:400])
-        m = (meta[i] if meta else {}) | {"source_idx": i}
-        doc_texts.append(doc_text)
+        chunk_vecs = by_source.get(i, [])
+        if not chunk_vecs:
+            continue
+        mean_vec = np.mean(np.stack(chunk_vecs, axis=0), axis=0)
+        # Re-normalize after the mean; cosine search expects unit-length vectors.
+        n = float(np.linalg.norm(mean_vec))
+        if n > 0:
+            mean_vec = mean_vec / n
+        doc_vec_rows.append(mean_vec.astype("float32"))
+        doc_texts.append(" ".join(text.split()[:80]))  # short preview for SQLite display
         doc_source_idxs.append(i)
-        doc_metas.append(m)
+        doc_metas.append((meta[i] if meta else {}) | {"source_idx": i})
 
     if doc_texts:
-        doc_vecs = enc.encode(doc_texts, batch_size=64, show_progress_bar=False,
-                              normalize_embeddings=True, convert_to_numpy=True)
+        doc_vecs = np.stack(doc_vec_rows, axis=0)
         store.add_doc(doc_texts, doc_vecs, ns=ns, source_idxs=doc_source_idxs, meta=doc_metas)
     return len(all_chunks)
