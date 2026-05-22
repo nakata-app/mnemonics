@@ -66,6 +66,35 @@ def _session_text(session: list[dict]) -> str:
     return "\n".join(f"[{m.get('role','?')}] {m.get('content','')}" for m in session)
 
 
+def _session_turn_chunks(sid: str, session: list[dict]) -> list[str]:
+    """Split a session into (user + assistant) turn-pair chunks, MemPalace-style.
+
+    Each chunk = one user turn + the immediately following assistant turn.
+    Preserves the SID= prefix so downstream session-id extraction still works.
+    Consecutive user turns or trailing user-only turns are kept as their own chunk.
+    """
+    prefix = f"SID={sid}|"
+    chunks: list[str] = []
+    i = 0
+    msgs = session
+    while i < len(msgs):
+        role = msgs[i].get("role", "")
+        content = msgs[i].get("content", "")
+        if role == "user":
+            pair = f"[user] {content}"
+            if i + 1 < len(msgs) and msgs[i + 1].get("role") == "assistant":
+                pair += f"\n[assistant] {msgs[i + 1].get('content', '')}"
+                i += 2
+            else:
+                i += 1
+            chunks.append(prefix + pair)
+        else:
+            # assistant or system turn not preceded by user — store standalone
+            chunks.append(prefix + f"[{role}] {content}")
+            i += 1
+    return chunks if chunks else [prefix + _session_text(session)]
+
+
 def _session_id_of(meta: str | None) -> str | None:
     """Extract LME session id from the meta we stored at ingest."""
     if not meta:
@@ -81,6 +110,7 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                        augment_preferences: bool = False,
                        augment_assistant_facts: bool = False,
                        chunk_size: int = 200, chunk_overlap: int = 40,
+                       chunk_mode: str = "word",
                        per_q_out: Path | None = None) -> dict:
     """Run mnemonics retrieve() across every question, return aggregated metrics."""
     from mnemonics.store import Store
@@ -96,16 +126,27 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
         # Fresh store per question — LongMemEval is per-question independent.
         with tempfile.TemporaryDirectory() as td:
             store = Store(td)
-            # Ingest each session as one chunk-stream tagged with its sid.
-            texts = []
-            for sid, sess in zip(q["haystack_session_ids"], q["haystack_sessions"]):
-                texts.append(f"SID={sid}|{_session_text(sess)}")
+            # Ingest each session tagged with its sid.
+            if chunk_mode == "turn":
+                # MemPalace-style: each (user + assistant) turn pair = 1 chunk.
+                # Pass pre-chunked texts; chunk_size=1 in ingest so no re-splitting.
+                texts = []
+                for sid, sess in zip(q["haystack_session_ids"], q["haystack_sessions"]):
+                    texts.extend(_session_turn_chunks(sid, sess))
+                ingest(texts=texts, store=store, ns="lme",
+                       augment_preferences=augment_preferences,
+                       augment_assistant_facts=augment_assistant_facts,
+                       chunk_size=99999, chunk_overlap=0)
+            else:
+                texts = []
+                for sid, sess in zip(q["haystack_session_ids"], q["haystack_sessions"]):
+                    texts.append(f"SID={sid}|{_session_text(sess)}")
+                ingest(texts=texts, store=store, ns="lme",
+                       augment_preferences=augment_preferences,
+                       augment_assistant_facts=augment_assistant_facts,
+                       chunk_size=chunk_size, chunk_overlap=chunk_overlap)
             if not texts:
                 continue
-            ingest(texts=texts, store=store, ns="lme",
-                   augment_preferences=augment_preferences,
-                   augment_assistant_facts=augment_assistant_facts,
-                   chunk_size=chunk_size, chunk_overlap=chunk_overlap)
             try:
                 result = retrieve(
                     query=q["question"],
@@ -211,6 +252,8 @@ def main():
                     help="Per-channel candidate band before fusion (default 20, MemPalace uses 50)")
     ap.add_argument("--chunk-size", type=int, default=200, help="Words per ingest chunk (default 200)")
     ap.add_argument("--chunk-overlap", type=int, default=40, help="Overlap words between adjacent chunks (default 40)")
+    ap.add_argument("--chunk-mode", choices=["word", "turn"], default="word",
+                    help="'word': sliding window (default); 'turn': one user+assistant pair per chunk (MemPalace-style)")
     ap.add_argument("--out", type=Path, default=Path("/tmp/mnemonics_vs_mempalace.json"))
     ap.add_argument("--per-q-out", type=Path, default=None,
                     help="Optional path to dump per-question hit/miss records")
@@ -237,21 +280,23 @@ def main():
     results = {"n_questions": len(questions), "mempalace_full": mempalace_baseline_summary()}
 
     if args.mode in ("both", "no_rerank"):
-        print(f"\n=== Mnemonics (no CE rerank) augment_prefs={args.augment_preferences} augment_facts={args.augment_assistant_facts} cand_k={args.candidate_k} chunk={args.chunk_size}/{args.chunk_overlap} ===", flush=True)
+        print(f"\n=== Mnemonics (no CE rerank) augment_prefs={args.augment_preferences} augment_facts={args.augment_assistant_facts} cand_k={args.candidate_k} chunk={args.chunk_size}/{args.chunk_overlap} mode={args.chunk_mode} ===", flush=True)
         results["mnemonics_no_rerank"] = evaluate_mnemonics(
             questions, rerank=False, candidate_k=args.candidate_k,
             augment_preferences=args.augment_preferences,
             augment_assistant_facts=args.augment_assistant_facts,
             chunk_size=args.chunk_size, chunk_overlap=args.chunk_overlap,
+            chunk_mode=args.chunk_mode,
         )
 
     if args.mode in ("both", "rerank"):
-        print(f"\n=== Mnemonics (CE rerank) augment_prefs={args.augment_preferences} augment_facts={args.augment_assistant_facts} cand_k={args.candidate_k} chunk={args.chunk_size}/{args.chunk_overlap} ===", flush=True)
+        print(f"\n=== Mnemonics (CE rerank) augment_prefs={args.augment_preferences} augment_facts={args.augment_assistant_facts} cand_k={args.candidate_k} chunk={args.chunk_size}/{args.chunk_overlap} mode={args.chunk_mode} ===", flush=True)
         results["mnemonics_rerank"] = evaluate_mnemonics(
             questions, rerank=True, candidate_k=args.candidate_k,
             augment_preferences=args.augment_preferences,
             augment_assistant_facts=args.augment_assistant_facts,
             chunk_size=args.chunk_size, chunk_overlap=args.chunk_overlap,
+            chunk_mode=args.chunk_mode,
             per_q_out=args.per_q_out,
         )
 
