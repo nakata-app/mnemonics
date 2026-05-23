@@ -149,26 +149,42 @@ def _llm_rerank_topk(query: str, results: list, top_n: int = 5, model: str | Non
         f"\n\nReply with only the index number (0 to {len(head) - 1}). Index:"
     )
 
-    try:
-        client = _get_llm_client()
-        resp = client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=8,
-            temperature=0.0,
-        )
-        raw = (resp.choices[0].message.content or "").strip()
-        m = _LLM_INT_RE.search(raw)
-        if not m:
+    # Exponential backoff on 429/rate-limit errors. NIM free tier throttles
+    # aggressively; we wait up to ~30s total (2 + 4 + 8 + 16s) before giving
+    # up. Other exceptions fail fast — no point retrying a bad model name.
+    client = _get_llm_client()
+    raw = None
+    max_retries = 4
+    for attempt in range(max_retries + 1):
+        try:
+            resp = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=8,
+                temperature=0.0,
+            )
+            raw = (resp.choices[0].message.content or "").strip()
+            break
+        except Exception as e:
+            err_str = str(e)
+            is_rate = "429" in err_str or "rate" in err_str.lower() or "too many" in err_str.lower()
+            if is_rate and attempt < max_retries:
+                import time as _time
+                _time.sleep(2 ** (attempt + 1))  # 2, 4, 8, 16
+                continue
+            print(f"  LLM rerank error: {type(e).__name__}: {e}", file=sys.stderr)
             return results
-        chosen = int(m.group())
-        if chosen < 0 or chosen >= len(head):
-            return results
-        if chosen == 0:
-            return results  # already at top
-    except Exception as e:
-        print(f"  LLM rerank error: {type(e).__name__}: {e}", file=sys.stderr)
+    if raw is None:
         return results
+
+    m = _LLM_INT_RE.search(raw)
+    if not m:
+        return results
+    chosen = int(m.group())
+    if chosen < 0 or chosen >= len(head):
+        return results
+    if chosen == 0:
+        return results  # already at top
 
     # Build the reordered list: chosen first, then everything else preserving order.
     chosen_global_idx = head_idx[chosen]
