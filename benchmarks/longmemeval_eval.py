@@ -279,7 +279,15 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                        per_q_out: Path | None = None) -> dict:
     """Run mnemonics retrieve() across every question, return aggregated metrics."""
     from mnemonics.store import Store
-    from mnemonics.ingest import ingest
+    from mnemonics.ingest import ingest, _get_encoder
+
+    # Resolve encoder once up-front so we can size the per-question Store to
+    # whatever dim the active model emits (MNEMONICS_ENCODER_MODEL may swap
+    # all-MiniLM-L6-v2 -> 768d bge-base-en, etc.). Without this Store would
+    # stay at 384d and hnswlib would refuse the larger vectors.
+    enc = _get_encoder()
+    store_dim = enc.get_sentence_embedding_dimension()
+    print(f"  encoder dim={store_dim} (model={getattr(enc, '_first_module', lambda: None)() and ''}{os.environ.get('MNEMONICS_ENCODER_MODEL') or 'all-MiniLM-L6-v2'})", flush=True)
     from mnemonics.retrieve import retrieve
 
     ks = [1, 5, 10]
@@ -290,7 +298,7 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
     for i, q in enumerate(questions):
         # Fresh store per question — LongMemEval is per-question independent.
         with tempfile.TemporaryDirectory() as td:
-            store = Store(td)
+            store = Store(td, dim=store_dim)
             # Ingest each session tagged with its sid.
             if chunk_mode == "turn":
                 # MemPalace-style: each (user + assistant) turn pair = 1 chunk.

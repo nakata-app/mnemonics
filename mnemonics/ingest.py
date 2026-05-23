@@ -202,6 +202,13 @@ def _build_fact_doc(text: str, facts: list[str]) -> str:
 
 
 def _resolve_model(model: str) -> str:
+    # MNEMONICS_ENCODER_MODEL fully overrides the base encoder; takes precedence
+    # over adaptmem. Use it to A/B stronger sentence-transformers (e.g.
+    # BAAI/bge-base-en-v1.5) without code changes. Different dim than 384 is
+    # OK — the store holds whatever the encoder emits.
+    env_model = os.environ.get("MNEMONICS_ENCODER_MODEL")
+    if env_model and model == "all-MiniLM-L6-v2":
+        return env_model
     # MNEMONICS_ADAPTMEM_PATH swaps the default base encoder with a fine-tuned
     # adaptmem checkpoint at runtime. Same 384-dim contract, drop-in.
     adaptmem_path = os.environ.get("MNEMONICS_ADAPTMEM_PATH")
