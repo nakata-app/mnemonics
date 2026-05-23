@@ -82,6 +82,100 @@ def _detect_relative_target(query: str, question_date: str | None) -> tuple[date
     tol = max(2, min(delta_days // 4, 14))
     return target, tol
 
+
+# Cached LLM client for --llm-rerank. Built lazily on first use.
+_LLM_CLIENT = None
+_LLM_INT_RE = re.compile(r"\d+")
+
+
+def _get_llm_client():
+    """Build an OpenAI-compatible client pointed at NVIDIA NIM."""
+    global _LLM_CLIENT
+    if _LLM_CLIENT is not None:
+        return _LLM_CLIENT
+    api_key = os.environ.get("NVIDIA_API_KEY") or os.environ.get("NIM_API_KEY")
+    if not api_key:
+        raise RuntimeError("NVIDIA_API_KEY not set; cannot use --llm-rerank")
+    from openai import OpenAI  # local import; only required when --llm-rerank is on
+    _LLM_CLIENT = OpenAI(
+        base_url=os.environ.get("MNEMONICS_LLM_BASE_URL", "https://integrate.api.nvidia.com/v1"),
+        api_key=api_key,
+    )
+    return _LLM_CLIENT
+
+
+def _llm_rerank_topk(query: str, results: list, top_n: int = 5, model: str | None = None) -> list:
+    """LLM-as-judge rerank over the top_n session-unique candidates.
+
+    Sends the question and up to top_n deduped session passages to an LLM,
+    asks for the 0-based index of the passage that best contains the answer,
+    and moves the chosen one to position 0. The remaining candidates (both
+    the unchosen head and any tail beyond top_n) keep their original relative
+    order. Returns the original list unchanged on any error (no key, parse
+    failure, API exception) so retrieval still degrades gracefully.
+    """
+    if len(results) < 2:
+        return results
+    model = model or os.environ.get("MNEMONICS_LLM_RERANK_MODEL", "meta/llama-3.3-70b-instruct")
+
+    # Dedup by session id within the head — LLM only needs one chunk per session.
+    head_idx: list[int] = []
+    seen_sids: set[str] = set()
+    for i, r in enumerate(results):
+        if len(head_idx) >= top_n:
+            break
+        sid = _session_id_of(r.get("text"))
+        if not sid or sid in seen_sids:
+            continue
+        seen_sids.add(sid)
+        head_idx.append(i)
+    if len(head_idx) < 2:
+        return results
+
+    head = [results[i] for i in head_idx]
+    cands_block: list[str] = []
+    for j, r in enumerate(head):
+        text = r.get("text", "") or ""
+        # Strip the "SID=xxx|" routing prefix so the LLM sees clean dialogue.
+        if "|" in text:
+            text = text.split("|", 1)[1]
+        cands_block.append(f"[{j}] {text[:600]}")
+
+    prompt = (
+        "You are a retrieval judge. Pick the single passage that best contains "
+        "the answer to the user's question.\n\n"
+        f"Question: {query}\n\n"
+        "Passages:\n" + "\n\n".join(cands_block) +
+        f"\n\nReply with only the index number (0 to {len(head) - 1}). Index:"
+    )
+
+    try:
+        client = _get_llm_client()
+        resp = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=8,
+            temperature=0.0,
+        )
+        raw = (resp.choices[0].message.content or "").strip()
+        m = _LLM_INT_RE.search(raw)
+        if not m:
+            return results
+        chosen = int(m.group())
+        if chosen < 0 or chosen >= len(head):
+            return results
+        if chosen == 0:
+            return results  # already at top
+    except Exception as e:
+        print(f"  LLM rerank error: {type(e).__name__}: {e}", file=sys.stderr)
+        return results
+
+    # Build the reordered list: chosen first, then everything else preserving order.
+    chosen_global_idx = head_idx[chosen]
+    chosen_item = results[chosen_global_idx]
+    rest = [r for k, r in enumerate(results) if k != chosen_global_idx]
+    return [chosen_item] + rest
+
 def _resolve_path(env_key: str, *candidates: Path) -> Path:
     """Env var varsa onu kullan, yoksa var olan ilk candidate'i döndür."""
     from_env = os.environ.get(env_key, "")
@@ -165,6 +259,7 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                        chunk_mode: str = "word",
                        inject_dates: bool = False,
                        temporal_aware: bool = False,
+                       llm_rerank_top_n: int = 0,
                        per_q_out: Path | None = None) -> dict:
     """Run mnemonics retrieve() across every question, return aggregated metrics."""
     from mnemonics.store import Store
@@ -251,6 +346,16 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                             else:
                                 out_window.append(r)
                         result["results"] = in_window + out_window
+
+            # LLM-as-judge rerank over top-N session-unique candidates. Runs AFTER
+            # temporal_aware so the LLM also gets to weigh in on temporally-promoted
+            # results. Cost: 1 LLM call per question.
+            if llm_rerank_top_n > 0:
+                result["results"] = _llm_rerank_topk(
+                    query=q.get("question", ""),
+                    results=result["results"],
+                    top_n=llm_rerank_top_n,
+                )
 
             answer_sids = set(q.get("answer_session_ids") or [])
             retrieved_sids: list[str] = []
@@ -351,6 +456,8 @@ def main():
                     help="Prepend haystack_dates to each chunk and question_date to the query (turn-mode only). Targets temporal-reasoning lift.")
     ap.add_argument("--temporal-aware", action="store_true",
                     help="Post-retrieval: when the query says 'N weeks/days/months ago', push sessions inside that date window to the front of the candidate list. Cheap, opt-in, no embedding change.")
+    ap.add_argument("--llm-rerank-top-n", type=int, default=0,
+                    help="If >0, send the top-N session-unique candidates to an LLM judge (NVIDIA NIM Llama 3.3 70B by default) which picks the index containing the answer. Requires NVIDIA_API_KEY. 0 disables.")
     ap.add_argument("--out", type=Path, default=Path("/tmp/mnemonics_vs_mempalace.json"))
     ap.add_argument("--per-q-out", type=Path, default=None,
                     help="Optional path to dump per-question hit/miss records")
@@ -377,7 +484,7 @@ def main():
     results = {"n_questions": len(questions), "mempalace_full": mempalace_baseline_summary()}
 
     if args.mode in ("both", "no_rerank"):
-        print(f"\n=== Mnemonics (no CE rerank) augment_prefs={args.augment_preferences} augment_facts={args.augment_assistant_facts} cand_k={args.candidate_k} chunk={args.chunk_size}/{args.chunk_overlap} mode={args.chunk_mode} dates={args.inject_dates} temporal_aware={args.temporal_aware} ===", flush=True)
+        print(f"\n=== Mnemonics (no CE rerank) augment_prefs={args.augment_preferences} augment_facts={args.augment_assistant_facts} cand_k={args.candidate_k} chunk={args.chunk_size}/{args.chunk_overlap} mode={args.chunk_mode} dates={args.inject_dates} temporal_aware={args.temporal_aware} llm_rerank_top_n={args.llm_rerank_top_n} ===", flush=True)
         results["mnemonics_no_rerank"] = evaluate_mnemonics(
             questions, rerank=False, candidate_k=args.candidate_k,
             augment_preferences=args.augment_preferences,
@@ -386,10 +493,11 @@ def main():
             chunk_mode=args.chunk_mode,
             inject_dates=args.inject_dates,
             temporal_aware=args.temporal_aware,
+            llm_rerank_top_n=args.llm_rerank_top_n,
         )
 
     if args.mode in ("both", "rerank"):
-        print(f"\n=== Mnemonics (CE rerank) augment_prefs={args.augment_preferences} augment_facts={args.augment_assistant_facts} cand_k={args.candidate_k} chunk={args.chunk_size}/{args.chunk_overlap} mode={args.chunk_mode} dates={args.inject_dates} temporal_aware={args.temporal_aware} ===", flush=True)
+        print(f"\n=== Mnemonics (CE rerank) augment_prefs={args.augment_preferences} augment_facts={args.augment_assistant_facts} cand_k={args.candidate_k} chunk={args.chunk_size}/{args.chunk_overlap} mode={args.chunk_mode} dates={args.inject_dates} temporal_aware={args.temporal_aware} llm_rerank_top_n={args.llm_rerank_top_n} ===", flush=True)
         results["mnemonics_rerank"] = evaluate_mnemonics(
             questions, rerank=True, candidate_k=args.candidate_k,
             augment_preferences=args.augment_preferences,
@@ -398,6 +506,7 @@ def main():
             chunk_mode=args.chunk_mode,
             inject_dates=args.inject_dates,
             temporal_aware=args.temporal_aware,
+            llm_rerank_top_n=args.llm_rerank_top_n,
             per_q_out=args.per_q_out,
         )
 
