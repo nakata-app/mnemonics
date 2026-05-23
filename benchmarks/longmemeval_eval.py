@@ -29,11 +29,58 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import tempfile
 import time
 from collections import defaultdict
+from datetime import datetime, timedelta
 from pathlib import Path
+
+# "N (weeks|days|months|years) ago" with optional number word.
+_REL_TIME_RE = re.compile(
+    r"\b(?:(\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|few)\s+)?"
+    r"(day|week|month|year)s?\s+ago\b",
+    re.IGNORECASE,
+)
+_WORD_TO_NUM = {
+    "a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10, "few": 3,
+}
+_UNIT_DAYS = {"day": 1, "week": 7, "month": 30, "year": 365}
+
+
+def _parse_lme_date(s: str | None) -> datetime | None:
+    """Parse LongMemEval date string '2023/05/20 (Sat) 02:21' -> datetime."""
+    if not s:
+        return None
+    head = s.strip().split(" ")[0]
+    try:
+        return datetime.strptime(head, "%Y/%m/%d")
+    except ValueError:
+        return None
+
+
+def _detect_relative_target(query: str, question_date: str | None) -> tuple[datetime, int] | None:
+    """If query mentions 'N weeks/days ago' and question_date is parseable,
+    return (target_date, tolerance_days). Else None.
+    """
+    if not question_date:
+        return None
+    qdate = _parse_lme_date(question_date)
+    if qdate is None:
+        return None
+    m = _REL_TIME_RE.search(query)
+    if not m:
+        return None
+    num_str = (m.group(1) or "1").lower()
+    unit = m.group(2).lower()
+    num = _WORD_TO_NUM.get(num_str, int(num_str) if num_str.isdigit() else 1)
+    delta_days = num * _UNIT_DAYS[unit]
+    target = qdate - timedelta(days=delta_days)
+    # Tolerance scales with delta. Tight for "a day ago", loose for "a year ago".
+    tol = max(2, min(delta_days // 4, 14))
+    return target, tol
 
 def _resolve_path(env_key: str, *candidates: Path) -> Path:
     """Env var varsa onu kullan, yoksa var olan ilk candidate'i döndür."""
@@ -117,6 +164,7 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                        chunk_size: int = 200, chunk_overlap: int = 40,
                        chunk_mode: str = "word",
                        inject_dates: bool = False,
+                       temporal_aware: bool = False,
                        per_q_out: Path | None = None) -> dict:
     """Run mnemonics retrieve() across every question, return aggregated metrics."""
     from mnemonics.store import Store
@@ -170,6 +218,40 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
             except RuntimeError as e:
                 print(f"  q{i} ERROR: {e}", file=sys.stderr)
                 continue
+
+            # Temporal-aware post-rerank. Only fires when the query contains a
+            # relative-time expression ("N weeks/days/months ago"); other queries
+            # pass through untouched. Sessions whose date falls inside the
+            # computed target window get pushed to the front of the candidate
+            # list, preserving their relative order among themselves and the
+            # original order of the remaining sessions. Targets the temporal-
+            # reasoning recall failures we measured (2/4 top-10 misses).
+            if temporal_aware:
+                target_info = _detect_relative_target(
+                    q.get("question", ""), q.get("question_date")
+                )
+                if target_info is not None:
+                    target_date, tol = target_info
+                    sid_to_date: dict[str, datetime] = {}
+                    for sid_x, d_str in zip(
+                        q.get("haystack_session_ids", []),
+                        q.get("haystack_dates", []) or [],
+                    ):
+                        sdate = _parse_lme_date(d_str)
+                        if sdate is not None:
+                            sid_to_date[sid_x] = sdate
+                    if sid_to_date:
+                        in_window: list = []
+                        out_window: list = []
+                        for r in result["results"]:
+                            sid = _session_id_of(r.get("text"))
+                            sdate = sid_to_date.get(sid or "")
+                            if sdate is not None and abs((sdate - target_date).days) <= tol:
+                                in_window.append(r)
+                            else:
+                                out_window.append(r)
+                        result["results"] = in_window + out_window
+
             answer_sids = set(q.get("answer_session_ids") or [])
             retrieved_sids: list[str] = []
             for r in result["results"]:
@@ -267,6 +349,8 @@ def main():
                     help="'word': sliding window (default); 'turn': one user+assistant pair per chunk (MemPalace-style)")
     ap.add_argument("--inject-dates", action="store_true",
                     help="Prepend haystack_dates to each chunk and question_date to the query (turn-mode only). Targets temporal-reasoning lift.")
+    ap.add_argument("--temporal-aware", action="store_true",
+                    help="Post-retrieval: when the query says 'N weeks/days/months ago', push sessions inside that date window to the front of the candidate list. Cheap, opt-in, no embedding change.")
     ap.add_argument("--out", type=Path, default=Path("/tmp/mnemonics_vs_mempalace.json"))
     ap.add_argument("--per-q-out", type=Path, default=None,
                     help="Optional path to dump per-question hit/miss records")
@@ -293,7 +377,7 @@ def main():
     results = {"n_questions": len(questions), "mempalace_full": mempalace_baseline_summary()}
 
     if args.mode in ("both", "no_rerank"):
-        print(f"\n=== Mnemonics (no CE rerank) augment_prefs={args.augment_preferences} augment_facts={args.augment_assistant_facts} cand_k={args.candidate_k} chunk={args.chunk_size}/{args.chunk_overlap} mode={args.chunk_mode} dates={args.inject_dates} ===", flush=True)
+        print(f"\n=== Mnemonics (no CE rerank) augment_prefs={args.augment_preferences} augment_facts={args.augment_assistant_facts} cand_k={args.candidate_k} chunk={args.chunk_size}/{args.chunk_overlap} mode={args.chunk_mode} dates={args.inject_dates} temporal_aware={args.temporal_aware} ===", flush=True)
         results["mnemonics_no_rerank"] = evaluate_mnemonics(
             questions, rerank=False, candidate_k=args.candidate_k,
             augment_preferences=args.augment_preferences,
@@ -301,10 +385,11 @@ def main():
             chunk_size=args.chunk_size, chunk_overlap=args.chunk_overlap,
             chunk_mode=args.chunk_mode,
             inject_dates=args.inject_dates,
+            temporal_aware=args.temporal_aware,
         )
 
     if args.mode in ("both", "rerank"):
-        print(f"\n=== Mnemonics (CE rerank) augment_prefs={args.augment_preferences} augment_facts={args.augment_assistant_facts} cand_k={args.candidate_k} chunk={args.chunk_size}/{args.chunk_overlap} mode={args.chunk_mode} dates={args.inject_dates} ===", flush=True)
+        print(f"\n=== Mnemonics (CE rerank) augment_prefs={args.augment_preferences} augment_facts={args.augment_assistant_facts} cand_k={args.candidate_k} chunk={args.chunk_size}/{args.chunk_overlap} mode={args.chunk_mode} dates={args.inject_dates} temporal_aware={args.temporal_aware} ===", flush=True)
         results["mnemonics_rerank"] = evaluate_mnemonics(
             questions, rerank=True, candidate_k=args.candidate_k,
             augment_preferences=args.augment_preferences,
@@ -312,6 +397,7 @@ def main():
             chunk_size=args.chunk_size, chunk_overlap=args.chunk_overlap,
             chunk_mode=args.chunk_mode,
             inject_dates=args.inject_dates,
+            temporal_aware=args.temporal_aware,
             per_q_out=args.per_q_out,
         )
 
