@@ -255,8 +255,9 @@ def test_rerank_falls_back_to_sentence_transformers_when_adaptmem_missing(
     monkeypatch.setattr(sentence_transformers, "CrossEncoder", _StubCE)
     monkeypatch.setattr(builtins, "__import__", _block_adaptmem)
     out = retrieve("q", store, top_k=3, rerank=True)
-    assert len(out) <= 3
-    assert all("ce_score" in r for r in out)
+    results = out["results"] if isinstance(out, dict) else out
+    assert len(results) <= 3
+    assert all("ce_score" in r for r in results)
 
 
 def test_rerank_empty_results_returns_empty(tmp_store, mock_enc, monkeypatch):
