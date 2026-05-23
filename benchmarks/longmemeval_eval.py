@@ -83,9 +83,20 @@ def _detect_relative_target(query: str, question_date: str | None) -> tuple[date
     return target, tol
 
 
-# Cached LLM client for --llm-rerank. Built lazily on first use.
+# Cached LLM client for --llm-rerank and --hyde. Built lazily on first use.
 _LLM_CLIENT = None
 _LLM_INT_RE = re.compile(r"\d+")
+
+# HyDE prompt: ask the LLM to write a user-style passage that *would* answer the
+# question. The hypothetical sits in the same vocabulary/style as haystack
+# chunks (first-person, specific details, no disclaimers), so its embedding is
+# closer to the real answer chunk than the bare question's embedding.
+_HYDE_PROMPT = (
+    "You are simulating a short passage from a user's chat history that would "
+    "answer this question. Write 1-2 sentences in the user's first-person voice "
+    "with specific concrete details. Do not add disclaimers, hedging, or 'as "
+    "an AI'. Just the passage.\n\nQuestion: {question}\n\nPassage:"
+)
 
 
 def _get_llm_client():
@@ -95,13 +106,67 @@ def _get_llm_client():
         return _LLM_CLIENT
     api_key = os.environ.get("NVIDIA_API_KEY") or os.environ.get("NIM_API_KEY")
     if not api_key:
-        raise RuntimeError("NVIDIA_API_KEY not set; cannot use --llm-rerank")
-    from openai import OpenAI  # local import; only required when --llm-rerank is on
+        raise RuntimeError("NVIDIA_API_KEY not set; cannot use --llm-rerank or --hyde")
+    from openai import OpenAI  # local import; only required when an LLM feature is on
     _LLM_CLIENT = OpenAI(
         base_url=os.environ.get("MNEMONICS_LLM_BASE_URL", "https://integrate.api.nvidia.com/v1"),
         api_key=api_key,
     )
     return _LLM_CLIENT
+
+
+def _llm_chat_with_backoff(prompt: str, model: str, max_tokens: int = 120,
+                           temperature: float = 0.3) -> str | None:
+    """One-shot chat completion with exponential backoff on 429. Returns the
+    raw response string or None on terminal failure. Shared by --hyde and
+    --llm-rerank so both paths follow the same retry discipline.
+    """
+    client = _get_llm_client()
+    for attempt in range(5):
+        try:
+            resp = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
+            return (resp.choices[0].message.content or "").strip()
+        except Exception as e:
+            err_str = str(e)
+            is_rate = "429" in err_str or "rate" in err_str.lower() or "too many" in err_str.lower()
+            if is_rate and attempt < 4:
+                import time as _time
+                _time.sleep(2 ** (attempt + 1))  # 2, 4, 8, 16
+                continue
+            print(f"  LLM error ({attempt=}): {type(e).__name__}: {e}", file=sys.stderr)
+            return None
+    return None
+
+
+def _hyde_passage(question: str, model: str | None = None) -> str | None:
+    """Generate a HyDE passage for the question. Returns None on LLM failure.
+
+    HyDE (Hypothetical Document Embeddings, Gao et al. 2022): instead of
+    embedding the literal question, embed a synthetic answer that mimics the
+    style/vocabulary of the corpus. For LongMemEval the corpus is a user's
+    chat history — first-person, concrete, no hedging — so the prompt steers
+    the LLM toward that voice. The hypothetical may be factually wrong; that
+    is fine, because we only use its embedding to *find* the real chunk.
+    """
+    model = model or os.environ.get("MNEMONICS_HYDE_MODEL", "meta/llama-3.3-70b-instruct")
+    raw = _llm_chat_with_backoff(
+        _HYDE_PROMPT.format(question=question),
+        model=model,
+        max_tokens=120,
+        temperature=0.3,  # mild diversity so we don't always emit identical phrasing
+    )
+    if not raw:
+        return None
+    # Strip common LLM preambles ("Sure! Here's...", quotes, etc.)
+    raw = raw.strip().strip('"').strip("'")
+    # Take only the first paragraph — a long answer hurts the embedding.
+    raw = raw.split("\n\n")[0].strip()
+    return raw if len(raw) >= 10 else None
 
 
 def _llm_rerank_topk(query: str, results: list, top_n: int = 5, model: str | None = None) -> list:
@@ -149,31 +214,7 @@ def _llm_rerank_topk(query: str, results: list, top_n: int = 5, model: str | Non
         f"\n\nReply with only the index number (0 to {len(head) - 1}). Index:"
     )
 
-    # Exponential backoff on 429/rate-limit errors. NIM free tier throttles
-    # aggressively; we wait up to ~30s total (2 + 4 + 8 + 16s) before giving
-    # up. Other exceptions fail fast — no point retrying a bad model name.
-    client = _get_llm_client()
-    raw = None
-    max_retries = 4
-    for attempt in range(max_retries + 1):
-        try:
-            resp = client.chat.completions.create(
-                model=model,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=8,
-                temperature=0.0,
-            )
-            raw = (resp.choices[0].message.content or "").strip()
-            break
-        except Exception as e:
-            err_str = str(e)
-            is_rate = "429" in err_str or "rate" in err_str.lower() or "too many" in err_str.lower()
-            if is_rate and attempt < max_retries:
-                import time as _time
-                _time.sleep(2 ** (attempt + 1))  # 2, 4, 8, 16
-                continue
-            print(f"  LLM rerank error: {type(e).__name__}: {e}", file=sys.stderr)
-            return results
+    raw = _llm_chat_with_backoff(prompt, model=model, max_tokens=8, temperature=0.0)
     if raw is None:
         return results
 
@@ -276,6 +317,7 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                        inject_dates: bool = False,
                        temporal_aware: bool = False,
                        llm_rerank_top_n: int = 0,
+                       hyde: bool = False,
                        per_q_out: Path | None = None) -> dict:
     """Run mnemonics retrieve() across every question, return aggregated metrics."""
     from mnemonics.store import Store
@@ -325,6 +367,15 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
             query = q["question"]
             if inject_dates and q.get("question_date"):
                 query = f"[{q['question_date']}] {query}"
+            if hyde:
+                # Concatenate (don't replace): the original query keeps the
+                # retrieval anchored to literal wording, while the hypothetical
+                # adds corpus-style vocabulary the chunks actually use. This is
+                # safer than pure HyDE since hallucinated details can't fully
+                # hijack the embedding.
+                hyp = _hyde_passage(q["question"])
+                if hyp:
+                    query = f"{query} {hyp}"
             try:
                 result = retrieve(
                     query=query,
@@ -482,6 +533,8 @@ def main():
                     help="Post-retrieval: when the query says 'N weeks/days/months ago', push sessions inside that date window to the front of the candidate list. Cheap, opt-in, no embedding change.")
     ap.add_argument("--llm-rerank-top-n", type=int, default=0,
                     help="If >0, send the top-N session-unique candidates to an LLM judge (NVIDIA NIM Llama 3.3 70B by default) which picks the index containing the answer. Requires NVIDIA_API_KEY. 0 disables.")
+    ap.add_argument("--hyde", action="store_true",
+                    help="Hypothetical Document Embeddings: ask an LLM (NIM Llama 3.3 70B) to draft a user-style passage that would answer the question, then append it to the query so the embedding lands closer to the corpus. Requires NVIDIA_API_KEY.")
     ap.add_argument("--out", type=Path, default=Path("/tmp/mnemonics_vs_mempalace.json"))
     ap.add_argument("--per-q-out", type=Path, default=None,
                     help="Optional path to dump per-question hit/miss records")
@@ -508,7 +561,7 @@ def main():
     results = {"n_questions": len(questions), "mempalace_full": mempalace_baseline_summary()}
 
     if args.mode in ("both", "no_rerank"):
-        print(f"\n=== Mnemonics (no CE rerank) augment_prefs={args.augment_preferences} augment_facts={args.augment_assistant_facts} cand_k={args.candidate_k} chunk={args.chunk_size}/{args.chunk_overlap} mode={args.chunk_mode} dates={args.inject_dates} temporal_aware={args.temporal_aware} llm_rerank_top_n={args.llm_rerank_top_n} ===", flush=True)
+        print(f"\n=== Mnemonics (no CE rerank) augment_prefs={args.augment_preferences} augment_facts={args.augment_assistant_facts} cand_k={args.candidate_k} chunk={args.chunk_size}/{args.chunk_overlap} mode={args.chunk_mode} dates={args.inject_dates} temporal_aware={args.temporal_aware} llm_rerank_top_n={args.llm_rerank_top_n} hyde={args.hyde} ===", flush=True)
         results["mnemonics_no_rerank"] = evaluate_mnemonics(
             questions, rerank=False, candidate_k=args.candidate_k,
             augment_preferences=args.augment_preferences,
@@ -518,10 +571,11 @@ def main():
             inject_dates=args.inject_dates,
             temporal_aware=args.temporal_aware,
             llm_rerank_top_n=args.llm_rerank_top_n,
+            hyde=args.hyde,
         )
 
     if args.mode in ("both", "rerank"):
-        print(f"\n=== Mnemonics (CE rerank) augment_prefs={args.augment_preferences} augment_facts={args.augment_assistant_facts} cand_k={args.candidate_k} chunk={args.chunk_size}/{args.chunk_overlap} mode={args.chunk_mode} dates={args.inject_dates} temporal_aware={args.temporal_aware} llm_rerank_top_n={args.llm_rerank_top_n} ===", flush=True)
+        print(f"\n=== Mnemonics (CE rerank) augment_prefs={args.augment_preferences} augment_facts={args.augment_assistant_facts} cand_k={args.candidate_k} chunk={args.chunk_size}/{args.chunk_overlap} mode={args.chunk_mode} dates={args.inject_dates} temporal_aware={args.temporal_aware} llm_rerank_top_n={args.llm_rerank_top_n} hyde={args.hyde} ===", flush=True)
         results["mnemonics_rerank"] = evaluate_mnemonics(
             questions, rerank=True, candidate_k=args.candidate_k,
             augment_preferences=args.augment_preferences,
@@ -531,6 +585,7 @@ def main():
             inject_dates=args.inject_dates,
             temporal_aware=args.temporal_aware,
             llm_rerank_top_n=args.llm_rerank_top_n,
+            hyde=args.hyde,
             per_q_out=args.per_q_out,
         )
 
