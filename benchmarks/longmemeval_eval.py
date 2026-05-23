@@ -66,14 +66,19 @@ def _session_text(session: list[dict]) -> str:
     return "\n".join(f"[{m.get('role','?')}] {m.get('content','')}" for m in session)
 
 
-def _session_turn_chunks(sid: str, session: list[dict]) -> list[str]:
+def _session_turn_chunks(sid: str, session: list[dict], session_date: str | None = None) -> list[str]:
     """Split a session into (user + assistant) turn-pair chunks, MemPalace-style.
 
     Each chunk = one user turn + the immediately following assistant turn.
     Preserves the SID= prefix so downstream session-id extraction still works.
     Consecutive user turns or trailing user-only turns are kept as their own chunk.
+
+    When ``session_date`` is provided (LongMemEval haystack_dates), it is
+    prepended to every chunk so temporal-reasoning queries embed near the
+    sessions whose timestamps match the question's time references.
     """
     prefix = f"SID={sid}|"
+    date_tag = f"[{session_date}] " if session_date else ""
     chunks: list[str] = []
     i = 0
     msgs = session
@@ -81,7 +86,7 @@ def _session_turn_chunks(sid: str, session: list[dict]) -> list[str]:
         role = msgs[i].get("role", "")
         content = msgs[i].get("content", "")
         if role == "user":
-            pair = f"[user] {content}"
+            pair = f"{date_tag}[user] {content}"
             if i + 1 < len(msgs) and msgs[i + 1].get("role") == "assistant":
                 pair += f"\n[assistant] {msgs[i + 1].get('content', '')}"
                 i += 2
@@ -90,9 +95,9 @@ def _session_turn_chunks(sid: str, session: list[dict]) -> list[str]:
             chunks.append(prefix + pair)
         else:
             # assistant or system turn not preceded by user — store standalone
-            chunks.append(prefix + f"[{role}] {content}")
+            chunks.append(prefix + f"{date_tag}[{role}] {content}")
             i += 1
-    return chunks if chunks else [prefix + _session_text(session)]
+    return chunks if chunks else [prefix + date_tag + _session_text(session)]
 
 
 def _session_id_of(meta: str | None) -> str | None:
@@ -111,6 +116,7 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                        augment_assistant_facts: bool = False,
                        chunk_size: int = 200, chunk_overlap: int = 40,
                        chunk_mode: str = "word",
+                       inject_dates: bool = False,
                        per_q_out: Path | None = None) -> dict:
     """Run mnemonics retrieve() across every question, return aggregated metrics."""
     from mnemonics.store import Store
@@ -130,9 +136,11 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
             if chunk_mode == "turn":
                 # MemPalace-style: each (user + assistant) turn pair = 1 chunk.
                 # Pass pre-chunked texts; chunk_size=1 in ingest so no re-splitting.
+                dates = q.get("haystack_dates") or []
                 texts = []
-                for sid, sess in zip(q["haystack_session_ids"], q["haystack_sessions"]):
-                    texts.extend(_session_turn_chunks(sid, sess))
+                for idx, (sid, sess) in enumerate(zip(q["haystack_session_ids"], q["haystack_sessions"])):
+                    sdate = dates[idx] if inject_dates and idx < len(dates) else None
+                    texts.extend(_session_turn_chunks(sid, sess, sdate))
                 ingest(texts=texts, store=store, ns="lme",
                        augment_preferences=augment_preferences,
                        augment_assistant_facts=augment_assistant_facts,
@@ -147,9 +155,12 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                        chunk_size=chunk_size, chunk_overlap=chunk_overlap)
             if not texts:
                 continue
+            query = q["question"]
+            if inject_dates and q.get("question_date"):
+                query = f"[{q['question_date']}] {query}"
             try:
                 result = retrieve(
-                    query=q["question"],
+                    query=query,
                     store=store,
                     ns="lme",
                     top_k=top_k,
@@ -254,6 +265,8 @@ def main():
     ap.add_argument("--chunk-overlap", type=int, default=40, help="Overlap words between adjacent chunks (default 40)")
     ap.add_argument("--chunk-mode", choices=["word", "turn"], default="word",
                     help="'word': sliding window (default); 'turn': one user+assistant pair per chunk (MemPalace-style)")
+    ap.add_argument("--inject-dates", action="store_true",
+                    help="Prepend haystack_dates to each chunk and question_date to the query (turn-mode only). Targets temporal-reasoning lift.")
     ap.add_argument("--out", type=Path, default=Path("/tmp/mnemonics_vs_mempalace.json"))
     ap.add_argument("--per-q-out", type=Path, default=None,
                     help="Optional path to dump per-question hit/miss records")
@@ -280,23 +293,25 @@ def main():
     results = {"n_questions": len(questions), "mempalace_full": mempalace_baseline_summary()}
 
     if args.mode in ("both", "no_rerank"):
-        print(f"\n=== Mnemonics (no CE rerank) augment_prefs={args.augment_preferences} augment_facts={args.augment_assistant_facts} cand_k={args.candidate_k} chunk={args.chunk_size}/{args.chunk_overlap} mode={args.chunk_mode} ===", flush=True)
+        print(f"\n=== Mnemonics (no CE rerank) augment_prefs={args.augment_preferences} augment_facts={args.augment_assistant_facts} cand_k={args.candidate_k} chunk={args.chunk_size}/{args.chunk_overlap} mode={args.chunk_mode} dates={args.inject_dates} ===", flush=True)
         results["mnemonics_no_rerank"] = evaluate_mnemonics(
             questions, rerank=False, candidate_k=args.candidate_k,
             augment_preferences=args.augment_preferences,
             augment_assistant_facts=args.augment_assistant_facts,
             chunk_size=args.chunk_size, chunk_overlap=args.chunk_overlap,
             chunk_mode=args.chunk_mode,
+            inject_dates=args.inject_dates,
         )
 
     if args.mode in ("both", "rerank"):
-        print(f"\n=== Mnemonics (CE rerank) augment_prefs={args.augment_preferences} augment_facts={args.augment_assistant_facts} cand_k={args.candidate_k} chunk={args.chunk_size}/{args.chunk_overlap} mode={args.chunk_mode} ===", flush=True)
+        print(f"\n=== Mnemonics (CE rerank) augment_prefs={args.augment_preferences} augment_facts={args.augment_assistant_facts} cand_k={args.candidate_k} chunk={args.chunk_size}/{args.chunk_overlap} mode={args.chunk_mode} dates={args.inject_dates} ===", flush=True)
         results["mnemonics_rerank"] = evaluate_mnemonics(
             questions, rerank=True, candidate_k=args.candidate_k,
             augment_preferences=args.augment_preferences,
             augment_assistant_facts=args.augment_assistant_facts,
             chunk_size=args.chunk_size, chunk_overlap=args.chunk_overlap,
             chunk_mode=args.chunk_mode,
+            inject_dates=args.inject_dates,
             per_q_out=args.per_q_out,
         )
 
