@@ -102,7 +102,7 @@ END;
 #   1 = default  (slow decay)
 #   2 = ambient  (fast decay)
 
-DIM = 384  # all-MiniLM-L6-v2 default dim
+DIM = int(os.environ.get("MNEMONICS_DIM", "384"))
 
 
 class Store:

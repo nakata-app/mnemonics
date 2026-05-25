@@ -210,7 +210,8 @@ def _resolve_model(model: str) -> str:
     if env_model and model == "all-MiniLM-L6-v2":
         return env_model
     # MNEMONICS_ADAPTMEM_PATH swaps the default base encoder with a fine-tuned
-    # adaptmem checkpoint at runtime. Same 384-dim contract, drop-in.
+    # adaptmem checkpoint at runtime. Dim may differ from 384 (e.g. BGE-large
+    # uses 1024); set MNEMONICS_DIM accordingly or let ingest auto-detect.
     adaptmem_path = os.environ.get("MNEMONICS_ADAPTMEM_PATH")
     if adaptmem_path and model == "all-MiniLM-L6-v2":
         return adaptmem_path
