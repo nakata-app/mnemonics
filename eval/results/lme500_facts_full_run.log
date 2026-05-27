@@ -1,0 +1,46 @@
+Loading /Users/macmini/Projects/metis-pair/benchmarks/data/longmemeval/longmemeval_s_cleaned.json...
+Eval set: 500 questions (of 500)
+MNEMONICS_ADAPTMEM_PATH = /Users/macmini/.mnemonics/adaptmem-model/model
+
+=== Mnemonics (CE rerank) augment_prefs=True augment_facts=True cand_k=50 chunk=200/40 ===
+Loading weights:   0%|          | 0/103 [00:00<?, ?it/s]Loading weights: 100%|██████████| 103/103 [00:00<00:00, 6556.68it/s]
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Loading weights:   0%|          | 0/201 [00:00<?, ?it/s]Loading weights: 100%|██████████| 201/201 [00:00<00:00, 6488.08it/s]
+  [5/500] R@1=0.600 R@5=0.600 R@10=0.600  rate=0.13 q/s  eta=3891s
+  [10/500] R@1=0.600 R@5=0.600 R@10=0.600  rate=0.13 q/s  eta=3852s
+  [15/500] R@1=0.600 R@5=0.600 R@10=0.600  rate=0.02 q/s  eta=29271s
+  [20/500] R@1=0.650 R@5=0.650 R@10=0.650  rate=0.02 q/s  eta=22223s
+  [25/500] R@1=0.720 R@5=0.720 R@10=0.720  rate=0.03 q/s  eta=18003s
+  [30/500] R@1=0.700 R@5=0.700 R@10=0.700  rate=0.03 q/s  eta=15164s
+  [35/500] R@1=0.686 R@5=0.686 R@10=0.686  rate=0.04 q/s  eta=13127s
+  [40/500] R@1=0.625 R@5=0.625 R@10=0.625  rate=0.04 q/s  eta=11615s
+  [45/500] R@1=0.622 R@5=0.622 R@10=0.622  rate=0.04 q/s  eta=10422s
+  [50/500] R@1=0.620 R@5=0.640 R@10=0.640  rate=0.05 q/s  eta=9489s
+  [55/500] R@1=0.636 R@5=0.673 R@10=0.673  rate=0.05 q/s  eta=8729s
+  [60/500] R@1=0.650 R@5=0.683 R@10=0.683  rate=0.05 q/s  eta=8075s
+  [65/500] R@1=0.615 R@5=0.646 R@10=0.646  rate=0.06 q/s  eta=7510s
+  [70/500] R@1=0.614 R@5=0.643 R@10=0.643  rate=0.06 q/s  eta=7033s
+  [75/500] R@1=0.627 R@5=0.667 R@10=0.667  rate=0.06 q/s  eta=6614s
+  [80/500] R@1=0.650 R@5=0.688 R@10=0.688  rate=0.07 q/s  eta=6241s
+  [85/500] R@1=0.671 R@5=0.706 R@10=0.706  rate=0.07 q/s  eta=5928s
+  [90/500] R@1=0.678 R@5=0.722 R@10=0.722  rate=0.07 q/s  eta=5761s
+  [95/500] R@1=0.695 R@5=0.737 R@10=0.737  rate=0.07 q/s  eta=5678s
+  [100/500] R@1=0.710 R@5=0.750 R@10=0.750  rate=0.07 q/s  eta=5737s
+  [105/500] R@1=0.724 R@5=0.762 R@10=0.762  rate=0.07 q/s  eta=5659s
+  [110/500] R@1=0.736 R@5=0.773 R@10=0.773  rate=0.07 q/s  eta=5547s
+  [115/500] R@1=0.748 R@5=0.783 R@10=0.783  rate=0.07 q/s  eta=5427s
+  [120/500] R@1=0.750 R@5=0.792 R@10=0.792  rate=0.07 q/s  eta=5303s
+  [125/500] R@1=0.760 R@5=0.800 R@10=0.800  rate=0.07 q/s  eta=5127s
+  [130/500] R@1=0.754 R@5=0.808 R@10=0.808  rate=0.07 q/s  eta=5018s
+  [135/500] R@1=0.756 R@5=0.807 R@10=0.807  rate=0.07 q/s  eta=4890s
+  [140/500] R@1=0.750 R@5=0.800 R@10=0.800  rate=0.08 q/s  eta=4726s
+  [145/500] R@1=0.745 R@5=0.800 R@10=0.800  rate=0.08 q/s  eta=4643s
+  [150/500] R@1=0.740 R@5=0.807 R@10=0.807  rate=0.08 q/s  eta=4566s
+  [155/500] R@1=0.748 R@5=0.813 R@10=0.813  rate=0.08 q/s  eta=4478s
+  [160/500] R@1=0.750 R@5=0.819 R@10=0.819  rate=0.08 q/s  eta=4360s
+  [165/500] R@1=0.745 R@5=0.818 R@10=0.818  rate=0.08 q/s  eta=4323s
+  [170/500] R@1=0.753 R@5=0.824 R@10=0.824  rate=0.08 q/s  eta=4330s
+  [175/500] R@1=0.754 R@5=0.829 R@10=0.829  rate=0.08 q/s  eta=4266s
+  [180/500] R@1=0.761 R@5=0.833 R@10=0.833  rate=0.07 q/s  eta=4589s
+/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/multiprocessing/resource_tracker.py:224: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '

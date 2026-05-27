@@ -1,0 +1,13 @@
+Loading /Users/macmini/Projects/metis-pair/benchmarks/data/longmemeval/longmemeval_s_cleaned.json...
+Eval set: 500 questions (of 500)
+MNEMONICS_ADAPTMEM_PATH = /Users/macmini/.mnemonics/adaptmem-model/model
+
+=== Mnemonics (CE rerank) augment_prefs=True cand_k=50 chunk=200/40 ===
+Loading weights:   0%|          | 0/103 [00:00<?, ?it/s]Loading weights: 100%|██████████| 103/103 [00:00<00:00, 5931.48it/s]
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Loading weights:   0%|          | 0/201 [00:00<?, ?it/s]Loading weights: 100%|██████████| 201/201 [00:00<00:00, 7871.88it/s]
+  [5/500] R@1=0.600 R@5=0.600 R@10=0.600  rate=0.11 q/s  eta=4440s
+  [10/500] R@1=0.600 R@5=0.600 R@10=0.600  rate=0.09 q/s  eta=5482s
+  [15/500] R@1=0.600 R@5=0.600 R@10=0.600  rate=0.04 q/s  eta=11305s
+  [20/500] R@1=0.650 R@5=0.650 R@10=0.650  rate=0.05 q/s  eta=9986s
+  [25/500] R@1=0.720 R@5=0.720 R@10=0.720  rate=0.04 q/s  eta=11255s

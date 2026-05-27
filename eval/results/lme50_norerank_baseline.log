@@ -1,0 +1,6 @@
+Loading /Users/macmini/Projects/metis-pair/benchmarks/data/longmemeval/longmemeval_s_cleaned.json...
+Eval set: 50 questions (of 500)
+MNEMONICS_ADAPTMEM_PATH = /Users/macmini/.mnemonics/adaptmem-model/model
+
+=== Mnemonics (no CE rerank) augment_prefs=True augment_facts=False cand_k=50 chunk=200/40 ===
+Loading weights:   0%|          | 0/103 [00:00<?, ?it/s]Loading weights: 100%|██████████| 103/103 [00:00<00:00, 4346.74it/s]

@@ -1,0 +1,5 @@
+usage: longmemeval_eval.py [-h] [--n N] [--split-file SPLIT_FILE]
+                           [--mode {both,no_rerank,rerank}]
+                           [--augment-preferences] [--candidate-k CANDIDATE_K]
+                           [--out OUT] [--seed SEED]
+longmemeval_eval.py: error: unrecognized arguments: --dataset /Users/macmini/Projects/metis-pair/benchmarks/data/longmemeval/longmemeval_s_cleaned.json

@@ -1,0 +1,10 @@
+Loading /Users/macmini/Projects/metis-pair/benchmarks/data/longmemeval/longmemeval_s_cleaned.json...
+Eval set: 100 questions (of 500)
+MNEMONICS_ADAPTMEM_PATH = /Users/macmini/.mnemonics/adaptmem-model/model
+
+=== Mnemonics (CE rerank) augment_prefs=False augment_facts=False cand_k=20 chunk=200/40 ===
+Loading weights:   0%|          | 0/103 [00:00<?, ?it/s]Loading weights: 100%|██████████| 103/103 [00:00<00:00, 2854.15it/s]
+2026-05-22 07:59:14.958 Python[40443:1103507] Error creating directory 
+ The volume ‚ÄúMacintosh HD‚Äù is out of space. You can‚Äôt save the file ‚Äúmpsgraph-40443-2026-05-22_07_59_13-3558856689‚Äù because the volume ‚ÄúMacintosh HD‚Äù is out of space.
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Loading weights:   0%|          | 0/393 [00:00<?, ?it/s]Loading weights:  46%|████▌     | 180/393 [00:00<00:00, 1678.81it/s]Loading weights:  89%|████████▊ | 348/393 [00:00<00:00, 1613.47it/s]Loading weights: 100%|██████████| 393/393 [00:00<00:00, 1818.00it/s]

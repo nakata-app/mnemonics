@@ -1,0 +1,120 @@
+Loading /Users/macmini/Projects/metis-pair/benchmarks/data/longmemeval/longmemeval_s_cleaned.json...
+Eval set: 500 questions (of 500)
+MNEMONICS_ADAPTMEM_PATH = /Users/macmini/.mnemonics/adaptmem-model/model
+
+=== Mnemonics (CE rerank) augment_prefs=False augment_facts=False cand_k=20 chunk=200/40 doc_filter=True ===
+Loading weights:   0%|          | 0/103 [00:00<?, ?it/s]Loading weights: 100%|██████████| 103/103 [00:00<00:00, 7531.88it/s]
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Loading weights:   0%|          | 0/201 [00:00<?, ?it/s]Loading weights: 100%|██████████| 201/201 [00:00<00:00, 6994.97it/s]
+  [5/500] R@1=0.400 R@5=0.600 R@10=0.600  rate=0.16 q/s  eta=3098s
+  [10/500] R@1=0.500 R@5=0.600 R@10=0.600  rate=0.19 q/s  eta=2526s
+  [15/500] R@1=0.333 R@5=0.400 R@10=0.400  rate=0.21 q/s  eta=2284s
+  [20/500] R@1=0.450 R@5=0.500 R@10=0.500  rate=0.22 q/s  eta=2207s
+  [25/500] R@1=0.520 R@5=0.560 R@10=0.560  rate=0.22 q/s  eta=2145s
+  [30/500] R@1=0.533 R@5=0.567 R@10=0.567  rate=0.22 q/s  eta=2110s
+  [35/500] R@1=0.514 R@5=0.571 R@10=0.571  rate=0.23 q/s  eta=2058s
+  [40/500] R@1=0.500 R@5=0.550 R@10=0.550  rate=0.23 q/s  eta=2035s
+  [45/500] R@1=0.511 R@5=0.578 R@10=0.578  rate=0.23 q/s  eta=1982s
+  [50/500] R@1=0.520 R@5=0.580 R@10=0.580  rate=0.23 q/s  eta=1953s
+  [55/500] R@1=0.545 R@5=0.618 R@10=0.618  rate=0.23 q/s  eta=1976s
+  [60/500] R@1=0.550 R@5=0.617 R@10=0.617  rate=0.22 q/s  eta=1975s
+  [65/500] R@1=0.523 R@5=0.585 R@10=0.585  rate=0.22 q/s  eta=1944s
+  [70/500] R@1=0.529 R@5=0.586 R@10=0.586  rate=0.22 q/s  eta=1936s
+  [75/500] R@1=0.547 R@5=0.613 R@10=0.613  rate=0.21 q/s  eta=1996s
+  [80/500] R@1=0.550 R@5=0.613 R@10=0.613  rate=0.21 q/s  eta=1967s
+  [85/500] R@1=0.576 R@5=0.635 R@10=0.635  rate=0.21 q/s  eta=1979s
+  [90/500] R@1=0.589 R@5=0.644 R@10=0.644  rate=0.21 q/s  eta=1985s
+  [95/500] R@1=0.611 R@5=0.663 R@10=0.663  rate=0.21 q/s  eta=1941s
+  [100/500] R@1=0.630 R@5=0.680 R@10=0.680  rate=0.21 q/s  eta=1896s
+  [105/500] R@1=0.648 R@5=0.695 R@10=0.695  rate=0.21 q/s  eta=1877s
+  [110/500] R@1=0.655 R@5=0.700 R@10=0.700  rate=0.21 q/s  eta=1880s
+  [115/500] R@1=0.670 R@5=0.713 R@10=0.713  rate=0.21 q/s  eta=1876s
+  [120/500] R@1=0.675 R@5=0.725 R@10=0.725  rate=0.21 q/s  eta=1841s
+  [125/500] R@1=0.688 R@5=0.736 R@10=0.736  rate=0.20 q/s  eta=1851s
+  [130/500] R@1=0.692 R@5=0.738 R@10=0.738  rate=0.20 q/s  eta=1838s
+  [135/500] R@1=0.696 R@5=0.741 R@10=0.741  rate=0.20 q/s  eta=1845s
+  [140/500] R@1=0.693 R@5=0.743 R@10=0.743  rate=0.20 q/s  eta=1810s
+  [145/500] R@1=0.690 R@5=0.738 R@10=0.738  rate=0.20 q/s  eta=1798s
+  [150/500] R@1=0.680 R@5=0.733 R@10=0.733  rate=0.20 q/s  eta=1785s
+  [155/500] R@1=0.684 R@5=0.735 R@10=0.735  rate=0.19 q/s  eta=1771s
+  [160/500] R@1=0.681 R@5=0.738 R@10=0.738  rate=0.19 q/s  eta=1746s
+  [165/500] R@1=0.679 R@5=0.739 R@10=0.739  rate=0.20 q/s  eta=1715s
+  [170/500] R@1=0.688 R@5=0.747 R@10=0.747  rate=0.20 q/s  eta=1680s
+  [175/500] R@1=0.691 R@5=0.749 R@10=0.749  rate=0.19 q/s  eta=1686s
+  [180/500] R@1=0.700 R@5=0.756 R@10=0.756  rate=0.19 q/s  eta=1653s
+  [185/500] R@1=0.703 R@5=0.757 R@10=0.757  rate=0.19 q/s  eta=1637s
+  [190/500] R@1=0.700 R@5=0.758 R@10=0.758  rate=0.19 q/s  eta=1606s
+  [195/500] R@1=0.708 R@5=0.764 R@10=0.764  rate=0.19 q/s  eta=1571s
+  [200/500] R@1=0.715 R@5=0.770 R@10=0.770  rate=0.19 q/s  eta=1557s
+  [205/500] R@1=0.722 R@5=0.776 R@10=0.776  rate=0.19 q/s  eta=1539s
+  [210/500] R@1=0.724 R@5=0.776 R@10=0.776  rate=0.19 q/s  eta=1524s
+  [215/500] R@1=0.726 R@5=0.777 R@10=0.777  rate=0.19 q/s  eta=1491s
+  [220/500] R@1=0.732 R@5=0.782 R@10=0.782  rate=0.19 q/s  eta=1466s
+  [225/500] R@1=0.738 R@5=0.787 R@10=0.787  rate=0.19 q/s  eta=1434s
+  [230/500] R@1=0.743 R@5=0.791 R@10=0.791  rate=0.19 q/s  eta=1400s
+  [235/500] R@1=0.745 R@5=0.791 R@10=0.791  rate=0.19 q/s  eta=1381s
+  [240/500] R@1=0.742 R@5=0.787 R@10=0.787  rate=0.19 q/s  eta=1350s
+  [245/500] R@1=0.743 R@5=0.788 R@10=0.788  rate=0.19 q/s  eta=1345s
+  [250/500] R@1=0.740 R@5=0.788 R@10=0.788  rate=0.19 q/s  eta=1348s
+  [255/500] R@1=0.741 R@5=0.788 R@10=0.788  rate=0.19 q/s  eta=1318s
+  [260/500] R@1=0.742 R@5=0.788 R@10=0.788  rate=0.19 q/s  eta=1296s
+  [265/500] R@1=0.747 R@5=0.792 R@10=0.792  rate=0.18 q/s  eta=1272s
+  [270/500] R@1=0.748 R@5=0.793 R@10=0.793  rate=0.19 q/s  eta=1240s
+  [275/500] R@1=0.753 R@5=0.796 R@10=0.796  rate=0.19 q/s  eta=1208s
+  [280/500] R@1=0.757 R@5=0.800 R@10=0.800  rate=0.19 q/s  eta=1186s
+  [285/500] R@1=0.761 R@5=0.804 R@10=0.804  rate=0.18 q/s  eta=1173s
+  [290/500] R@1=0.762 R@5=0.803 R@10=0.803  rate=0.18 q/s  eta=1141s
+  [295/500] R@1=0.766 R@5=0.807 R@10=0.807  rate=0.18 q/s  eta=1109s
+  [300/500] R@1=0.757 R@5=0.797 R@10=0.797  rate=0.19 q/s  eta=1078s
+  [305/500] R@1=0.754 R@5=0.797 R@10=0.797  rate=0.19 q/s  eta=1047s
+  [310/500] R@1=0.755 R@5=0.797 R@10=0.797  rate=0.19 q/s  eta=1024s
+  [315/500] R@1=0.759 R@5=0.800 R@10=0.800  rate=0.19 q/s  eta=994s
+  [320/500] R@1=0.762 R@5=0.803 R@10=0.803  rate=0.19 q/s  eta=962s
+  [325/500] R@1=0.766 R@5=0.806 R@10=0.806  rate=0.19 q/s  eta=931s
+  [330/500] R@1=0.770 R@5=0.809 R@10=0.809  rate=0.19 q/s  eta=900s
+  [335/500] R@1=0.773 R@5=0.812 R@10=0.812  rate=0.19 q/s  eta=869s
+  [340/500] R@1=0.776 R@5=0.815 R@10=0.815  rate=0.19 q/s  eta=840s
+  [345/500] R@1=0.780 R@5=0.817 R@10=0.817  rate=0.19 q/s  eta=810s
+  [350/500] R@1=0.783 R@5=0.820 R@10=0.820  rate=0.19 q/s  eta=781s
+  [355/500] R@1=0.786 R@5=0.823 R@10=0.823  rate=0.19 q/s  eta=753s
+  [360/500] R@1=0.789 R@5=0.825 R@10=0.825  rate=0.19 q/s  eta=725s
+  [365/500] R@1=0.792 R@5=0.827 R@10=0.827  rate=0.19 q/s  eta=703s
+  [370/500] R@1=0.792 R@5=0.827 R@10=0.827  rate=0.19 q/s  eta=678s
+  [375/500] R@1=0.787 R@5=0.821 R@10=0.821  rate=0.19 q/s  eta=651s
+  [380/500] R@1=0.787 R@5=0.821 R@10=0.821  rate=0.19 q/s  eta=627s
+  [385/500] R@1=0.779 R@5=0.813 R@10=0.813  rate=0.19 q/s  eta=599s
+  [390/500] R@1=0.782 R@5=0.815 R@10=0.815  rate=0.19 q/s  eta=572s
+  [395/500] R@1=0.785 R@5=0.818 R@10=0.818  rate=0.19 q/s  eta=544s
+  [400/500] R@1=0.785 R@5=0.820 R@10=0.820  rate=0.19 q/s  eta=516s
+  [405/500] R@1=0.783 R@5=0.817 R@10=0.817  rate=0.19 q/s  eta=489s
+  [410/500] R@1=0.785 R@5=0.820 R@10=0.820  rate=0.20 q/s  eta=461s
+  [415/500] R@1=0.786 R@5=0.819 R@10=0.819  rate=0.20 q/s  eta=434s
+  [420/500] R@1=0.786 R@5=0.819 R@10=0.819  rate=0.19 q/s  eta=413s
+  [425/500] R@1=0.788 R@5=0.821 R@10=0.821  rate=0.19 q/s  eta=391s
+  [430/500] R@1=0.788 R@5=0.821 R@10=0.821  rate=0.19 q/s  eta=364s
+  [435/500] R@1=0.791 R@5=0.823 R@10=0.823  rate=0.19 q/s  eta=341s
+  [440/500] R@1=0.786 R@5=0.818 R@10=0.818  rate=0.19 q/s  eta=314s
+  [445/500] R@1=0.787 R@5=0.818 R@10=0.818  rate=0.19 q/s  eta=289s
+  [450/500] R@1=0.787 R@5=0.818 R@10=0.818  rate=0.19 q/s  eta=262s
+  [455/500] R@1=0.789 R@5=0.820 R@10=0.820  rate=0.19 q/s  eta=237s
+  [460/500] R@1=0.791 R@5=0.822 R@10=0.822  rate=0.19 q/s  eta=211s
+  [465/500] R@1=0.794 R@5=0.824 R@10=0.824  rate=0.19 q/s  eta=184s
+  [470/500] R@1=0.796 R@5=0.826 R@10=0.826  rate=0.19 q/s  eta=159s
+  [475/500] R@1=0.796 R@5=0.827 R@10=0.827  rate=0.19 q/s  eta=133s
+  [480/500] R@1=0.798 R@5=0.829 R@10=0.829  rate=0.19 q/s  eta=106s
+  [485/500] R@1=0.800 R@5=0.831 R@10=0.831  rate=0.19 q/s  eta=80s
+  [490/500] R@1=0.800 R@5=0.831 R@10=0.831  rate=0.19 q/s  eta=53s
+  [495/500] R@1=0.802 R@5=0.832 R@10=0.832  rate=0.19 q/s  eta=27s
+  [500/500] R@1=0.804 R@5=0.834 R@10=0.834  rate=0.19 q/s  eta=0s
+
+Wrote eval/results/stage2_session_level_500q.json
+
+--- HEAD-TO-HEAD ---
+mempalace_full            n=500  R@1=0.354  R@5=0.406  R@10=0.444
+mnemonics_rerank          n=500  R@1=0.804  R@5=0.834  R@10=0.834
+Exception ignored in: <function ResourceTracker.__del__ at 0x15c086020>
+Traceback (most recent call last):
+  File "/Users/macmini/Projects/mnemonics/.venv/lib/python3.12/site-packages/multiprocess/resource_tracker.py", line 80, in __del__
+  File "/Users/macmini/Projects/mnemonics/.venv/lib/python3.12/site-packages/multiprocess/resource_tracker.py", line 89, in _stop
+  File "/Users/macmini/Projects/mnemonics/.venv/lib/python3.12/site-packages/multiprocess/resource_tracker.py", line 102, in _stop_locked
+AttributeError: '_thread.RLock' object has no attribute '_recursion_count'

@@ -1,0 +1,40 @@
+Loading /Users/macmini/Projects/metis-pair/benchmarks/data/longmemeval/longmemeval_s_cleaned.json...
+Eval set: 100 questions (of 500)
+MNEMONICS_ADAPTMEM_PATH = /Users/macmini/.mnemonics/adaptmem-model/model
+
+=== Mnemonics (CE rerank) augment_prefs=False augment_facts=False cand_k=20 chunk=200/40 ===
+Loading weights:   0%|          | 0/103 [00:00<?, ?it/s]Loading weights: 100%|██████████| 103/103 [00:00<00:00, 7404.72it/s]
+Loading weights:   0%|          | 0/201 [00:00<?, ?it/s]Loading weights: 100%|██████████| 201/201 [00:00<00:00, 6367.39it/s]
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+  [5/100] R@1=0.600 R@5=0.600 R@10=0.600  rate=0.12 q/s  eta=770s
+  [10/100] R@1=0.700 R@5=0.800 R@10=0.800  rate=0.12 q/s  eta=739s
+  [15/100] R@1=0.733 R@5=0.800 R@10=0.800  rate=0.08 q/s  eta=1020s
+  [20/100] R@1=0.800 R@5=0.850 R@10=0.850  rate=0.08 q/s  eta=966s
+  [25/100] R@1=0.800 R@5=0.840 R@10=0.840  rate=0.08 q/s  eta=887s
+  [30/100] R@1=0.833 R@5=0.867 R@10=0.867  rate=0.08 q/s  eta=868s
+  [35/100] R@1=0.857 R@5=0.886 R@10=0.886  rate=0.08 q/s  eta=777s
+  [40/100] R@1=0.825 R@5=0.850 R@10=0.850  rate=0.08 q/s  eta=721s
+  [45/100] R@1=0.844 R@5=0.867 R@10=0.867  rate=0.08 q/s  eta=651s
+  [50/100] R@1=0.840 R@5=0.860 R@10=0.860  rate=0.08 q/s  eta=621s
+  [55/100] R@1=0.836 R@5=0.855 R@10=0.855  rate=0.08 q/s  eta=571s
+  [60/100] R@1=0.850 R@5=0.867 R@10=0.867  rate=0.08 q/s  eta=489s
+  [65/100] R@1=0.800 R@5=0.815 R@10=0.815  rate=0.08 q/s  eta=442s
+  [70/100] R@1=0.814 R@5=0.829 R@10=0.829  rate=0.08 q/s  eta=371s
+  [75/100] R@1=0.813 R@5=0.827 R@10=0.827  rate=0.08 q/s  eta=309s
+  [80/100] R@1=0.812 R@5=0.825 R@10=0.825  rate=0.08 q/s  eta=243s
+  [85/100] R@1=0.824 R@5=0.835 R@10=0.835  rate=0.08 q/s  eta=180s
+  [90/100] R@1=0.833 R@5=0.844 R@10=0.844  rate=0.08 q/s  eta=120s
+  [95/100] R@1=0.842 R@5=0.853 R@10=0.853  rate=0.08 q/s  eta=61s
+  [100/100] R@1=0.840 R@5=0.850 R@10=0.850  rate=0.08 q/s  eta=0s
+
+Wrote eval/results/sweep_CE_bge_base_100q.json
+
+--- HEAD-TO-HEAD ---
+mempalace_full            n=500  R@1=0.354  R@5=0.406  R@10=0.444
+mnemonics_rerank          n=100  R@1=0.84  R@5=0.85  R@10=0.85
+Exception ignored in: <function ResourceTracker.__del__ at 0x15dbe9e40>
+Traceback (most recent call last):
+  File "/Users/macmini/Projects/mnemonics/.venv/lib/python3.12/site-packages/multiprocess/resource_tracker.py", line 80, in __del__
+  File "/Users/macmini/Projects/mnemonics/.venv/lib/python3.12/site-packages/multiprocess/resource_tracker.py", line 89, in _stop
+  File "/Users/macmini/Projects/mnemonics/.venv/lib/python3.12/site-packages/multiprocess/resource_tracker.py", line 102, in _stop_locked
+AttributeError: '_thread.RLock' object has no attribute '_recursion_count'

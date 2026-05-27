@@ -1,0 +1,24 @@
+Loading /Users/macmini/Projects/metis-pair/benchmarks/data/longmemeval/longmemeval_s_cleaned.json...
+Eval set: 500 questions (of 500)
+MNEMONICS_ADAPTMEM_PATH = /Users/macmini/.mnemonics/adaptmem-model/model
+
+=== Mnemonics (CE rerank) augment_prefs=True cand_k=50 chunk=200/40 ===
+Traceback (most recent call last):
+  File "/Users/macmini/Projects/mnemonics/benchmarks/longmemeval_eval.py", line 224, in <module>
+    main()
+    ~~~~^^
+  File "/Users/macmini/Projects/mnemonics/benchmarks/longmemeval_eval.py", line 204, in main
+    results["mnemonics_rerank"] = evaluate_mnemonics(
+                                  ~~~~~~~~~~~~~~~~~~^
+        questions, rerank=True, candidate_k=args.candidate_k,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        augment_preferences=args.augment_preferences,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        chunk_size=args.chunk_size, chunk_overlap=args.chunk_overlap,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/macmini/Projects/mnemonics/benchmarks/longmemeval_eval.py", line 83, in evaluate_mnemonics
+    ingest(texts=texts, store=store, ns="lme", augment_preferences=augment_preferences, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+    ~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: ingest() got an unexpected keyword argument 'augment_preferences'

@@ -1,0 +1,1645 @@
+[
+  {
+    "qid": "gpt4_4edbafa2",
+    "qtype": "temporal-reasoning",
+    "question": "What was the date on which I attended the first BBQ event in June?",
+    "answer": "June 3rd",
+    "answer_sids": [
+      "answer_0a00c163_1",
+      "answer_0a00c163_2"
+    ],
+    "retrieved_top10_sids": [
+      "answer_0a00c163_2",
+      "answer_0a00c163_1"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "1faac195",
+    "qtype": "single-session-user",
+    "question": "Where does my sister Emily live?",
+    "answer": "Denver",
+    "answer_sids": [
+      "answer_d01949bf"
+    ],
+    "retrieved_top10_sids": [],
+    "hit@1": false,
+    "hit@5": false,
+    "hit@10": false
+  },
+  {
+    "qid": "c960da58",
+    "qtype": "single-session-user",
+    "question": "How many playlists do I have on Spotify?",
+    "answer": "20",
+    "answer_sids": [
+      "answer_e05e4612"
+    ],
+    "retrieved_top10_sids": [],
+    "hit@1": false,
+    "hit@5": false,
+    "hit@10": false
+  },
+  {
+    "qid": "031748ae",
+    "qtype": "knowledge-update",
+    "question": "How many engineers do I lead when I just started my new role as Senior Software Engineer? How many engineers do I lead now?",
+    "answer": "When you just started your new role as Senior Software Engineer, you led 4 engineers. Now, you lead 5 engineers",
+    "answer_sids": [
+      "answer_8748f791_1",
+      "answer_8748f791_2"
+    ],
+    "retrieved_top10_sids": [
+      "answer_8748f791_1"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "caf03d32",
+    "qtype": "single-session-preference",
+    "question": "I've been struggling with my slow cooker recipes. Any advice on getting better results?",
+    "answer": "The user would prefer responses that provide tips and advice specifically tailored to their slow cooker experiences, utilizing their recent success with beef stew and interest in making yogurt in the slow cooker. They might not prefer general slow cooker recipes or advice unrelated to their specific experiences and interests.",
+    "answer_sids": [
+      "answer_2fc6aabb"
+    ],
+    "retrieved_top10_sids": [
+      "answer_2fc6aabb"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "81507db6",
+    "qtype": "multi-session",
+    "question": "How many graduation ceremonies have I attended in the past three months?",
+    "answer": 3,
+    "answer_sids": [
+      "answer_da3c1266_3",
+      "answer_da3c1266_1",
+      "answer_da3c1266_2",
+      "answer_da3c1266_4",
+      "answer_da3c1266_5"
+    ],
+    "retrieved_top10_sids": [
+      "answer_da3c1266_1",
+      "answer_da3c1266_4",
+      "answer_da3c1266_2",
+      "answer_da3c1266_5",
+      "answer_da3c1266_3"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "gpt4_e05b82a6",
+    "qtype": "multi-session",
+    "question": "How many times did I ride rollercoasters across all the events I attended from July to October?",
+    "answer": "10 times",
+    "answer_sids": [
+      "answer_6350aa4f_4",
+      "answer_6350aa4f_3",
+      "answer_6350aa4f_2",
+      "answer_6350aa4f_1"
+    ],
+    "retrieved_top10_sids": [
+      "answer_6350aa4f_3",
+      "answer_6350aa4f_4",
+      "answer_6350aa4f_2"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "6d550036",
+    "qtype": "multi-session",
+    "question": "How many projects have I led or am currently leading?",
+    "answer": 2,
+    "answer_sids": [
+      "answer_ec904b3c_2",
+      "answer_ec904b3c_1",
+      "answer_ec904b3c_4",
+      "answer_ec904b3c_3"
+    ],
+    "retrieved_top10_sids": [
+      "2e4430d8_2",
+      "answer_ec904b3c_1"
+    ],
+    "hit@1": false,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "a1eacc2a",
+    "qtype": "knowledge-update",
+    "question": "How many short stories have I written since I started writing regularly?",
+    "answer": "seven",
+    "answer_sids": [
+      "answer_0eb23770_2",
+      "answer_0eb23770_1"
+    ],
+    "retrieved_top10_sids": [
+      "answer_0eb23770_2",
+      "521255f7_2"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "8e9d538c",
+    "qtype": "single-session-user",
+    "question": "How many skeins of worsted weight yarn did I find in my stash?",
+    "answer": "17",
+    "answer_sids": [
+      "answer_7bdcbd23"
+    ],
+    "retrieved_top10_sids": [
+      "answer_7bdcbd23"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "gpt4_4cd9eba1",
+    "qtype": "temporal-reasoning",
+    "question": "How many weeks have I been accepted into the exchange program when I started attending the pre-departure orientation sessions?",
+    "answer": "one week",
+    "answer_sids": [
+      "answer_5fcca8bc_1",
+      "answer_5fcca8bc_2"
+    ],
+    "retrieved_top10_sids": [
+      "answer_5fcca8bc_1",
+      "answer_5fcca8bc_2",
+      "1b576f6e_2"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "e48988bc",
+    "qtype": "single-session-assistant",
+    "question": "I was looking back at our previous conversation about environmentally responsible supply chain practices, and I was wondering if you could remind me of the company you mentioned that's doing a great job with sustainability?",
+    "answer": "Patagonia",
+    "answer_sids": [
+      "answer_ultrachat_174360"
+    ],
+    "retrieved_top10_sids": [
+      "answer_ultrachat_174360"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "cc539528",
+    "qtype": "single-session-assistant",
+    "question": "I wanted to follow up on our previous conversation about front-end and back-end development. Can you remind me of the specific back-end programming languages you recommended I learn?",
+    "answer": "I recommended learning Ruby, Python, or PHP as a back-end programming language.",
+    "answer_sids": [
+      "answer_ultrachat_374124"
+    ],
+    "retrieved_top10_sids": [
+      "answer_ultrachat_374124"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "gpt4_a2d1d1f6",
+    "qtype": "temporal-reasoning",
+    "question": "How many days ago did I harvest my first batch of fresh herbs from the herb garden kit?",
+    "answer": "3 days ago. 4 days (including the last day) is also acceptable.",
+    "answer_sids": [
+      "answer_f6d6e33f_1"
+    ],
+    "retrieved_top10_sids": [
+      "answer_f6d6e33f_1"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "001be529",
+    "qtype": "single-session-user",
+    "question": "How long did I wait for the decision on my asylum application?",
+    "answer": "over a year",
+    "answer_sids": [
+      "answer_530960c1"
+    ],
+    "retrieved_top10_sids": [],
+    "hit@1": false,
+    "hit@5": false,
+    "hit@10": false
+  },
+  {
+    "qid": "6e984302",
+    "qtype": "temporal-reasoning",
+    "question": "I mentioned an investment for a competition four weeks ago? What did I buy?",
+    "answer": "I got my own set of sculpting tools.",
+    "answer_sids": [
+      "answer_88841f27_2",
+      "answer_88841f27_1"
+    ],
+    "retrieved_top10_sids": [
+      "answer_88841f27_1",
+      "answer_88841f27_2",
+      "7cd7c296_1"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "a08a253f",
+    "qtype": "multi-session",
+    "question": "How many days a week do I attend fitness classes?",
+    "answer": "4 days.",
+    "answer_sids": [
+      "answer_47152166_1",
+      "answer_47152166_2"
+    ],
+    "retrieved_top10_sids": [
+      "answer_47152166_1",
+      "answer_47152166_2"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "66f24dbb",
+    "qtype": "single-session-user",
+    "question": "What did I buy for my sister's birthday gift?",
+    "answer": "a yellow dress",
+    "answer_sids": [
+      "answer_fea2e4d3"
+    ],
+    "retrieved_top10_sids": [
+      "answer_fea2e4d3",
+      "89452526_2"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "94f70d80",
+    "qtype": "single-session-user",
+    "question": "How long did it take me to assemble the IKEA bookshelf?",
+    "answer": "4 hours",
+    "answer_sids": [
+      "answer_c63c0458"
+    ],
+    "retrieved_top10_sids": [
+      "answer_c63c0458"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "4fd1909e",
+    "qtype": "single-session-user",
+    "question": "Where did I attend the Imagine Dragons concert?",
+    "answer": "Xfinity Center",
+    "answer_sids": [
+      "answer_2952aee4"
+    ],
+    "retrieved_top10_sids": [
+      "answer_2952aee4"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "d851d5ba",
+    "qtype": "multi-session",
+    "question": "How much money did I raise for charity in total?",
+    "answer": "$3,750",
+    "answer_sids": [
+      "answer_5cdf9bd2_1",
+      "answer_5cdf9bd2_3",
+      "answer_5cdf9bd2_4",
+      "answer_5cdf9bd2_2"
+    ],
+    "retrieved_top10_sids": [
+      "answer_5cdf9bd2_1",
+      "answer_5cdf9bd2_3",
+      "answer_5cdf9bd2_4",
+      "answer_5cdf9bd2_2"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "2b8f3739",
+    "qtype": "multi-session",
+    "question": "What is the total amount of money I earned from selling my products at the markets?",
+    "answer": "$495",
+    "answer_sids": [
+      "answer_23759615_2",
+      "answer_23759615_1",
+      "answer_23759615_3"
+    ],
+    "retrieved_top10_sids": [
+      "answer_23759615_1",
+      "answer_23759615_2",
+      "answer_23759615_3"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "4dfccbf7",
+    "qtype": "temporal-reasoning",
+    "question": "How many days had passed since I started taking ukulele lessons when I decided to take my acoustic guitar to the guitar tech for servicing?",
+    "answer": "24 days. 25 days (including the last day) is also acceptable.",
+    "answer_sids": [
+      "answer_4bebc782_2",
+      "answer_4bebc782_1"
+    ],
+    "retrieved_top10_sids": [],
+    "hit@1": false,
+    "hit@5": false,
+    "hit@10": false
+  },
+  {
+    "qid": "gpt4_76048e76",
+    "qtype": "temporal-reasoning",
+    "question": "Which vehicle did I take care of first in February, the bike or the car?",
+    "answer": "bike",
+    "answer_sids": [
+      "answer_b535969f_2",
+      "answer_b535969f_1"
+    ],
+    "retrieved_top10_sids": [
+      "answer_b535969f_2",
+      "answer_b535969f_1"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "3b6f954b",
+    "qtype": "single-session-user",
+    "question": "Where did I attend for my study abroad program?",
+    "answer": "University of Melbourne in Australia",
+    "answer_sids": [
+      "answer_94030872"
+    ],
+    "retrieved_top10_sids": [
+      "ultrachat_294369"
+    ],
+    "hit@1": false,
+    "hit@5": false,
+    "hit@10": false
+  },
+  {
+    "qid": "gpt4_e061b84g",
+    "qtype": "temporal-reasoning",
+    "question": "I mentioned participating in a sports event two weeks ago. What was the event?",
+    "answer": "The company's annual charity soccer tournament.",
+    "answer_sids": [
+      "answer_8c64ce26_3",
+      "answer_8c64ce26_1",
+      "answer_8c64ce26_2"
+    ],
+    "retrieved_top10_sids": [
+      "answer_8c64ce26_3",
+      "answer_8c64ce26_1",
+      "answer_8c64ce26_2"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "b3c15d39",
+    "qtype": "multi-session",
+    "question": "How many days did it take for me to receive the new remote shutter release after I ordered it?",
+    "answer": "5 days. 6 days (including the last day) is also acceptable.",
+    "answer_sids": [
+      "answer_05d808e6_2",
+      "answer_05d808e6_1"
+    ],
+    "retrieved_top10_sids": [
+      "answer_05d808e6_2",
+      "answer_05d808e6_1"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "6a1eabeb",
+    "qtype": "knowledge-update",
+    "question": "What was my personal best time in the charity 5K run?",
+    "answer": "25 minutes and 50 seconds (or 25:50)",
+    "answer_sids": [
+      "answer_a25d4a91_2",
+      "answer_a25d4a91_1"
+    ],
+    "retrieved_top10_sids": [
+      "answer_a25d4a91_2",
+      "4aaf678f_3"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "gpt4_2c50253f",
+    "qtype": "temporal-reasoning",
+    "question": "What time do I wake up on Tuesdays and Thursdays?",
+    "answer": "6:45 AM",
+    "answer_sids": [
+      "answer_9af4e346_1",
+      "answer_9af4e346_2"
+    ],
+    "retrieved_top10_sids": [
+      "answer_9af4e346_2",
+      "answer_9af4e346_1"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "8c18457d",
+    "qtype": "temporal-reasoning",
+    "question": "How many days had passed between the day I bought a gift for my brother's graduation ceremony and the day I bought a birthday gift for my best friend?",
+    "answer": "7 days. 8 days (including the last day) is also acceptable.",
+    "answer_sids": [
+      "answer_124f5dc3_2",
+      "answer_124f5dc3_1"
+    ],
+    "retrieved_top10_sids": [
+      "answer_124f5dc3_1",
+      "98cd882c_2",
+      "answer_124f5dc3_2"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "4388e9dd",
+    "qtype": "single-session-assistant",
+    "question": "I was going through our previous chat and I was wondering, what was Andy wearing in the script you wrote for the comedy movie scene?",
+    "answer": "Andy was wearing an untidy, stained white shirt.",
+    "answer_sids": [
+      "answer_sharegpt_qTi81nS_0"
+    ],
+    "retrieved_top10_sids": [
+      "answer_sharegpt_qTi81nS_0"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "a3332713",
+    "qtype": "multi-session",
+    "question": "What is the total amount I spent on gifts for my coworker and brother?",
+    "answer": "$200",
+    "answer_sids": [
+      "answer_16ece55f_2",
+      "answer_16ece55f_1"
+    ],
+    "retrieved_top10_sids": [
+      "answer_16ece55f_2",
+      "67388dfc_2"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "5a7937c8",
+    "qtype": "multi-session",
+    "question": "How many days did I spend participating in faith-related activities in December?",
+    "answer": "3 days.",
+    "answer_sids": [
+      "answer_4cef8a3c_1",
+      "answer_4cef8a3c_3",
+      "answer_4cef8a3c_2"
+    ],
+    "retrieved_top10_sids": [
+      "answer_4cef8a3c_1",
+      "answer_4cef8a3c_2",
+      "answer_4cef8a3c_3"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "e5ba910e_abs",
+    "qtype": "multi-session",
+    "question": "What is the total cost of my recently purchased headphones and the iPad?",
+    "answer": "The information provided is not enough. You mentioned purchasing a headphone, but you did not mention the iPad.",
+    "answer_sids": [
+      "answer_e49ed9d3_abs_2",
+      "answer_e49ed9d3_abs_1"
+    ],
+    "retrieved_top10_sids": [
+      "answer_e49ed9d3_abs_1",
+      "answer_e49ed9d3_abs_2"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "0bc8ad93",
+    "qtype": "temporal-reasoning",
+    "question": "I mentioned visiting a museum two months ago. Did I visit with a friend or not?",
+    "answer": "No, you did not visit with a friend.",
+    "answer_sids": [
+      "answer_f4ea84fc_1",
+      "answer_f4ea84fc_3",
+      "answer_f4ea84fc_2"
+    ],
+    "retrieved_top10_sids": [
+      "answer_f4ea84fc_3",
+      "2c185a2b_1",
+      "answer_f4ea84fc_1"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "06f04340",
+    "qtype": "single-session-preference",
+    "question": "What should I serve for dinner this weekend with my homegrown ingredients?",
+    "answer": "The user would prefer dinner suggestions that incorporate their homegrown cherry tomatoes and herbs like basil and mint, highlighting recipes that showcase their garden produce. They might not prefer suggestions that do not utilize these specific ingredients or do not emphasize the use of homegrown elements.",
+    "answer_sids": [
+      "answer_92d5f7cd"
+    ],
+    "retrieved_top10_sids": [
+      "91223fd5_1",
+      "8b156015_2"
+    ],
+    "hit@1": false,
+    "hit@5": false,
+    "hit@10": false
+  },
+  {
+    "qid": "50635ada",
+    "qtype": "knowledge-update",
+    "question": "What was my previous frequent flyer status on United Airlines before I got the current status?",
+    "answer": "Premier Silver",
+    "answer_sids": [
+      "answer_dcd74827_2",
+      "answer_dcd74827_1"
+    ],
+    "retrieved_top10_sids": [
+      "answer_dcd74827_2"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "c4f10528",
+    "qtype": "single-session-assistant",
+    "question": "I'm planning to visit Bandung again and I was wondering if you could remind me of the name of that restaurant in Cihampelas Walk that serves a great Nasi Goreng?",
+    "answer": "Miss Bee Providore",
+    "answer_sids": [
+      "answer_ultrachat_234453"
+    ],
+    "retrieved_top10_sids": [
+      "answer_ultrachat_234453",
+      "107d40f0",
+      "de55485d_1"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "58bf7951",
+    "qtype": "single-session-user",
+    "question": "What play did I attend at the local community theater?",
+    "answer": "The Glass Menagerie",
+    "answer_sids": [
+      "answer_355c48bb"
+    ],
+    "retrieved_top10_sids": [
+      "ultrachat_71618"
+    ],
+    "hit@1": false,
+    "hit@5": false,
+    "hit@10": false
+  },
+  {
+    "qid": "5a4f22c0",
+    "qtype": "knowledge-update",
+    "question": "What company is Rachel, an old colleague from my previous company, currently working at?",
+    "answer": "TechCorp",
+    "answer_sids": [
+      "answer_b0f3dfff_2",
+      "answer_b0f3dfff_1"
+    ],
+    "retrieved_top10_sids": [
+      "answer_b0f3dfff_2"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "eace081b",
+    "qtype": "knowledge-update",
+    "question": "Where am I planning to stay for my birthday trip to Hawaii?",
+    "answer": "Oahu",
+    "answer_sids": [
+      "answer_8a791264_1",
+      "answer_8a791264_2"
+    ],
+    "retrieved_top10_sids": [
+      "answer_8a791264_1",
+      "answer_8a791264_2"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "gpt4_a56e767c",
+    "qtype": "multi-session",
+    "question": "How many movie festivals that I attended?",
+    "answer": "I attended four movie festivals.",
+    "answer_sids": [
+      "answer_cf9e3940_2",
+      "answer_cf9e3940_1",
+      "answer_cf9e3940_3"
+    ],
+    "retrieved_top10_sids": [
+      "answer_cf9e3940_2",
+      "answer_cf9e3940_1",
+      "answer_cf9e3940_3"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "gpt4_c27434e8",
+    "qtype": "temporal-reasoning",
+    "question": "Which project did I start first, the Ferrari model or the Japanese Zero fighter plane model?",
+    "answer": "Japanese Zero fighter plane model",
+    "answer_sids": [
+      "answer_d8e33f5c_2",
+      "answer_d8e33f5c_1"
+    ],
+    "retrieved_top10_sids": [
+      "answer_d8e33f5c_2"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "8b9d4367",
+    "qtype": "single-session-assistant",
+    "question": "I wanted to follow up on our previous conversation about private sector businesses in Chaudhary. Can you remind me of the company that employs over 40,000 people in the rug-manufacturing industry?",
+    "answer": "Jaipur Rugs",
+    "answer_sids": [
+      "answer_ultrachat_289157"
+    ],
+    "retrieved_top10_sids": [
+      "answer_ultrachat_289157",
+      "sharegpt_MHiC4J8_0"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "f35224e0",
+    "qtype": "multi-session",
+    "question": "What is the total number of episodes I've listened to from 'How I Built This' and 'My Favorite Murder'?",
+    "answer": "27",
+    "answer_sids": [
+      "answer_e9bb9500_1",
+      "answer_e9bb9500_2"
+    ],
+    "retrieved_top10_sids": [
+      "answer_e9bb9500_2",
+      "answer_e9bb9500_1"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "8aef76bc",
+    "qtype": "single-session-assistant",
+    "question": "I'm going back to our previous conversation about DIY home decor projects using recycled materials. Can you remind me what sealant you recommended for the newspaper flower vase?",
+    "answer": "Mod Podge or another sealant",
+    "answer_sids": [
+      "answer_ultrachat_563222"
+    ],
+    "retrieved_top10_sids": [
+      "answer_ultrachat_563222"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "dd2973ad",
+    "qtype": "multi-session",
+    "question": "What time did I go to bed on the day before I had a doctor's appointment?",
+    "answer": "2 AM",
+    "answer_sids": [
+      "answer_f9de4602_2",
+      "answer_f9de4602_1"
+    ],
+    "retrieved_top10_sids": [
+      "answer_f9de4602_2",
+      "56266c38_1",
+      "answer_f9de4602_1"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "a9f6b44c",
+    "qtype": "multi-session",
+    "question": "How many bikes did I service or plan to service in March?",
+    "answer": 2,
+    "answer_sids": [
+      "answer_cc021f81_1",
+      "answer_cc021f81_2",
+      "answer_cc021f81_3"
+    ],
+    "retrieved_top10_sids": [
+      "answer_cc021f81_1",
+      "answer_cc021f81_3",
+      "answer_cc021f81_2"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "e493bb7c",
+    "qtype": "knowledge-update",
+    "question": "Where is the painting 'Ethereal Dreams' by Emma Taylor currently hanging?",
+    "answer": "in my bedroom",
+    "answer_sids": [
+      "answer_1a374afa_1",
+      "answer_1a374afa_2"
+    ],
+    "retrieved_top10_sids": [
+      "answer_1a374afa_2",
+      "ultrachat_185447"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "d905b33f",
+    "qtype": "multi-session",
+    "question": "What percentage discount did I get on the book from my favorite author?",
+    "answer": "20%",
+    "answer_sids": [
+      "answer_85a77c48_1",
+      "answer_85a77c48_2"
+    ],
+    "retrieved_top10_sids": [
+      "3301f749_1"
+    ],
+    "hit@1": false,
+    "hit@5": false,
+    "hit@10": false
+  },
+  {
+    "qid": "ac031881",
+    "qtype": "single-session-assistant",
+    "question": "I'm trying to recall what the designation on my jumpsuit was that helped me find the file number in the records room?",
+    "answer": "The designation on your jumpsuit was 'LIV'.",
+    "answer_sids": [
+      "answer_sharegpt_GYqnAhC_190"
+    ],
+    "retrieved_top10_sids": [
+      "answer_sharegpt_GYqnAhC_190",
+      "sharegpt_1X61wv2_2"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "fca762bc",
+    "qtype": "single-session-assistant",
+    "question": "I wanted to follow up on our previous conversation about language learning apps. You mentioned a few options, and I was wondering if you could remind me of the one that uses mnemonics to help learners memorize words and phrases?",
+    "answer": "Memrise",
+    "answer_sids": [
+      "answer_ultrachat_39395"
+    ],
+    "retrieved_top10_sids": [
+      "answer_ultrachat_39395"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "a96c20ee",
+    "qtype": "multi-session",
+    "question": "At which university did I present a poster on my thesis research?",
+    "answer": "Harvard University",
+    "answer_sids": [
+      "answer_ef84b994_1",
+      "answer_ef84b994_2"
+    ],
+    "retrieved_top10_sids": [
+      "answer_ef84b994_1",
+      "answer_ef84b994_2"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "8a137a7f",
+    "qtype": "single-session-user",
+    "question": "What type of bulb did I replace in my bedside lamp?",
+    "answer": "Philips LED bulb",
+    "answer_sids": [
+      "answer_15d63a22"
+    ],
+    "retrieved_top10_sids": [],
+    "hit@1": false,
+    "hit@5": false,
+    "hit@10": false
+  },
+  {
+    "qid": "ef66a6e5",
+    "qtype": "multi-session",
+    "question": "How many sports have I played competitively in the past?",
+    "answer": "two",
+    "answer_sids": [
+      "answer_f7fd1029_2",
+      "answer_f7fd1029_1"
+    ],
+    "retrieved_top10_sids": [
+      "answer_f7fd1029_1"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "c6853660",
+    "qtype": "knowledge-update",
+    "question": "Did I mostly recently increase or decrease the limit on the number of cups of coffee in the morning?",
+    "answer": "You increased the limit (from one cup to two cups)",
+    "answer_sids": [
+      "answer_626e93c4_1",
+      "answer_626e93c4_2"
+    ],
+    "retrieved_top10_sids": [
+      "answer_626e93c4_2",
+      "answer_626e93c4_1"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "a4996e51",
+    "qtype": "multi-session",
+    "question": "How many hours do I work in a typical week during peak campaign seasons?",
+    "answer": "50",
+    "answer_sids": [
+      "answer_feb5f98a_1",
+      "answer_feb5f98a_2"
+    ],
+    "retrieved_top10_sids": [
+      "answer_feb5f98a_2",
+      "answer_feb5f98a_1"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "gpt4_2312f94c",
+    "qtype": "temporal-reasoning",
+    "question": "Which device did I got first, the Samsung Galaxy S22 or the Dell XPS 13?",
+    "answer": "Samsung Galaxy S22",
+    "answer_sids": [
+      "answer_5328c3c2_2",
+      "answer_5328c3c2_1"
+    ],
+    "retrieved_top10_sids": [
+      "answer_5328c3c2_2",
+      "answer_5328c3c2_1"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "0edc2aef",
+    "qtype": "single-session-preference",
+    "question": "Can you suggest a hotel for my upcoming trip to Miami?",
+    "answer": "The user would prefer suggestions of hotels in Miami that offer great views, possibly of the ocean or the city skyline, and have unique features such as a rooftop pool or a hot tub on the balcony. They may not prefer suggestions of basic or budget hotels without these features.",
+    "answer_sids": [
+      "answer_d586e9cd"
+    ],
+    "retrieved_top10_sids": [],
+    "hit@1": false,
+    "hit@5": false,
+    "hit@10": false
+  },
+  {
+    "qid": "affe2881",
+    "qtype": "knowledge-update",
+    "question": "How many different species of birds have I seen in my local park?",
+    "answer": "32",
+    "answer_sids": [
+      "answer_90de9b4d_1",
+      "answer_90de9b4d_2"
+    ],
+    "retrieved_top10_sids": [],
+    "hit@1": false,
+    "hit@5": false,
+    "hit@10": false
+  },
+  {
+    "qid": "6b168ec8",
+    "qtype": "single-session-user",
+    "question": "How many bikes do I own?",
+    "answer": "three",
+    "answer_sids": [
+      "answer_e623ae87"
+    ],
+    "retrieved_top10_sids": [
+      "answer_e623ae87"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "89941a93",
+    "qtype": "knowledge-update",
+    "question": "How many bikes do I currently own?",
+    "answer": "4",
+    "answer_sids": [
+      "answer_e1403127_2",
+      "answer_e1403127_1"
+    ],
+    "retrieved_top10_sids": [],
+    "hit@1": false,
+    "hit@5": false,
+    "hit@10": false
+  },
+  {
+    "qid": "71017276",
+    "qtype": "temporal-reasoning",
+    "question": "How many weeks ago did I meet up with my aunt and receive the crystal chandelier?",
+    "answer": 4,
+    "answer_sids": [
+      "answer_0b4a8adc_1"
+    ],
+    "retrieved_top10_sids": [
+      "answer_0b4a8adc_1"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "5e1b23de",
+    "qtype": "temporal-reasoning",
+    "question": "How many months ago did I attend the photography workshop?",
+    "answer": 3,
+    "answer_sids": [
+      "answer_c18d480b_1"
+    ],
+    "retrieved_top10_sids": [
+      "answer_c18d480b_1"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "a82c026e",
+    "qtype": "single-session-user",
+    "question": "What game did I finally beat last weekend?",
+    "answer": "Dark Souls 3 DLC",
+    "answer_sids": [
+      "answer_787e6a6d"
+    ],
+    "retrieved_top10_sids": [
+      "752392bb_3"
+    ],
+    "hit@1": false,
+    "hit@5": false,
+    "hit@10": false
+  },
+  {
+    "qid": "0100672e",
+    "qtype": "multi-session",
+    "question": "How much did I spend on each coffee mug for my coworkers?",
+    "answer": "$12",
+    "answer_sids": [
+      "answer_35c9798c_2",
+      "answer_35c9798c_1"
+    ],
+    "retrieved_top10_sids": [
+      "answer_35c9798c_2",
+      "answer_35c9798c_1"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "15745da0",
+    "qtype": "single-session-user",
+    "question": "How long have I been collecting vintage cameras?",
+    "answer": "three months",
+    "answer_sids": [
+      "answer_586de428"
+    ],
+    "retrieved_top10_sids": [
+      "answer_586de428"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "gpt4_68e94287",
+    "qtype": "temporal-reasoning",
+    "question": "Which event happened first, my participation in the #PlankChallenge or my post about vegan chili recipe?",
+    "answer": "You posted a recipe for vegan chili on Instagram using the hashtag #FoodieAdventures first.",
+    "answer_sids": [
+      "answer_9793daa3_2",
+      "answer_9793daa3_1"
+    ],
+    "retrieved_top10_sids": [
+      "answer_9793daa3_2"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "505af2f5",
+    "qtype": "single-session-preference",
+    "question": "I was thinking of trying a new coffee creamer recipe. Any recommendations?",
+    "answer": "The user would prefer responses that suggest variations on their existing almond milk, vanilla extract, and honey creamer recipe or new ideas that align with their goals of reducing sugar intake and saving money. They might not prefer responses that recommend commercial creamer products or recipes that are high in sugar or expensive.",
+    "answer_sids": [
+      "answer_f3164f2c"
+    ],
+    "retrieved_top10_sids": [
+      "answer_f3164f2c",
+      "sharegpt_kjeGJvK_11"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "c7dc5443",
+    "qtype": "knowledge-update",
+    "question": "What is my current record in the recreational volleyball league?",
+    "answer": "5-2",
+    "answer_sids": [
+      "answer_0cdbca92_2",
+      "answer_0cdbca92_1"
+    ],
+    "retrieved_top10_sids": [
+      "answer_0cdbca92_1",
+      "answer_0cdbca92_2"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "a3838d2b",
+    "qtype": "temporal-reasoning",
+    "question": "How many charity events did I participate in before the 'Run for the Cure' event?",
+    "answer": "4",
+    "answer_sids": [
+      "answer_4ffa04a2_5",
+      "answer_4ffa04a2_1",
+      "answer_4ffa04a2_6",
+      "answer_4ffa04a2_3",
+      "answer_4ffa04a2_4",
+      "answer_4ffa04a2_2"
+    ],
+    "retrieved_top10_sids": [
+      "answer_4ffa04a2_1",
+      "answer_4ffa04a2_6",
+      "answer_4ffa04a2_2"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "gpt4_5dcc0aab",
+    "qtype": "temporal-reasoning",
+    "question": "Which pair of shoes did I clean last month?",
+    "answer": "white Adidas sneakers",
+    "answer_sids": [
+      "answer_099c1b6c_2",
+      "answer_099c1b6c_5",
+      "answer_099c1b6c_4",
+      "answer_099c1b6c_1",
+      "answer_099c1b6c_3"
+    ],
+    "retrieved_top10_sids": [
+      "answer_099c1b6c_3"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "a1cc6108",
+    "qtype": "multi-session",
+    "question": "How old was I when Alex was born?",
+    "answer": "11",
+    "answer_sids": [
+      "answer_17dc2f5b_1",
+      "answer_17dc2f5b_2"
+    ],
+    "retrieved_top10_sids": [
+      "fb328ace_1",
+      "answer_17dc2f5b_2",
+      "answer_17dc2f5b_1"
+    ],
+    "hit@1": false,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "gpt4_4929293b",
+    "qtype": "temporal-reasoning",
+    "question": "What was the the life event of one of my relatives that I participated in a week ago?",
+    "answer": "my cousin's wedding",
+    "answer_sids": [
+      "answer_add9b013_1",
+      "answer_add9b013_2"
+    ],
+    "retrieved_top10_sids": [
+      "ultrachat_326769"
+    ],
+    "hit@1": false,
+    "hit@5": false,
+    "hit@10": false
+  },
+  {
+    "qid": "2ce6a0f2",
+    "qtype": "multi-session",
+    "question": "How many different art-related events did I attend in the past month?",
+    "answer": 4,
+    "answer_sids": [
+      "answer_901a6763_3",
+      "answer_901a6763_1",
+      "answer_901a6763_2",
+      "answer_901a6763_4"
+    ],
+    "retrieved_top10_sids": [
+      "answer_901a6763_4",
+      "answer_901a6763_3"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "gpt4_70e84552_abs",
+    "qtype": "temporal-reasoning",
+    "question": "Which task did I complete first, fixing the fence or purchasing three cows from Peter?",
+    "answer": "The information provided is not enough. You mentioned fixing the fence but did not mention purchasing cows from Peter.",
+    "answer_sids": [
+      "answer_b3070ec4_abs_1",
+      "answer_b3070ec4_abs_2"
+    ],
+    "retrieved_top10_sids": [
+      "answer_b3070ec4_abs_1"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "60d45044",
+    "qtype": "single-session-user",
+    "question": "What type of rice is my favorite?",
+    "answer": "Japanese short-grain rice",
+    "answer_sids": [
+      "answer_9cddca88"
+    ],
+    "retrieved_top10_sids": [],
+    "hit@1": false,
+    "hit@5": false,
+    "hit@10": false
+  },
+  {
+    "qid": "75499fd8",
+    "qtype": "single-session-user",
+    "question": "What breed is my dog?",
+    "answer": "Golden Retriever",
+    "answer_sids": [
+      "answer_723bf11f"
+    ],
+    "retrieved_top10_sids": [
+      "answer_723bf11f"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "gpt4_d9af6064",
+    "qtype": "temporal-reasoning",
+    "question": "Which device did I set up first, the smart thermostat or the new router?",
+    "answer": "new router",
+    "answer_sids": [
+      "answer_da704e79_2",
+      "answer_da704e79_1"
+    ],
+    "retrieved_top10_sids": [
+      "answer_da704e79_1",
+      "answer_da704e79_2"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "edced276",
+    "qtype": "multi-session",
+    "question": "How many days did I spend in total traveling in Hawaii and in New York City?",
+    "answer": "15 days",
+    "answer_sids": [
+      "answer_60e8941a_2",
+      "answer_60e8941a_1"
+    ],
+    "retrieved_top10_sids": [
+      "answer_60e8941a_2",
+      "answer_60e8941a_1"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "6a27ffc2",
+    "qtype": "knowledge-update",
+    "question": "How many videos of Corey Schafer's Python programming series have I completed so far?",
+    "answer": "30",
+    "answer_sids": [
+      "answer_77f32504_2",
+      "answer_77f32504_1"
+    ],
+    "retrieved_top10_sids": [
+      "answer_77f32504_1",
+      "answer_77f32504_2"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "57f827a0",
+    "qtype": "single-session-preference",
+    "question": "I was thinking about rearranging the furniture in my bedroom this weekend. Any tips?",
+    "answer": "The user would prefer responses that take into account their existing plans to replace the bedroom dresser and their interest in mid-century modern style, suggesting furniture layouts that accommodate the new dresser and incorporate elements of this design aesthetic. They might not prefer general furniture arrangement tips or suggestions that do not consider their specific design preferences.",
+    "answer_sids": [
+      "answer_1bde8d3b"
+    ],
+    "retrieved_top10_sids": [
+      "answer_1bde8d3b",
+      "e85e0eaf_1"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "7161e7e2",
+    "qtype": "single-session-assistant",
+    "question": "I'm checking our previous chat about the shift rotation sheet for GM social media agents. Can you remind me what was the rotation for Admon on a Sunday?",
+    "answer": "Admon was assigned to the 8 am - 4 pm (Day Shift) on Sundays.",
+    "answer_sids": [
+      "answer_sharegpt_5Lzox6N_0"
+    ],
+    "retrieved_top10_sids": [
+      "answer_sharegpt_5Lzox6N_0"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "e982271f",
+    "qtype": "single-session-assistant",
+    "question": "I was going through our previous chat. Can you remind me of the name of the last venue you recommended in the list of popular venues in Portland for indie music shows?",
+    "answer": "Revolution Hall",
+    "answer_sids": [
+      "answer_ultrachat_195444"
+    ],
+    "retrieved_top10_sids": [
+      "answer_ultrachat_195444",
+      "db65997e"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "86f00804",
+    "qtype": "single-session-user",
+    "question": "What book am I currently reading?",
+    "answer": "The Seven Husbands of Evelyn Hugo",
+    "answer_sids": [
+      "answer_96b8c9ee"
+    ],
+    "retrieved_top10_sids": [
+      "answer_96b8c9ee"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "e9327a54",
+    "qtype": "single-session-assistant",
+    "question": "I'm planning to revisit Orlando. I was wondering if you could remind me of that unique dessert shop with the giant milkshakes we talked about last time?",
+    "answer": "The Sugar Factory at Icon Park.",
+    "answer_sids": [
+      "answer_ultrachat_480665"
+    ],
+    "retrieved_top10_sids": [
+      "answer_ultrachat_480665"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "0e5e2d1a",
+    "qtype": "single-session-assistant",
+    "question": "I wanted to follow up on our previous conversation about binaural beats for anxiety and depression. Can you remind me how many subjects were in the study published in the journal Music and Medicine that found significant reductions in symptoms of depression, anxiety, and stress?",
+    "answer": "38 subjects",
+    "answer_sids": [
+      "answer_ultrachat_113156"
+    ],
+    "retrieved_top10_sids": [
+      "answer_ultrachat_113156"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "09ba9854_abs",
+    "qtype": "multi-session",
+    "question": "How much will I save by taking the bus from the airport to my hotel instead of a taxi?",
+    "answer": "The information provided is not enough. You did not mention how much will the bus take.",
+    "answer_sids": [
+      "answer_96c743d0_abs_2",
+      "answer_96c743d0_abs_1"
+    ],
+    "retrieved_top10_sids": [
+      "ultrachat_342361"
+    ],
+    "hit@1": false,
+    "hit@5": false,
+    "hit@10": false
+  },
+  {
+    "qid": "982b5123",
+    "qtype": "temporal-reasoning",
+    "question": "How many months ago did I book the Airbnb in San Francisco?",
+    "answer": "Five months ago",
+    "answer_sids": [
+      "answer_ab603dd5_1",
+      "answer_ab603dd5_2"
+    ],
+    "retrieved_top10_sids": [
+      "answer_ab603dd5_1",
+      "answer_ab603dd5_2",
+      "e36b0031"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "9ee3ecd6",
+    "qtype": "multi-session",
+    "question": "How many points do I need to earn to redeem a free skincare product at Sephora?",
+    "answer": "100",
+    "answer_sids": [
+      "answer_66c23110_1",
+      "answer_66c23110_2"
+    ],
+    "retrieved_top10_sids": [
+      "answer_66c23110_1",
+      "answer_66c23110_2"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "46a3abf7",
+    "qtype": "multi-session",
+    "question": "How many tanks do I currently have, including the one I set up for my friend's kid?",
+    "answer": 3,
+    "answer_sids": [
+      "answer_c65042d7_3",
+      "answer_c65042d7_2",
+      "answer_c65042d7_1"
+    ],
+    "retrieved_top10_sids": [
+      "answer_c65042d7_2"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "27016adc",
+    "qtype": "multi-session",
+    "question": "What percentage of the countryside property's price is the cost of the renovations I plan to do on my current house?",
+    "answer": "10%",
+    "answer_sids": [
+      "answer_a37bdf22_1",
+      "answer_a37bdf22_2"
+    ],
+    "retrieved_top10_sids": [
+      "answer_a37bdf22_1",
+      "answer_a37bdf22_2"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "4adc0475",
+    "qtype": "multi-session",
+    "question": "What is the total number of goals and assists I have in the recreational indoor soccer league?",
+    "answer": "5",
+    "answer_sids": [
+      "answer_6efce493_1",
+      "answer_6efce493_2"
+    ],
+    "retrieved_top10_sids": [
+      "answer_6efce493_2"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "129d1232",
+    "qtype": "multi-session",
+    "question": "How much money did I raise in total through all the charity events I participated in?",
+    "answer": "$5,850",
+    "answer_sids": [
+      "answer_1de862d6_3",
+      "answer_1de862d6_1",
+      "answer_1de862d6_2"
+    ],
+    "retrieved_top10_sids": [
+      "answer_1de862d6_3"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "gpt4_d31cdae3",
+    "qtype": "temporal-reasoning",
+    "question": "Which trip did the narrator take first, the solo trip to Europe or the family road trip across the American Southwest?",
+    "answer": "The family road trip across the American Southwest",
+    "answer_sids": [
+      "answer_8464304d_1",
+      "answer_8464304d_2"
+    ],
+    "retrieved_top10_sids": [
+      "answer_8464304d_2",
+      "de695a4e"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "35a27287",
+    "qtype": "single-session-preference",
+    "question": "Can you recommend some interesting cultural events happening around me this weekend?",
+    "answer": "The user would prefer responses that suggest cultural events where they can practice their language skills, particularly Spanish and French. They would also appreciate if the event has a focus on language learning resources. They would not prefer events that do not provide opportunities for language practice or cultural exchange.",
+    "answer_sids": [
+      "answer_9b182436"
+    ],
+    "retrieved_top10_sids": [
+      "58ae7c4f_3"
+    ],
+    "hit@1": false,
+    "hit@5": false,
+    "hit@10": false
+  },
+  {
+    "qid": "1b9b7252",
+    "qtype": "single-session-assistant",
+    "question": "I wanted to follow up on our previous conversation about mindfulness techniques. You mentioned some great resources for guided imagery exercises, can you remind me of the website that had free exercises like 'The Mountain Meditation' and 'The Body Scan Meditation'?",
+    "answer": "Mindful.org.",
+    "answer_sids": [
+      "answer_ultrachat_115151"
+    ],
+    "retrieved_top10_sids": [
+      "answer_ultrachat_115151",
+      "sharegpt_1AhFMpw_5"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "gpt4_2f56ae70",
+    "qtype": "temporal-reasoning",
+    "question": "Which streaming service did I start using most recently?",
+    "answer": "Disney+",
+    "answer_sids": [
+      "answer_7a36e820_1",
+      "answer_7a36e820_3",
+      "answer_7a36e820_2"
+    ],
+    "retrieved_top10_sids": [
+      "answer_7a36e820_1",
+      "answer_7a36e820_2"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "c9f37c46",
+    "qtype": "temporal-reasoning",
+    "question": "How long had I been watching stand-up comedy specials regularly when I attended the open mic night at the local comedy club?",
+    "answer": "2 months",
+    "answer_sids": [
+      "answer_cdba3d9f_1",
+      "answer_cdba3d9f_2"
+    ],
+    "retrieved_top10_sids": [
+      "answer_cdba3d9f_2",
+      "answer_cdba3d9f_1"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  },
+  {
+    "qid": "3f1e9474",
+    "qtype": "single-session-user",
+    "question": "Who did I have a conversation with about destiny?",
+    "answer": "Sarah",
+    "answer_sids": [
+      "answer_57fc1954"
+    ],
+    "retrieved_top10_sids": [
+      "answer_57fc1954"
+    ],
+    "hit@1": true,
+    "hit@5": true,
+    "hit@10": true
+  }
+]

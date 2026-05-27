@@ -1,0 +1,95 @@
+{
+  "n_questions": 500,
+  "mempalace_full": {
+    "mode": "mempalace_entity_graph",
+    "n": 500,
+    "R@1": 0.354,
+    "R@5": 0.406,
+    "R@10": 0.444,
+    "by_type": {
+      "knowledge-update": {
+        "n": 78,
+        "R@1": 0.4744,
+        "R@5": 0.5256,
+        "R@10": 0.5385
+      },
+      "multi-session": {
+        "n": 133,
+        "R@1": 0.2256,
+        "R@5": 0.2857,
+        "R@10": 0.3383
+      },
+      "single-session-assistant": {
+        "n": 56,
+        "R@1": 0.6786,
+        "R@5": 0.7321,
+        "R@10": 0.7321
+      },
+      "single-session-preference": {
+        "n": 30,
+        "R@1": 0.0667,
+        "R@5": 0.0667,
+        "R@10": 0.2333
+      },
+      "single-session-user": {
+        "n": 70,
+        "R@1": 0.1857,
+        "R@5": 0.2143,
+        "R@10": 0.2286
+      },
+      "temporal-reasoning": {
+        "n": 133,
+        "R@1": 0.4286,
+        "R@5": 0.4962,
+        "R@10": 0.5338
+      }
+    },
+    "runtime_s": 28.8
+  },
+  "mnemonics_rerank": {
+    "mode": "rerank",
+    "n": 500,
+    "runtime_s": 2680.5,
+    "R@1": 0.804,
+    "R@5": 0.834,
+    "R@10": 0.834,
+    "by_type": {
+      "single-session-user": {
+        "n": 70,
+        "R@1": 0.5286,
+        "R@5": 0.5857,
+        "R@10": 0.5857
+      },
+      "multi-session": {
+        "n": 133,
+        "R@1": 0.8947,
+        "R@5": 0.9173,
+        "R@10": 0.9173
+      },
+      "single-session-preference": {
+        "n": 30,
+        "R@1": 0.5667,
+        "R@5": 0.7,
+        "R@10": 0.7
+      },
+      "temporal-reasoning": {
+        "n": 133,
+        "R@1": 0.8797,
+        "R@5": 0.8947,
+        "R@10": 0.8947
+      },
+      "knowledge-update": {
+        "n": 78,
+        "R@1": 0.7564,
+        "R@5": 0.7692,
+        "R@10": 0.7692
+      },
+      "single-session-assistant": {
+        "n": 56,
+        "R@1": 0.9464,
+        "R@5": 0.9643,
+        "R@10": 0.9643
+      }
+    }
+  }
+}
