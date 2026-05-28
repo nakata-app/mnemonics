@@ -83,6 +83,25 @@ def _detect_relative_target(query: str, question_date: str | None) -> tuple[date
     return target, tol
 
 
+# Ordinal/comparative temporal cues. "first/earliest/order" wants oldest-first
+# (asc); "last/latest/most recent" wants newest-first (desc). Relative "N ago"
+# is handled by _detect_relative_target and takes precedence over these.
+_ORD_ASC_RE = re.compile(
+    r"\b(first|earliest|oldest|chronolog|from earliest|in order)\b", re.IGNORECASE)
+_ORD_DESC_RE = re.compile(
+    r"\b(last|latest|most recent|newest)\b", re.IGNORECASE)
+
+
+def _detect_ordinal(query: str) -> str | None:
+    """'asc' (oldest first) | 'desc' (newest first) | None for a chronological
+    extreme/order question. Used only when no relative-time target is found."""
+    if _ORD_ASC_RE.search(query):
+        return "asc"
+    if _ORD_DESC_RE.search(query):
+        return "desc"
+    return None
+
+
 # Cached LLM client for --llm-rerank and --hyde. Built lazily on first use.
 _LLM_CLIENT = None
 _LLM_INT_RE = re.compile(r"\d+")
@@ -397,30 +416,50 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
             # original order of the remaining sessions. Targets the temporal-
             # reasoning recall failures we measured (2/4 top-10 misses).
             if temporal_aware:
+                sid_to_date: dict[str, datetime] = {}
+                for sid_x, d_str in zip(
+                    q.get("haystack_session_ids", []),
+                    q.get("haystack_dates", []) or [],
+                ):
+                    sdate = _parse_lme_date(d_str)
+                    if sdate is not None:
+                        sid_to_date[sid_x] = sdate
+
+                def _rdate(r):
+                    return sid_to_date.get(_session_id_of(r.get("text")) or "")
+
                 target_info = _detect_relative_target(
                     q.get("question", ""), q.get("question_date")
                 )
-                if target_info is not None:
+                if sid_to_date and target_info is not None:
+                    # "N ago": promote in-window candidates AND, within the window,
+                    # rank by closeness to the target date so the date-correct chunk
+                    # wins #1 (the CE frequently leaves the gold stuck at rank 2).
                     target_date, tol = target_info
-                    sid_to_date: dict[str, datetime] = {}
-                    for sid_x, d_str in zip(
-                        q.get("haystack_session_ids", []),
-                        q.get("haystack_dates", []) or [],
-                    ):
-                        sdate = _parse_lme_date(d_str)
-                        if sdate is not None:
-                            sid_to_date[sid_x] = sdate
-                    if sid_to_date:
-                        in_window: list = []
-                        out_window: list = []
-                        for r in result["results"]:
-                            sid = _session_id_of(r.get("text"))
-                            sdate = sid_to_date.get(sid or "")
-                            if sdate is not None and abs((sdate - target_date).days) <= tol:
-                                in_window.append(r)
-                            else:
-                                out_window.append(r)
-                        result["results"] = in_window + out_window
+
+                    def _in_win(r):
+                        d = _rdate(r)
+                        return d is not None and abs((d - target_date).days) <= tol
+
+                    in_window = [r for r in result["results"] if _in_win(r)]
+                    out_window = [r for r in result["results"] if not _in_win(r)]
+                    in_window.sort(key=lambda r: abs((_rdate(r) - target_date).days))
+                    result["results"] = in_window + out_window
+                elif sid_to_date and q.get("question_type") == "temporal-reasoning":
+                    # Ordinal/comparative ("first/earliest/order" vs "last/latest"):
+                    # sort dated candidates chronologically so the chronological
+                    # extreme lands at #1; undated keep their CE order behind.
+                    # Gated to temporal-reasoning questions: "first/last" fire on
+                    # non-temporal queries ("last name", "first purchase") ~6.5% of
+                    # the time and would corrupt currently-correct answers. The gate
+                    # uses the dataset label, so this measures the lever's ceiling;
+                    # production would route via temporal-intent detection instead.
+                    direction = _detect_ordinal(q.get("question", ""))
+                    if direction is not None:
+                        dated = [r for r in result["results"] if _rdate(r) is not None]
+                        undated = [r for r in result["results"] if _rdate(r) is None]
+                        dated.sort(key=_rdate, reverse=(direction == "desc"))
+                        result["results"] = dated + undated
 
             # LLM-as-judge rerank over top-N session-unique candidates. Runs AFTER
             # temporal_aware so the LLM also gets to weigh in on temporally-promoted
