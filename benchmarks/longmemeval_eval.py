@@ -119,16 +119,21 @@ _HYDE_PROMPT = (
 
 
 def _get_llm_client():
-    """Build an OpenAI-compatible client pointed at NVIDIA NIM."""
+    """OpenAI-compatible client. Defaults to NVIDIA NIM; if DEEPSEEK_API_KEY is
+    set it routes to DeepSeek instead (base_url auto-selected, still overridable
+    via MNEMONICS_LLM_BASE_URL)."""
     global _LLM_CLIENT
     if _LLM_CLIENT is not None:
         return _LLM_CLIENT
-    api_key = os.environ.get("NVIDIA_API_KEY") or os.environ.get("NIM_API_KEY")
+    deepseek = os.environ.get("DEEPSEEK_API_KEY")
+    api_key = deepseek or os.environ.get("NVIDIA_API_KEY") or os.environ.get("NIM_API_KEY")
     if not api_key:
-        raise RuntimeError("NVIDIA_API_KEY not set; cannot use --llm-rerank or --hyde")
+        raise RuntimeError(
+            "No LLM key set; need DEEPSEEK_API_KEY or NVIDIA_API_KEY for --llm-rerank/--hyde")
+    default_base = "https://api.deepseek.com" if deepseek else "https://integrate.api.nvidia.com/v1"
     from openai import OpenAI  # local import; only required when an LLM feature is on
     _LLM_CLIENT = OpenAI(
-        base_url=os.environ.get("MNEMONICS_LLM_BASE_URL", "https://integrate.api.nvidia.com/v1"),
+        base_url=os.environ.get("MNEMONICS_LLM_BASE_URL", default_base),
         api_key=api_key,
     )
     return _LLM_CLIENT
@@ -336,6 +341,7 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                        inject_dates: bool = False,
                        temporal_aware: bool = False,
                        llm_rerank_top_n: int = 0,
+                       llm_rerank_margin: float = 0.0,
                        hyde: bool = False,
                        per_q_out: Path | None = None) -> dict:
     """Run mnemonics retrieve() across every question, return aggregated metrics."""
@@ -355,6 +361,7 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
     hits = {k: 0 for k in ks}
     by_type = defaultdict(lambda: {"n": 0, **{f"hit@{k}": 0 for k in ks}})
     per_q: list[dict] = []
+    llm_fired = 0
     t0 = time.time()
     for i, q in enumerate(questions):
         # Fresh store per question — LongMemEval is per-question independent.
@@ -462,14 +469,31 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                         result["results"] = dated + undated
 
             # LLM-as-judge rerank over top-N session-unique candidates. Runs AFTER
-            # temporal_aware so the LLM also gets to weigh in on temporally-promoted
-            # results. Cost: 1 LLM call per question.
+            # temporal_aware so the LLM also weighs temporally-promoted results.
+            # Scoped by --llm-rerank-margin: naive (every-question) rerank regressed
+            # -1pp because the LLM added noise on easy questions the CE already
+            # nailed. The gate fires the LLM only when the CE is *uncertain* — the
+            # softmax gap between the two best candidate scores is below the margin
+            # — so confident-correct CE rankings are left untouched. Cost: 1 LLM
+            # call per fired question (printed at the end).
             if llm_rerank_top_n > 0:
-                result["results"] = _llm_rerank_topk(
-                    query=q.get("question", ""),
-                    results=result["results"],
-                    top_n=llm_rerank_top_n,
-                )
+                fire = True
+                if llm_rerank_margin > 0.0:
+                    import math
+                    top = sorted((r.get("score", 0.0) for r in result["results"]),
+                                 reverse=True)[:8]
+                    if len(top) >= 2:
+                        mx = top[0]
+                        exps = [math.exp(s - mx) for s in top]
+                        Z = sum(exps) or 1.0
+                        fire = (exps[0] - exps[1]) / Z < llm_rerank_margin
+                if fire:
+                    llm_fired += 1
+                    result["results"] = _llm_rerank_topk(
+                        query=q.get("question", ""),
+                        results=result["results"],
+                        top_n=llm_rerank_top_n,
+                    )
 
             answer_sids = set(q.get("answer_session_ids") or [])
             retrieved_sids: list[str] = []
@@ -510,6 +534,10 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                 f"rate={rate:.2f} q/s  eta={eta:.0f}s",
                 flush=True,
             )
+
+    if llm_rerank_top_n > 0:
+        print(f"  LLM rerank fired on {llm_fired}/{len(questions)} questions "
+              f"(margin={llm_rerank_margin}, 0=always)", flush=True)
 
     n = sum(v["n"] for v in by_type.values())
     out = {
@@ -572,6 +600,8 @@ def main():
                     help="Post-retrieval: when the query says 'N weeks/days/months ago', push sessions inside that date window to the front of the candidate list. Cheap, opt-in, no embedding change.")
     ap.add_argument("--llm-rerank-top-n", type=int, default=0,
                     help="If >0, send the top-N session-unique candidates to an LLM judge (NVIDIA NIM Llama 3.3 70B by default) which picks the index containing the answer. Requires NVIDIA_API_KEY. 0 disables.")
+    ap.add_argument("--llm-rerank-margin", type=float, default=0.0,
+                    help="Scope --llm-rerank to uncertain cases: fire the LLM only when the softmax gap between the two best candidate scores is below this value. 0 = fire on every question (legacy, regressed -1pp). Try 0.3.")
     ap.add_argument("--hyde", action="store_true",
                     help="Hypothetical Document Embeddings: ask an LLM (NIM Llama 3.3 70B) to draft a user-style passage that would answer the question, then append it to the query so the embedding lands closer to the corpus. Requires NVIDIA_API_KEY.")
     ap.add_argument("--out", type=Path, default=Path("/tmp/mnemonics_vs_mempalace.json"))
@@ -610,6 +640,7 @@ def main():
             inject_dates=args.inject_dates,
             temporal_aware=args.temporal_aware,
             llm_rerank_top_n=args.llm_rerank_top_n,
+            llm_rerank_margin=args.llm_rerank_margin,
             hyde=args.hyde,
         )
 
@@ -624,6 +655,7 @@ def main():
             inject_dates=args.inject_dates,
             temporal_aware=args.temporal_aware,
             llm_rerank_top_n=args.llm_rerank_top_n,
+            llm_rerank_margin=args.llm_rerank_margin,
             hyde=args.hyde,
             per_q_out=args.per_q_out,
         )
