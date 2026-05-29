@@ -257,6 +257,38 @@ def _llm_rerank_topk(query: str, results: list, top_n: int = 5, model: str | Non
     rest = [r for k, r in enumerate(results) if k != chosen_global_idx]
     return [chosen_item] + rest
 
+
+def _rerank_fusion(results: list, rrf_k: float = 60.0) -> list:
+    """Label-free rank ensemble: fuse the cross-encoder ranking with the
+    retriever's (vec+BM25) ranking via Reciprocal Rank Fusion.
+
+    After retrieve(rerank=True) the list is sorted by ce_score; each row also
+    carries rrf_score — the pre-CE vec+BM25 fused rank score. The CE sometimes
+    ranks the gold answer below a distractor it over-scores, while the
+    retriever ranks it higher. Fusing the two *independent* rankings lets a
+    strong retriever vote pull the gold back toward #1 without a single
+    model's idiosyncratic error dominating. Reorders in place; adds no
+    candidates (recall unchanged), needs no model, no training, no GPU.
+
+    RRF score per row = 1/(k + ce_rank+1) + 1/(k + retr_rank+1), ranks 0-based.
+    """
+    if len(results) < 2:
+        return results
+    ce_rank = {r["id"]: i for i, r in enumerate(results)}  # current order = ce_score desc
+    retr_sorted = sorted(
+        results,
+        key=lambda r: r.get("rrf_score", r.get("raw_score", 0.0)),
+        reverse=True,
+    )
+    retr_rank = {r["id"]: i for i, r in enumerate(retr_sorted)}
+
+    def _fused(r):
+        rid = r["id"]
+        return 1.0 / (rrf_k + ce_rank[rid] + 1) + 1.0 / (rrf_k + retr_rank[rid] + 1)
+
+    return sorted(results, key=_fused, reverse=True)
+
+
 def _resolve_path(env_key: str, *candidates: Path) -> Path:
     """Env var varsa onu kullan, yoksa var olan ilk candidate'i döndür."""
     from_env = os.environ.get(env_key, "")
@@ -342,6 +374,8 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                        temporal_aware: bool = False,
                        llm_rerank_top_n: int = 0,
                        llm_rerank_margin: float = 0.0,
+                       rerank_fusion: bool = False,
+                       fusion_rrf_k: float = 60.0,
                        hyde: bool = False,
                        per_q_out: Path | None = None) -> dict:
     """Run mnemonics retrieve() across every question, return aggregated metrics."""
@@ -414,6 +448,13 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
             except RuntimeError as e:
                 print(f"  q{i} ERROR: {e}", file=sys.stderr)
                 continue
+
+            # Rank-fusion post-rerank (label-free): ensemble the CE ranking with
+            # the retriever's vec+BM25 ranking so a CE mis-rank gets corrected
+            # when the retriever strongly disagrees. Runs before temporal-aware
+            # so temporal promotion still wins on temporal queries.
+            if rerank_fusion:
+                result["results"] = _rerank_fusion(result["results"], fusion_rrf_k)
 
             # Temporal-aware post-rerank. Only fires when the query contains a
             # relative-time expression ("N weeks/days/months ago"); other queries
@@ -602,6 +643,10 @@ def main():
                     help="If >0, send the top-N session-unique candidates to an LLM judge (NVIDIA NIM Llama 3.3 70B by default) which picks the index containing the answer. Requires NVIDIA_API_KEY. 0 disables.")
     ap.add_argument("--llm-rerank-margin", type=float, default=0.0,
                     help="Scope --llm-rerank to uncertain cases: fire the LLM only when the softmax gap between the two best candidate scores is below this value. 0 = fire on every question (legacy, regressed -1pp). Try 0.3.")
+    ap.add_argument("--rerank-fusion", action="store_true",
+                    help="Label-free rank ensemble: after CE rerank, fuse the CE ranking with the retriever's vec+BM25 ranking via RRF. Corrects CE mis-ranks when the retriever disagrees. No model/training/GPU. Try with the 0.954 baseline config.")
+    ap.add_argument("--fusion-rrf-k", type=float, default=60.0,
+                    help="RRF damping constant for --rerank-fusion (default 60). Lower = rank-1 dominates more.")
     ap.add_argument("--hyde", action="store_true",
                     help="Hypothetical Document Embeddings: ask an LLM (NIM Llama 3.3 70B) to draft a user-style passage that would answer the question, then append it to the query so the embedding lands closer to the corpus. Requires NVIDIA_API_KEY.")
     ap.add_argument("--out", type=Path, default=Path("/tmp/mnemonics_vs_mempalace.json"))
@@ -641,6 +686,8 @@ def main():
             temporal_aware=args.temporal_aware,
             llm_rerank_top_n=args.llm_rerank_top_n,
             llm_rerank_margin=args.llm_rerank_margin,
+            rerank_fusion=args.rerank_fusion,
+            fusion_rrf_k=args.fusion_rrf_k,
             hyde=args.hyde,
         )
 
@@ -656,6 +703,8 @@ def main():
             temporal_aware=args.temporal_aware,
             llm_rerank_top_n=args.llm_rerank_top_n,
             llm_rerank_margin=args.llm_rerank_margin,
+            rerank_fusion=args.rerank_fusion,
+            fusion_rrf_k=args.fusion_rrf_k,
             hyde=args.hyde,
             per_q_out=args.per_q_out,
         )
