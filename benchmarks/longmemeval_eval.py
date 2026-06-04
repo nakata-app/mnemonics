@@ -419,6 +419,7 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                        trust_gate_ce: str | None = None,
                        trust_gate_margin: float = 1.0,
                        trust_gate_pin_margin: float | None = None,
+                       dump_candidates: Path | None = None,
                        per_q_out: Path | None = None) -> dict:
     """Run mnemonics retrieve() across every question, return aggregated metrics."""
     from mnemonics.store import Store
@@ -443,6 +444,7 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
     hits = {k: 0 for k in ks}
     by_type = defaultdict(lambda: {"n": 0, **{f"hit@{k}": 0 for k in ks}})
     per_q: list[dict] = []
+    cand_dump: list[dict] = []
     llm_fired = 0
     gate_fired = 0
     t0 = time.time()
@@ -497,6 +499,21 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
             except RuntimeError as e:
                 print(f"  q{i} ERROR: {e}", file=sys.stderr)
                 continue
+
+            # Candidate dump for offline CE training-pair mining: the raw
+            # pipeline order (post-CE, pre-gate/temporal) so top non-gold rows
+            # serve as hard negatives. Texts keep the SID= prefix; strip it
+            # downstream the same way the trust gate does.
+            if dump_candidates is not None:
+                cand_dump.append({
+                    "qid": q.get("question_id"),
+                    "qtype": q.get("question_type"),
+                    "question": q.get("question"),
+                    "answer_sids": list(q.get("answer_session_ids") or []),
+                    "rows": [{"sid": _session_id_of(r.get("text")),
+                              "text": r.get("text")}
+                             for r in result["results"]],
+                })
 
             # Rank-fusion post-rerank (label-free): ensemble the CE ranking with
             # the retriever's vec+BM25 ranking so a CE mis-rank gets corrected
@@ -683,6 +700,9 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                              "fired": gate_fired}
     if per_q_out is not None:
         per_q_out.write_text(json.dumps(per_q, indent=2))
+    if dump_candidates is not None:
+        dump_candidates.write_text(json.dumps(cand_dump))
+        print(f"  candidate dump: {len(cand_dump)} q -> {dump_candidates}", flush=True)
     return out
 
 
@@ -742,6 +762,8 @@ def main():
                     help="Logit margin the trust-gate CE must clear to override #1 (default 1.0, the adaptmem Sprint 4 value).")
     ap.add_argument("--trust-gate-pin-margin", type=float, default=None,
                     help="If set, a fired gate override whose margin is >= this value is pinned back to #1 after temporal-aware (protects very-confident gate wins from temporal demotion). Try 0.5.")
+    ap.add_argument("--dump-candidates", type=Path, default=None,
+                    help="Dump each question's retrieved candidate rows (sid+text, post-CE pre-gate order) to this JSON for offline CE training-pair mining.")
     ap.add_argument("--out", type=Path, default=Path("/tmp/mnemonics_vs_mempalace.json"))
     ap.add_argument("--per-q-out", type=Path, default=None,
                     help="Optional path to dump per-question hit/miss records")
@@ -805,6 +827,7 @@ def main():
             trust_gate_ce=args.trust_gate_ce,
             trust_gate_margin=args.trust_gate_margin,
             trust_gate_pin_margin=args.trust_gate_pin_margin,
+            dump_candidates=args.dump_candidates,
             per_q_out=args.per_q_out,
         )
 
