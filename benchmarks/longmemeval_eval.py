@@ -289,6 +289,45 @@ def _rerank_fusion(results: list, rrf_k: float = 60.0) -> list:
     return sorted(results, key=_fused, reverse=True)
 
 
+def _trust_gate_rerank(query: str, results: list, ce, margin: float = 1.0) -> tuple[list, dict]:
+    """Trust-gated FT-CE top-1 override (adaptmem Sprint 4 Stage 1, ported).
+
+    A fine-tuned cross-encoder rescores the returned candidate band but is
+    only allowed to replace the current #1 when it is *confident*: its best
+    candidate must outscore the current top-1 by at least ``margin`` logits.
+    Pure (always-on) FT-CE rerank regressed -3pp because it also overrode
+    confident-correct champion rankings; the gate keeps the champion order
+    unless the FT-CE strongly disagrees (Sprint 4: helped>0, hurt=0).
+
+    Returns (possibly reordered results, gate_info) — gate_info carries the
+    raw margin so per-question dumps allow an offline margin sweep without
+    re-running the eval.
+    """
+    if len(results) < 2:
+        return results, {"fired": False, "ftce_margin": None}
+
+    def _clean(t: str | None) -> str:
+        # Strip the "SID=<sid>|" bookkeeping prefix: the chat-ce-* checkpoints
+        # were trained on raw chat text, the prefix is retrieval-only metadata.
+        t = t or ""
+        return t.split("|", 1)[1] if t.startswith("SID=") and "|" in t else t
+
+    pairs = [(query, _clean(r.get("text"))) for r in results]
+    scores = ce.predict(pairs, show_progress_bar=False)
+    best = int(max(range(len(scores)), key=lambda j: float(scores[j])))
+    gap = float(scores[best]) - float(scores[0])
+    info = {
+        "fired": False,
+        "ftce_margin": round(gap, 4),
+        "ftce_best_sid": _session_id_of(results[best].get("text")),
+        "base_top1_sid": _session_id_of(results[0].get("text")),
+    }
+    if best != 0 and gap >= margin:
+        info["fired"] = True
+        results = [results[best]] + [r for j, r in enumerate(results) if j != best]
+    return results, info
+
+
 def _resolve_path(env_key: str, *candidates: Path) -> Path:
     """Env var varsa onu kullan, yoksa var olan ilk candidate'i döndür."""
     from_env = os.environ.get(env_key, "")
@@ -377,6 +416,8 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                        rerank_fusion: bool = False,
                        fusion_rrf_k: float = 60.0,
                        hyde: bool = False,
+                       trust_gate_ce: str | None = None,
+                       trust_gate_margin: float = 1.0,
                        per_q_out: Path | None = None) -> dict:
     """Run mnemonics retrieve() across every question, return aggregated metrics."""
     from mnemonics.store import Store
@@ -391,11 +432,18 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
     print(f"  encoder dim={store_dim} (model={getattr(enc, '_first_module', lambda: None)() and ''}{os.environ.get('MNEMONICS_ENCODER_MODEL') or 'all-MiniLM-L6-v2'})", flush=True)
     from mnemonics.retrieve import retrieve
 
+    gate_ce = None
+    if trust_gate_ce:
+        from sentence_transformers import CrossEncoder
+        gate_ce = CrossEncoder(trust_gate_ce)
+        print(f"  trust-gate CE loaded: {trust_gate_ce} (margin={trust_gate_margin})", flush=True)
+
     ks = [1, 5, 10]
     hits = {k: 0 for k in ks}
     by_type = defaultdict(lambda: {"n": 0, **{f"hit@{k}": 0 for k in ks}})
     per_q: list[dict] = []
     llm_fired = 0
+    gate_fired = 0
     t0 = time.time()
     for i, q in enumerate(questions):
         # Fresh store per question — LongMemEval is per-question independent.
@@ -455,6 +503,18 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
             # so temporal promotion still wins on temporal queries.
             if rerank_fusion:
                 result["results"] = _rerank_fusion(result["results"], fusion_rrf_k)
+
+            # Trust-gated FT-CE override (Sprint 4 pattern): the fine-tuned CE
+            # replaces the champion top-1 only when its score margin clears the
+            # gate. Runs before temporal-aware so temporal promotion still wins
+            # on temporal queries (same stage order as adaptmem Sprint 4).
+            gate_info = None
+            if gate_ce is not None:
+                result["results"], gate_info = _trust_gate_rerank(
+                    q.get("question", ""), result["results"], gate_ce,
+                    trust_gate_margin)
+                if gate_info["fired"]:
+                    gate_fired += 1
 
             # Temporal-aware post-rerank. Only fires when the query contains a
             # relative-time expression ("N weeks/days/months ago"); other queries
@@ -561,6 +621,7 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                     "answer_sids": list(answer_sids),
                     "retrieved_top10_sids": retrieved_sids[:10],
                     "hit@1": q_hits[1], "hit@5": q_hits[5], "hit@10": q_hits[10],
+                    **({"gate": gate_info} if gate_info is not None else {}),
                 })
 
         step = 1 if len(questions) <= 10 else 5
@@ -579,6 +640,9 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
     if llm_rerank_top_n > 0:
         print(f"  LLM rerank fired on {llm_fired}/{len(questions)} questions "
               f"(margin={llm_rerank_margin}, 0=always)", flush=True)
+    if gate_ce is not None:
+        print(f"  trust gate fired on {gate_fired}/{len(questions)} questions "
+              f"(margin={trust_gate_margin})", flush=True)
 
     n = sum(v["n"] for v in by_type.values())
     out = {
@@ -594,6 +658,9 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
             for t, v in by_type.items()
         },
     }
+    if gate_ce is not None:
+        out["trust_gate"] = {"model": trust_gate_ce, "margin": trust_gate_margin,
+                             "fired": gate_fired}
     if per_q_out is not None:
         per_q_out.write_text(json.dumps(per_q, indent=2))
     return out
@@ -649,6 +716,10 @@ def main():
                     help="RRF damping constant for --rerank-fusion (default 60). Lower = rank-1 dominates more.")
     ap.add_argument("--hyde", action="store_true",
                     help="Hypothetical Document Embeddings: ask an LLM (NIM Llama 3.3 70B) to draft a user-style passage that would answer the question, then append it to the query so the embedding lands closer to the corpus. Requires NVIDIA_API_KEY.")
+    ap.add_argument("--trust-gate-ce", type=str, default=None,
+                    help="Path/name of a fine-tuned CrossEncoder used as a trust-gated #1 override: it rescores the returned candidates and replaces the top-1 only when its pick beats the current top-1 by --trust-gate-margin logits. Pure (always-on) FT-CE rerank regressed -3pp; the gate is the proven variant (adaptmem Sprint 4 Stage 1).")
+    ap.add_argument("--trust-gate-margin", type=float, default=1.0,
+                    help="Logit margin the trust-gate CE must clear to override #1 (default 1.0, the adaptmem Sprint 4 value).")
     ap.add_argument("--out", type=Path, default=Path("/tmp/mnemonics_vs_mempalace.json"))
     ap.add_argument("--per-q-out", type=Path, default=None,
                     help="Optional path to dump per-question hit/miss records")
@@ -689,6 +760,8 @@ def main():
             rerank_fusion=args.rerank_fusion,
             fusion_rrf_k=args.fusion_rrf_k,
             hyde=args.hyde,
+            trust_gate_ce=args.trust_gate_ce,
+            trust_gate_margin=args.trust_gate_margin,
         )
 
     if args.mode in ("both", "rerank"):
@@ -706,6 +779,8 @@ def main():
             rerank_fusion=args.rerank_fusion,
             fusion_rrf_k=args.fusion_rrf_k,
             hyde=args.hyde,
+            trust_gate_ce=args.trust_gate_ce,
+            trust_gate_margin=args.trust_gate_margin,
             per_q_out=args.per_q_out,
         )
 
