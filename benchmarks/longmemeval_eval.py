@@ -418,6 +418,7 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                        hyde: bool = False,
                        trust_gate_ce: str | None = None,
                        trust_gate_margin: float = 1.0,
+                       trust_gate_pin_margin: float | None = None,
                        per_q_out: Path | None = None) -> dict:
     """Run mnemonics retrieve() across every question, return aggregated metrics."""
     from mnemonics.store import Store
@@ -509,12 +510,14 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
             # gate. Runs before temporal-aware so temporal promotion still wins
             # on temporal queries (same stage order as adaptmem Sprint 4).
             gate_info = None
+            gate_top_id = None
             if gate_ce is not None:
                 result["results"], gate_info = _trust_gate_rerank(
                     q.get("question", ""), result["results"], gate_ce,
                     trust_gate_margin)
                 if gate_info["fired"]:
                     gate_fired += 1
+                    gate_top_id = result["results"][0].get("id")
 
             # Temporal-aware post-rerank. Only fires when the query contains a
             # relative-time expression ("N weeks/days/months ago"); other queries
@@ -568,6 +571,23 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                         undated = [r for r in result["results"] if _rdate(r) is None]
                         dated.sort(key=_rdate, reverse=(direction == "desc"))
                         result["results"] = dated + undated
+
+            # Gate-pin: when the FT-CE override was VERY confident, protect its
+            # #1 from later-stage demotion. Post-mortem of the m=0.2 run found
+            # temporal-aware re-demoted 2 gate wins whose margins were 0.998+
+            # (est 0.966 vs real 0.964 — exactly those two questions). Only
+            # fires above --trust-gate-pin-margin, so ordinary temporal
+            # promotions are untouched.
+            if (gate_top_id is not None and trust_gate_pin_margin is not None
+                    and (gate_info.get("ftce_margin") or 0.0) >= trust_gate_pin_margin
+                    and result["results"]
+                    and result["results"][0].get("id") != gate_top_id):
+                rows = result["results"]
+                idx = next((j for j, r in enumerate(rows)
+                            if r.get("id") == gate_top_id), None)
+                if idx is not None:
+                    result["results"] = [rows[idx]] + rows[:idx] + rows[idx + 1:]
+                    gate_info["pinned"] = True
 
             # LLM-as-judge rerank over top-N session-unique candidates. Runs AFTER
             # temporal_aware so the LLM also weighs temporally-promoted results.
@@ -720,6 +740,8 @@ def main():
                     help="Path/name of a fine-tuned CrossEncoder used as a trust-gated #1 override: it rescores the returned candidates and replaces the top-1 only when its pick beats the current top-1 by --trust-gate-margin logits. Pure (always-on) FT-CE rerank regressed -3pp; the gate is the proven variant (adaptmem Sprint 4 Stage 1).")
     ap.add_argument("--trust-gate-margin", type=float, default=1.0,
                     help="Logit margin the trust-gate CE must clear to override #1 (default 1.0, the adaptmem Sprint 4 value).")
+    ap.add_argument("--trust-gate-pin-margin", type=float, default=None,
+                    help="If set, a fired gate override whose margin is >= this value is pinned back to #1 after temporal-aware (protects very-confident gate wins from temporal demotion). Try 0.5.")
     ap.add_argument("--out", type=Path, default=Path("/tmp/mnemonics_vs_mempalace.json"))
     ap.add_argument("--per-q-out", type=Path, default=None,
                     help="Optional path to dump per-question hit/miss records")
@@ -762,6 +784,7 @@ def main():
             hyde=args.hyde,
             trust_gate_ce=args.trust_gate_ce,
             trust_gate_margin=args.trust_gate_margin,
+            trust_gate_pin_margin=args.trust_gate_pin_margin,
         )
 
     if args.mode in ("both", "rerank"):
@@ -781,6 +804,7 @@ def main():
             hyde=args.hyde,
             trust_gate_ce=args.trust_gate_ce,
             trust_gate_margin=args.trust_gate_margin,
+            trust_gate_pin_margin=args.trust_gate_pin_margin,
             per_q_out=args.per_q_out,
         )
 
