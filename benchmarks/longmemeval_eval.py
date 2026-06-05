@@ -61,9 +61,14 @@ def _parse_lme_date(s: str | None) -> datetime | None:
         return None
 
 
-def _detect_relative_target(query: str, question_date: str | None) -> tuple[datetime, int] | None:
+def _detect_relative_target(query: str, question_date: str | None,
+                            require_count: bool = False) -> tuple[datetime, int] | None:
     """If query mentions 'N weeks/days ago' and question_date is parseable,
     return (target_date, tolerance_days). Else None.
+
+    require_count (temporal-v2): a bare unit without a number ("how many days
+    ago...?") is a COUNT question, not a window reference — defaulting it to
+    N=1 fabricated a bogus ±2-day window that promoted unrelated sessions.
     """
     if not question_date:
         return None
@@ -72,6 +77,8 @@ def _detect_relative_target(query: str, question_date: str | None) -> tuple[date
         return None
     m = _REL_TIME_RE.search(query)
     if not m:
+        return None
+    if require_count and m.group(1) is None:
         return None
     num_str = (m.group(1) or "1").lower()
     unit = m.group(2).lower()
@@ -90,11 +97,38 @@ _ORD_ASC_RE = re.compile(
     r"\b(first|earliest|oldest|chronolog|from earliest|in order)\b", re.IGNORECASE)
 _ORD_DESC_RE = re.compile(
     r"\b(last|latest|most recent|newest)\b", re.IGNORECASE)
+# Explicit "from X to Y" direction phrases (temporal-v2): they out-rank single
+# cues — "order of my trips, from latest to earliest" must be DESC even though
+# "order" (an asc cue) appears first in the sentence.
+_ORD_FROMTO_DESC_RE = re.compile(
+    r"\bfrom\s+(?:the\s+)?(?:latest|newest|most\s+recent)\s+to\s+(?:the\s+)?(?:earliest|oldest|first)\b",
+    re.IGNORECASE)
+_ORD_FROMTO_ASC_RE = re.compile(
+    r"\bfrom\s+(?:the\s+)?(?:earliest|oldest|first)\s+to\s+(?:the\s+)?(?:latest|newest|most\s+recent)\b",
+    re.IGNORECASE)
 
 
-def _detect_ordinal(query: str) -> str | None:
+def _detect_ordinal(query: str, v2: bool = False) -> str | None:
     """'asc' (oldest first) | 'desc' (newest first) | None for a chronological
-    extreme/order question. Used only when no relative-time target is found."""
+    extreme/order question. Used only when no relative-time target is found.
+
+    v2: explicit "from latest to earliest" phrases win first; when both an asc
+    and a desc cue appear, the one mentioned EARLIER in the query wins (legacy
+    behavior let asc always win, flipping latest-first questions).
+    """
+    if v2:
+        if _ORD_FROMTO_DESC_RE.search(query):
+            return "desc"
+        if _ORD_FROMTO_ASC_RE.search(query):
+            return "asc"
+        ma, md = _ORD_ASC_RE.search(query), _ORD_DESC_RE.search(query)
+        if ma and md:
+            return "asc" if ma.start() < md.start() else "desc"
+        if ma:
+            return "asc"
+        if md:
+            return "desc"
+        return None
     if _ORD_ASC_RE.search(query):
         return "asc"
     if _ORD_DESC_RE.search(query):
@@ -411,6 +445,7 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                        chunk_mode: str = "word",
                        inject_dates: bool = False,
                        temporal_aware: bool = False,
+                       temporal_v2: bool = False,
                        llm_rerank_top_n: int = 0,
                        llm_rerank_margin: float = 0.0,
                        rerank_fusion: bool = False,
@@ -557,7 +592,8 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                     return sid_to_date.get(_session_id_of(r.get("text")) or "")
 
                 target_info = _detect_relative_target(
-                    q.get("question", ""), q.get("question_date")
+                    q.get("question", ""), q.get("question_date"),
+                    require_count=temporal_v2,
                 )
                 if sid_to_date and target_info is not None:
                     # "N ago": promote in-window candidates AND, within the window,
@@ -582,12 +618,24 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                     # the time and would corrupt currently-correct answers. The gate
                     # uses the dataset label, so this measures the lever's ceiling;
                     # production would route via temporal-intent detection instead.
-                    direction = _detect_ordinal(q.get("question", ""))
+                    direction = _detect_ordinal(q.get("question", ""), v2=temporal_v2)
                     if direction is not None:
-                        dated = [r for r in result["results"] if _rdate(r) is not None]
-                        undated = [r for r in result["results"] if _rdate(r) is None]
-                        dated.sort(key=_rdate, reverse=(direction == "desc"))
-                        result["results"] = dated + undated
+                        rows = result["results"]
+                        if temporal_v2:
+                            # Relevance-scoped (v2): the date decides only among
+                            # the top-5 CE-ranked candidates. Sorting the whole
+                            # list promoted chronologically-extreme but
+                            # irrelevant sessions over the gold answer.
+                            head, tail = rows[:5], rows[5:]
+                            dated = [r for r in head if _rdate(r) is not None]
+                            undated = [r for r in head if _rdate(r) is None]
+                            dated.sort(key=_rdate, reverse=(direction == "desc"))
+                            result["results"] = dated + undated + tail
+                        else:
+                            dated = [r for r in rows if _rdate(r) is not None]
+                            undated = [r for r in rows if _rdate(r) is None]
+                            dated.sort(key=_rdate, reverse=(direction == "desc"))
+                            result["results"] = dated + undated
 
             # Gate-pin: when the FT-CE override was VERY confident, protect its
             # #1 from later-stage demotion. Post-mortem of the m=0.2 run found
@@ -746,6 +794,8 @@ def main():
                     help="Prepend haystack_dates to each chunk and question_date to the query (turn-mode only). Targets temporal-reasoning lift.")
     ap.add_argument("--temporal-aware", action="store_true",
                     help="Post-retrieval: when the query says 'N weeks/days/months ago', push sessions inside that date window to the front of the candidate list. Cheap, opt-in, no embedding change.")
+    ap.add_argument("--temporal-v2", action="store_true",
+                    help="Temporal-aware refinements: (1) 'how many days ago' no longer fabricates a 1-day window (count questions need an explicit number), (2) 'from latest to earliest' phrases set the sort direction explicitly and earlier-mentioned cue wins ties, (3) ordinal chronological sort is scoped to the top-5 relevant candidates instead of the whole list.")
     ap.add_argument("--llm-rerank-top-n", type=int, default=0,
                     help="If >0, send the top-N session-unique candidates to an LLM judge (NVIDIA NIM Llama 3.3 70B by default) which picks the index containing the answer. Requires NVIDIA_API_KEY. 0 disables.")
     ap.add_argument("--llm-rerank-margin", type=float, default=0.0,
@@ -799,6 +849,7 @@ def main():
             chunk_mode=args.chunk_mode,
             inject_dates=args.inject_dates,
             temporal_aware=args.temporal_aware,
+            temporal_v2=args.temporal_v2,
             llm_rerank_top_n=args.llm_rerank_top_n,
             llm_rerank_margin=args.llm_rerank_margin,
             rerank_fusion=args.rerank_fusion,
@@ -819,6 +870,7 @@ def main():
             chunk_mode=args.chunk_mode,
             inject_dates=args.inject_dates,
             temporal_aware=args.temporal_aware,
+            temporal_v2=args.temporal_v2,
             llm_rerank_top_n=args.llm_rerank_top_n,
             llm_rerank_margin=args.llm_rerank_margin,
             rerank_fusion=args.rerank_fusion,
