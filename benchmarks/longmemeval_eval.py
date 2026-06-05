@@ -61,20 +61,41 @@ def _parse_lme_date(s: str | None) -> datetime | None:
         return None
 
 
+_WEEKDAYS = {"monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
+             "friday": 4, "saturday": 5, "sunday": 6}
+_LAST_WEEKDAY_RE = re.compile(
+    r"\b(?:last|this past)\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b",
+    re.IGNORECASE)
+_YESTERDAY_RE = re.compile(r"\byesterday\b", re.IGNORECASE)
+
+
 def _detect_relative_target(query: str, question_date: str | None,
-                            require_count: bool = False) -> tuple[datetime, int] | None:
+                            require_count: bool = False,
+                            weekdays: bool = False) -> tuple[datetime, int] | None:
     """If query mentions 'N weeks/days ago' and question_date is parseable,
     return (target_date, tolerance_days). Else None.
 
     require_count (temporal-v2): a bare unit without a number ("how many days
     ago...?") is a COUNT question, not a window reference — defaulting it to
     N=1 fabricated a bogus ±2-day window that promoted unrelated sessions.
+
+    weekdays (temporal-v3): "last Saturday" / "yesterday" resolve to a
+    specific day window — the same promotion mechanism the proven
+    "N units ago" path uses, extended to day-name references.
     """
     if not question_date:
         return None
     qdate = _parse_lme_date(question_date)
     if qdate is None:
         return None
+    if weekdays:
+        wm = _LAST_WEEKDAY_RE.search(query)
+        if wm:
+            want = _WEEKDAYS[wm.group(1).lower()]
+            back = (qdate.weekday() - want - 1) % 7 + 1  # 1..7 days back
+            return qdate - timedelta(days=back), 1
+        if _YESTERDAY_RE.search(query):
+            return qdate - timedelta(days=1), 1
     m = _REL_TIME_RE.search(query)
     if not m:
         return None
@@ -134,6 +155,44 @@ def _detect_ordinal(query: str, v2: bool = False) -> str | None:
     if _ORD_DESC_RE.search(query):
         return "desc"
     return None
+
+
+# --- Event-date extraction (temporal-v3) ---------------------------------
+# Ordinal questions ("which happened first", "order of my trips") need the
+# date of the EVENT discussed in a chunk, not the session's timestamp; v2's
+# session-date sort left 2 ordinal fails standing. First explicit date cue in
+# the text wins; relative cues resolve against the session date; fallback is
+# the session date itself.
+_MONTHS = {m: i + 1 for i, m in enumerate(
+    ["january", "february", "march", "april", "may", "june", "july",
+     "august", "september", "october", "november", "december"])}
+_EV_MONTH_YEAR_RE = re.compile(
+    r"\b(january|february|march|april|may|june|july|august|september|october|november|december)"
+    r"(?:\s+\d{1,2}(?:st|nd|rd|th)?)?,?\s+((?:19|20)\d{2})\b", re.IGNORECASE)
+_EV_IN_YEAR_RE = re.compile(r"\b(?:in|since|back in)\s+((?:19|20)\d{2})\b", re.IGNORECASE)
+_EV_LAST_UNIT_RE = re.compile(r"\blast\s+(week|month|year)\b", re.IGNORECASE)
+
+
+def _event_date_of(text: str | None, session_date: datetime | None) -> datetime | None:
+    """First explicit in-text date cue -> datetime; else session_date."""
+    t = text or ""
+    m = _EV_MONTH_YEAR_RE.search(t)
+    if m:
+        return datetime(int(m.group(2)), _MONTHS[m.group(1).lower()], 1)
+    m = _EV_IN_YEAR_RE.search(t)
+    if m:
+        return datetime(int(m.group(1)), 1, 1)
+    if session_date is not None:
+        m = _REL_TIME_RE.search(t)
+        if m and m.group(1) is not None:
+            num = _WORD_TO_NUM.get(m.group(1).lower(),
+                                   int(m.group(1)) if m.group(1).isdigit() else 1)
+            return session_date - timedelta(days=num * _UNIT_DAYS[m.group(2).lower()])
+        m = _EV_LAST_UNIT_RE.search(t)
+        if m:
+            return session_date - timedelta(
+                days={"week": 7, "month": 30, "year": 365}[m.group(1).lower()])
+    return session_date
 
 
 # Cached LLM client for --llm-rerank and --hyde. Built lazily on first use.
@@ -446,6 +505,7 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                        inject_dates: bool = False,
                        temporal_aware: bool = False,
                        temporal_v2: bool = False,
+                       temporal_v3: bool = False,
                        llm_rerank_top_n: int = 0,
                        llm_rerank_margin: float = 0.0,
                        rerank_fusion: bool = False,
@@ -468,6 +528,9 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
     store_dim = enc.get_sentence_embedding_dimension()
     print(f"  encoder dim={store_dim} (model={getattr(enc, '_first_module', lambda: None)() and ''}{os.environ.get('MNEMONICS_ENCODER_MODEL') or 'all-MiniLM-L6-v2'})", flush=True)
     from mnemonics.retrieve import retrieve
+
+    if temporal_v3:
+        temporal_v2 = True  # v3, v2 düzeltmelerini kapsar
 
     gate_ce = None
     if trust_gate_ce:
@@ -594,6 +657,7 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                 target_info = _detect_relative_target(
                     q.get("question", ""), q.get("question_date"),
                     require_count=temporal_v2,
+                    weekdays=temporal_v3,
                 )
                 if sid_to_date and target_info is not None:
                     # "N ago": promote in-window candidates AND, within the window,
@@ -626,10 +690,19 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                             # the top-5 CE-ranked candidates. Sorting the whole
                             # list promoted chronologically-extreme but
                             # irrelevant sessions over the gold answer.
+                            # v3: sort key is the EVENT date parsed from the
+                            # chunk text (first explicit cue; relative cues
+                            # resolve against the session date), falling back
+                            # to the session date.
+                            def _odate(r):
+                                sd = _rdate(r)
+                                if temporal_v3:
+                                    return _event_date_of(r.get("text"), sd)
+                                return sd
                             head, tail = rows[:5], rows[5:]
-                            dated = [r for r in head if _rdate(r) is not None]
-                            undated = [r for r in head if _rdate(r) is None]
-                            dated.sort(key=_rdate, reverse=(direction == "desc"))
+                            dated = [r for r in head if _odate(r) is not None]
+                            undated = [r for r in head if _odate(r) is None]
+                            dated.sort(key=_odate, reverse=(direction == "desc"))
                             result["results"] = dated + undated + tail
                         else:
                             dated = [r for r in rows if _rdate(r) is not None]
@@ -796,6 +869,8 @@ def main():
                     help="Post-retrieval: when the query says 'N weeks/days/months ago', push sessions inside that date window to the front of the candidate list. Cheap, opt-in, no embedding change.")
     ap.add_argument("--temporal-v2", action="store_true",
                     help="Temporal-aware refinements: (1) 'how many days ago' no longer fabricates a 1-day window (count questions need an explicit number), (2) 'from latest to earliest' phrases set the sort direction explicitly and earlier-mentioned cue wins ties, (3) ordinal chronological sort is scoped to the top-5 relevant candidates instead of the whole list.")
+    ap.add_argument("--temporal-v3", action="store_true",
+                    help="Implies --temporal-v2, plus: (1) ordinal sort uses EVENT dates parsed from chunk text (explicit 'May 2023'/'in 2019', or 'N units ago'/'last month' resolved against the session date) with session-date fallback, (2) 'last Saturday'/'yesterday' queries get a day-window promotion like the proven 'N units ago' path.")
     ap.add_argument("--llm-rerank-top-n", type=int, default=0,
                     help="If >0, send the top-N session-unique candidates to an LLM judge (NVIDIA NIM Llama 3.3 70B by default) which picks the index containing the answer. Requires NVIDIA_API_KEY. 0 disables.")
     ap.add_argument("--llm-rerank-margin", type=float, default=0.0,
@@ -850,6 +925,7 @@ def main():
             inject_dates=args.inject_dates,
             temporal_aware=args.temporal_aware,
             temporal_v2=args.temporal_v2,
+            temporal_v3=args.temporal_v3,
             llm_rerank_top_n=args.llm_rerank_top_n,
             llm_rerank_margin=args.llm_rerank_margin,
             rerank_fusion=args.rerank_fusion,
@@ -871,6 +947,7 @@ def main():
             inject_dates=args.inject_dates,
             temporal_aware=args.temporal_aware,
             temporal_v2=args.temporal_v2,
+            temporal_v3=args.temporal_v3,
             llm_rerank_top_n=args.llm_rerank_top_n,
             llm_rerank_margin=args.llm_rerank_margin,
             rerank_fusion=args.rerank_fusion,
