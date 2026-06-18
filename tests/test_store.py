@@ -230,7 +230,50 @@ def test_forget_nonexistent_ns(tmp_store):
     assert tmp_store.forget(ns="no-such-ns") == 0
 
 
-# ── health_check / doctor ─────────────────────────────────────────────────────
+# ── health_check / doctor / repair ───────────────────────────────────────────
+
+def test_repair_fixes_orphan_vectors(tmp_path):
+    vecs = make_vecs(3)
+    s = Store(tmp_path)
+    ids = s.add(["a", "b", "c"], vecs, ns="alpha")
+    s._db.execute("DELETE FROM memories WHERE id=?", (ids[2],))
+    s._db.commit()
+
+    result = s.repair()
+    assert len(result["orphan_vectors_fixed"]) == 1
+    assert result["orphan_vectors_fixed"][0]["removed"] == 1
+    assert result["orphan_indexes_removed"] == []
+
+    report = s.health_check()
+    alpha = next(n for n in report["namespaces"] if n["ns"] == "alpha")
+    assert alpha["soft_deleted"] == 0
+
+
+def test_repair_removes_orphan_index(tmp_path):
+    vecs = make_vecs(2)
+    s = Store(tmp_path)
+    s.add(["x", "y"], vecs, ns="beta")
+    s._db.execute("DELETE FROM memories WHERE ns='beta'")
+    s._db.commit()
+    assert (tmp_path / "index_beta.bin").exists()
+
+    result = s.repair()
+    assert len(result["orphan_indexes_removed"]) == 1
+    assert not (tmp_path / "index_beta.bin").exists()
+
+
+def test_repair_reports_missing_vectors(tmp_path):
+    import hnswlib
+    vecs = make_vecs(2)
+    s = Store(tmp_path)
+    s.add(["x", "y"], vecs, ns="gamma")
+    blank = hnswlib.Index(space="cosine", dim=s.dim)
+    blank.init_index(max_elements=100, ef_construction=200, M=16)
+    blank.save_index(str(tmp_path / "index_gamma.bin"))
+
+    result = s.repair()
+    assert any(m["ns"] == "gamma" for m in result["missing_vectors_reported"])
+
 
 def test_rebuild_ns_index_removes_orphan_vectors(tmp_path):
     vecs = make_vecs(3)

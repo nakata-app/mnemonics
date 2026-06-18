@@ -71,6 +71,7 @@ def main() -> None:
     dr = sub.add_parser("doctor", help="Health check: DB integrity, index counts, orphan indexes")
     dr.add_argument("--path", default="~/.mnemonics")
     dr.add_argument("--json", dest="json_out", action="store_true", help="Output as JSON")
+    dr.add_argument("--fix", action="store_true", help="Auto-repair orphan vectors and orphan index files")
 
     # rebuild-index
     rb = sub.add_parser("rebuild-index", help="Rebuild hnswlib index for a namespace from SQL (removes orphan vectors)")
@@ -274,6 +275,31 @@ def main() -> None:
     elif args.cmd == "doctor":
         from mnemonics.store import Store
         store = Store(args.path)
+
+        if args.fix:
+            fix_report = store.repair()
+            fixed_v = fix_report["orphan_vectors_fixed"]
+            fixed_i = fix_report["orphan_indexes_removed"]
+            missing = fix_report["missing_vectors_reported"]
+            if fixed_v:
+                for item in fixed_v:
+                    if "error" in item:
+                        print(f"  ✗ {item['ns']}: {item['error']}")
+                    else:
+                        print(f"  ✓ {item['ns']}: removed {item['removed']} orphan vector(s)")
+            if fixed_i:
+                for path in fixed_i:
+                    if isinstance(path, dict):
+                        print(f"  ✗ {path['path']}: {path['error']}")
+                    else:
+                        print(f"  ✓ removed orphan index: {path}")
+            if missing:
+                for item in missing:
+                    print(f"  ⚠ {item['ns']}: {item['missing']} missing vector(s) — run: mnem rebuild-index --ns {item['ns']!r}")
+            if not fixed_v and not fixed_i and not missing:
+                print("✓ Nothing to fix")
+            sys.exit(0)
+
         report = store.health_check()
 
         if args.json_out:

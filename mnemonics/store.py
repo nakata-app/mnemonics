@@ -617,6 +617,54 @@ class Store:
 
         return report
 
+    def repair(self) -> dict[str, Any]:
+        """Auto-repair issues found by health_check().
+
+        Fixes:
+          - Orphan vectors (idx > sql): calls rebuild_ns_index() per namespace.
+          - Orphan .bin files (no SQL rows): deletes the file.
+
+        Cannot fix:
+          - Missing vectors (sql > idx): requires re-encoding; reported only.
+
+        Returns a summary dict with keys: orphan_vectors_fixed,
+        orphan_indexes_removed, missing_vectors_reported.
+        """
+        report = self.health_check()
+        result: dict[str, Any] = {
+            "orphan_vectors_fixed": [],
+            "orphan_indexes_removed": [],
+            "missing_vectors_reported": [],
+        }
+
+        for ns_info in report["namespaces"]:
+            if ns_info.get("soft_deleted", 0) > 0:
+                try:
+                    old_n, new_n = self.rebuild_ns_index(ns_info["ns"])
+                    result["orphan_vectors_fixed"].append({
+                        "ns": ns_info["ns"],
+                        "removed": old_n - new_n,
+                    })
+                except RuntimeError as e:
+                    result["orphan_vectors_fixed"].append({
+                        "ns": ns_info["ns"],
+                        "error": str(e),
+                    })
+            if ns_info.get("missing_vectors", 0) > 0:
+                result["missing_vectors_reported"].append({
+                    "ns": ns_info["ns"],
+                    "missing": ns_info["missing_vectors"],
+                })
+
+        for orphan in report["orphan_indexes"]:
+            try:
+                Path(orphan["path"]).unlink(missing_ok=True)
+                result["orphan_indexes_removed"].append(orphan["path"])
+            except Exception as e:
+                result["orphan_indexes_removed"].append({"path": orphan["path"], "error": str(e)})
+
+        return result
+
     def gc_candidates(self, ns: str | None = None, age_days: int = 30, tier: int = 2) -> list[dict[str, Any]]:
         """Rows eligible for garbage collection.
 
