@@ -777,3 +777,105 @@ def test_forget_no_candidates_with_before(tmp_path, capsys):
             pass
     out = capsys.readouterr().out
     assert "before=2025-01-01" in out
+
+
+# ── doctor status branches ───────────────────────────────────────────────────
+
+def _make_doctor_ns(ns="default", sql=10, idx=10, soft_deleted=0, idx_missing=False,
+                     missing_vectors=0, capacity_warning=False, usage_pct=0):
+    return {
+        "ns": ns, "sql_count": sql, "idx_count": idx,
+        "soft_deleted": soft_deleted, "idx_missing": idx_missing,
+        "missing_vectors": missing_vectors,
+        "capacity_warning": capacity_warning, "usage_pct": usage_pct,
+    }
+
+
+def _base_report(**ns_kwargs):
+    return {
+        "db_integrity": "ok",
+        "wal_size": 0,
+        "namespaces": [_make_doctor_ns(**ns_kwargs)],
+        "orphan_indexes": [],
+    }
+
+
+def test_doctor_missing_vectors_status(tmp_path, capsys):
+    report = _base_report(missing_vectors=3)
+    mock_store = MagicMock()
+    mock_store.health_check.return_value = report
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "doctor", "--path", str(tmp_path)]),
+    ):
+        try:
+            main()
+        except SystemExit:
+            pass
+    assert "missing vector" in capsys.readouterr().out
+
+
+def test_doctor_orphan_vectors_status(tmp_path, capsys):
+    report = _base_report(soft_deleted=2)
+    mock_store = MagicMock()
+    mock_store.health_check.return_value = report
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "doctor", "--path", str(tmp_path)]),
+    ):
+        try:
+            main()
+        except SystemExit:
+            pass
+    assert "orphan vector" in capsys.readouterr().out
+
+
+def test_doctor_capacity_warning_status(tmp_path, capsys):
+    report = _base_report(capacity_warning=True, usage_pct=90)
+    mock_store = MagicMock()
+    mock_store.health_check.return_value = report
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "doctor", "--path", str(tmp_path)]),
+    ):
+        try:
+            main()
+        except SystemExit:
+            pass
+    assert "90%" in capsys.readouterr().out
+
+
+def test_doctor_orphan_indexes_output(tmp_path, capsys):
+    report = {
+        "db_integrity": "ok",
+        "wal_size": 0,
+        "namespaces": [_make_doctor_ns()],
+        "orphan_indexes": [{"ns": "ghost", "size": 1024 * 1024, "path": "/tmp/ghost.bin"}],
+    }
+    mock_store = MagicMock()
+    mock_store.health_check.return_value = report
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "doctor", "--path", str(tmp_path)]),
+    ):
+        try:
+            main()
+        except SystemExit:
+            pass
+    out = capsys.readouterr().out
+    assert "Orphan indexes" in out
+    assert "ghost.bin" in out
+
+
+def test_doctor_issues_count_exit(tmp_path, capsys):
+    report = _base_report(soft_deleted=1)
+    mock_store = MagicMock()
+    mock_store.health_check.return_value = report
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "doctor", "--path", str(tmp_path)]),
+    ):
+        with pytest.raises(SystemExit) as exc:
+            main()
+    assert exc.value.code == 1
+    assert "issue" in capsys.readouterr().out
