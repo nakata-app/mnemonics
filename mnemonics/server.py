@@ -32,11 +32,17 @@ MCP tools (JSON-RPC over stdio):
 """
 from __future__ import annotations
 
+import importlib.metadata
 import json
 import os
 import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
+
+try:
+    _VERSION = importlib.metadata.version("mnemonics")
+except importlib.metadata.PackageNotFoundError:
+    _VERSION = "0.3.0"
 from pathlib import Path
 
 from mnemonics.store import Store
@@ -232,7 +238,7 @@ class _Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         path = self.path.split("?")[0]
         if path == "/health":
-            self._json(200, {"status": "ok", "version": "0.3.0"})
+            self._json(200, {"status": "ok", "version": _VERSION})
         elif path == "/doctor":
             self._json(200, _get_store().health_check())
         elif path == "/namespaces":
@@ -348,7 +354,7 @@ def _mcp_loop() -> None:
         if method == "initialize":
             ok({
                 "protocolVersion": "2024-11-05",
-                "serverInfo": {"name": "mnemonics", "version": "0.3.0"},
+                "serverInfo": {"name": "mnemonics", "version": _VERSION},
                 "capabilities": {"tools": {}},
             })
 
