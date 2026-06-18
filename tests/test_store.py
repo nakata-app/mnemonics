@@ -643,3 +643,44 @@ def test_update_summary_fts_indexed(tmp_store):
     tmp_store.update_summary(mid, "very specific gist phrase")
     hits = tmp_store.search_bm25("specific gist phrase", top_k=5)
     assert any(h["id"] == mid for h in hits)
+
+
+# ── Store.list_memories() ─────────────────────────────────────────────────────
+
+def test_list_memories_basic(tmp_store):
+    tmp_store.add(["a", "b", "c"], make_vecs(3))
+    rows = tmp_store.list_memories(ns="default", limit=10)
+    assert len(rows) == 3
+    assert rows[0]["id"] > rows[1]["id"]  # newest first
+
+
+def test_list_memories_limit(tmp_store):
+    tmp_store.add([f"x{i}" for i in range(10)], make_vecs(10))
+    rows = tmp_store.list_memories(limit=3)
+    assert len(rows) == 3
+
+
+def test_list_memories_offset(tmp_store):
+    tmp_store.add(["a", "b", "c"], make_vecs(3))
+    page1 = tmp_store.list_memories(limit=2, offset=0)
+    page2 = tmp_store.list_memories(limit=2, offset=2)
+    assert len(page1) == 2
+    assert len(page2) == 1
+    assert {r["id"] for r in page1}.isdisjoint({r["id"] for r in page2})
+
+
+def test_list_memories_tier_filter(tmp_store):
+    ids = tmp_store.add(["p", "d", "a"], make_vecs(3))
+    tmp_store.set_tier(ids[0], 0)
+    tmp_store.set_tier(ids[1], 1)
+    tmp_store.set_tier(ids[2], 2)
+    pinned = tmp_store.list_memories(tier=0)
+    assert len(pinned) == 1
+    assert pinned[0]["tier"] == 0
+    ambient = tmp_store.list_memories(tier=2)
+    assert len(ambient) == 1
+
+
+def test_list_memories_empty_ns(tmp_store):
+    rows = tmp_store.list_memories(ns="ghost")
+    assert rows == []

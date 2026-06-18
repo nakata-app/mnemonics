@@ -428,13 +428,21 @@ class Store:
         return cur.rowcount > 0
 
     def list_memories(
-        self, ns: str = "default", limit: int = 20, offset: int = 0
+        self, ns: str = "default", limit: int = 20, offset: int = 0,
+        tier: int | None = None,
     ) -> list[dict]:
-        rows = self._db.execute(
-            "SELECT id, ns, text, summary, tier, created, last_accessed, access_count "
-            "FROM memories WHERE ns=? ORDER BY id DESC LIMIT ? OFFSET ?",
-            (ns, limit, offset),
-        ).fetchall()
+        if tier is not None:
+            rows = self._db.execute(
+                "SELECT id, ns, text, summary, tier, created, last_accessed, access_count "
+                "FROM memories WHERE ns=? AND tier=? ORDER BY id DESC LIMIT ? OFFSET ?",
+                (ns, tier, limit, offset),
+            ).fetchall()
+        else:
+            rows = self._db.execute(
+                "SELECT id, ns, text, summary, tier, created, last_accessed, access_count "
+                "FROM memories WHERE ns=? ORDER BY id DESC LIMIT ? OFFSET ?",
+                (ns, limit, offset),
+            ).fetchall()
         return [
             {
                 "id": r[0], "ns": r[1], "text": r[2], "summary": r[3],

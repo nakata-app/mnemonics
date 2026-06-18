@@ -259,7 +259,9 @@ class _Handler(BaseHTTPRequestHandler):
             ns_val = params.get("ns", "default")
             limit = min(int(params.get("limit", "20")), 100)
             offset = int(params.get("offset", "0"))
-            rows = _get_store().list_memories(ns=ns_val, limit=limit, offset=offset)
+            tier_param = params.get("tier")
+            tier_val = int(tier_param) if tier_param is not None else None
+            rows = _get_store().list_memories(ns=ns_val, limit=limit, offset=offset, tier=tier_val)
             self._json(200, {"ns": ns_val, "offset": offset, "count": len(rows), "rows": rows})
         elif path.startswith("/memory/"):
             try:
@@ -397,6 +399,7 @@ def _mcp_loop() -> None:
                             "ns": {"type": "string", "description": "Namespace to list (default: 'default')"},
                             "limit": {"type": "integer", "description": "Max rows to return (default: 20, max: 100)"},
                             "offset": {"type": "integer", "description": "Pagination offset (default: 0)"},
+                            "tier": {"type": "integer", "enum": [0, 1, 2], "description": "Filter to a specific tier: 0=pinned, 1=default, 2=ambient (omit for all)"},
                         },
                     },
                 },
@@ -588,7 +591,9 @@ def _mcp_loop() -> None:
                 ns_val = args.get("ns", "default")
                 limit = min(int(args.get("limit", 20)), 100)
                 offset = int(args.get("offset", 0))
-                rows = _get_store().list_memories(ns=ns_val, limit=limit, offset=offset)
+                tier_arg = args.get("tier")
+                tier_filter = int(tier_arg) if tier_arg is not None else None
+                rows = _get_store().list_memories(ns=ns_val, limit=limit, offset=offset, tier=tier_filter)
                 if not rows:
                     ok({"content": [{"type": "text", "text": f"No memories in ns={ns_val!r} (offset={offset})."}]})
                 else:

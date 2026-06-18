@@ -102,6 +102,7 @@ def main() -> None:
     ls.add_argument("--ns", default="default", help="Namespace to list (default: 'default')")
     ls.add_argument("--limit", type=int, default=20, help="Max rows to show (default: 20)")
     ls.add_argument("--offset", type=int, default=0, help="Pagination offset (default: 0)")
+    ls.add_argument("--tier", type=int, choices=[0, 1, 2], default=None, help="Filter to tier: 0=pinned, 1=default, 2=ambient")
     ls.add_argument("--path", default="~/.mnemonics")
 
     # sync export / import (peer transport)
@@ -278,7 +279,7 @@ def main() -> None:
     elif args.cmd == "list":
         from mnemonics.store import Store
         store = Store(args.path)
-        rows = store.list_memories(ns=args.ns, limit=args.limit, offset=args.offset)
+        rows = store.list_memories(ns=args.ns, limit=args.limit, offset=args.offset, tier=args.tier)
         if not rows:
             print(f"No memories in ns={args.ns!r} (offset={args.offset}).")
         else:
