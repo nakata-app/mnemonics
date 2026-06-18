@@ -270,7 +270,10 @@ def main() -> None:
             for r in hits:
                 tl = tier_label.get(r["tier"], "?")
                 snippet = r["text"][:120].replace("\n", " ")
-                print(f"  [{r['score']:.3f}] [{tl}] id={r['id']}  {snippet}")
+                line = f"  [{r['score']:.3f}] [{tl}] id={r['id']}  {snippet}"
+                print(line)
+                if r.get("summary"):
+                    print(f"           summary: {r['summary']}")
 
     elif args.cmd == "get":
         from mnemonics.store import Store
