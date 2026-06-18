@@ -39,6 +39,17 @@ All notable changes to mnemonics. Format follows [Keep a Changelog](https://keep
 - **`POST /repair` REST endpoint** calls `Store.repair()` and returns a JSON
   summary of what was fixed (orphan vectors rebuilt, orphan .bin files
   removed, missing vectors reported). Matches `mnemonics_repair` MCP tool.
+- **Pure BM25 keyword search** across all three interfaces:
+  `mnem bm25 <query> [--ns] [--top-k]` (CLI),
+  `POST /search-bm25 {"query": "...", "ns": "...", "top_k": N}` (REST),
+  `mnemonics_bm25` MCP tool. No vector encoding, instant, exact-token
+  matching. Best for dates, IDs, names, or any query where you know the
+  exact words. Covers both `text` and `summary` columns via FTS5.
+- **`mnem stats` tier breakdown.** Output now shows
+  `{ns}: N chunks  (pin=P def=D amb=A)` matching `mnemonics_stats` MCP.
+  Previously showed only the total count.
+- **`mnem list --tier`, `GET /memories?tier=`, `mnemonics_list tier` filter.**
+  Filter browse results to a specific tier without writing SQL.
 - **`mnem list` CLI command, `mnemonics_list` MCP tool, `GET /memories` REST
   endpoint.** Browse memories in a namespace newest-first with optional
   `--limit` / `--offset` pagination. Returns id, tier, created timestamp,

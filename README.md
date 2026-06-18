@@ -135,6 +135,7 @@ The server binds to `127.0.0.1` only, no external interface, no telemetry.
 |--------|------|------|
 | POST | `/ingest` | `{"texts": [...], "ns": "default"}` |
 | POST | `/retrieve` | `{"query": "...", "top_k": 5, "decay": true}` |
+| POST | `/search-bm25` | `{"query": "...", "ns": "default", "top_k": 5}` |
 | GET | `/stats` | (per-namespace tier breakdown) |
 | POST | `/pin` | `{"id": N}` |
 | POST | `/tier` | `{"id": N, "tier": 0\|1\|2}` |
@@ -147,7 +148,7 @@ The server binds to `127.0.0.1` only, no external interface, no telemetry.
 | GET | `/doctor` | (DB integrity, index vs SQL counts, capacity) |
 | GET | `/namespaces` | |
 | GET | `/count?ns=default` | |
-| GET | `/memories?ns=default&limit=20&offset=0` | (browse newest-first) |
+| GET | `/memories?ns=default&limit=20&offset=0&tier=0` | (browse newest-first, optional tier filter) |
 | GET | `/memory/<id>` | (single memory by id) |
 | DELETE | `/memory/<id>` | |
 
@@ -170,8 +171,9 @@ mnem mcp
 
 Tools exposed:
 - `mnemonics_ingest`
-- `mnemonics_retrieve` (decay-aware, supports `decay: false` for raw cosine)
-- `mnemonics_list` (browse a namespace newest-first, with limit/offset)
+- `mnemonics_retrieve` (decay-aware hybrid search, supports `decay: false` for raw cosine)
+- `mnemonics_bm25` (pure keyword search, instant, no encoding, covers text + summary)
+- `mnemonics_list` (browse a namespace newest-first, with limit/offset/tier filter)
 - `mnemonics_get` (fetch a single memory by id)
 - `mnemonics_forget` (delete by id)
 - `mnemonics_forget_ns` (bulk delete a namespace; dry-run by default)
