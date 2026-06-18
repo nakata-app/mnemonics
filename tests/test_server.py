@@ -410,6 +410,31 @@ def test_mcp_repair(tmp_store):
     assert "missing_vectors_reported" in report
 
 
+def test_mcp_stats_empty(tmp_store):
+    resp = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 60,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_stats", "arguments": {}},
+    })
+    text = resp[0]["result"]["content"][0]["text"]
+    assert text == "(empty)"
+
+
+def test_mcp_stats_tier_breakdown(populated_store):
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 61,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_stats", "arguments": {}},
+    })
+    text = resp[0]["result"]["content"][0]["text"]
+    assert "default" in text
+    assert "chunks" in text
+    assert "pin=" in text
+    assert "def=" in text
+    assert "amb=" in text
+
+
 def test_mcp_ingest(tmp_store):
     with patch("mnemonics.server._ingest", return_value=3) as mock_ingest:
         resp = _mcp(tmp_store, {

@@ -476,7 +476,19 @@ def _mcp_loop() -> None:
 
             elif name == "mnemonics_stats":
                 store = _get_store()
-                lines = [f"  {ns}: {store.count(ns)} chunks" for ns in store.list_namespaces()]
+                rows = store._db.execute(
+                    "SELECT ns, tier, COUNT(*) FROM memories GROUP BY ns, tier ORDER BY ns, tier"
+                ).fetchall()
+                ns_data: dict[str, dict[int, int]] = {}
+                for ns_name, tier, cnt in rows:
+                    ns_data.setdefault(ns_name, {})[tier] = cnt
+                lines = []
+                for ns_name, tiers in sorted(ns_data.items()):
+                    total = sum(tiers.values())
+                    pin = tiers.get(0, 0)
+                    def_ = tiers.get(1, 0)
+                    amb = tiers.get(2, 0)
+                    lines.append(f"  {ns_name}: {total} chunks  (pin={pin} def={def_} amb={amb})")
                 ok({"content": [{"type": "text", "text": "\n".join(lines) or "(empty)"}]})
 
             else:
