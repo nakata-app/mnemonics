@@ -409,6 +409,10 @@ def _mcp_loop() -> None:
                                 "items": {"type": ["string", "null"]},
                                 "description": "Optional, one entry per text. Null entries are stored as no-summary.",
                             },
+                            "meta": {
+                                "type": "object",
+                                "description": "Optional metadata dict attached to every chunk (e.g. {\"tag\": \"work\", \"source\": \"slack\"}). Same dict applied to all texts in this call.",
+                            },
                         },
                     },
                 },
@@ -633,11 +637,17 @@ def _mcp_loop() -> None:
                 ):
                     err("summaries must be an array of (string|null) the same length as texts")
                     continue
+                meta_arg = args.get("meta")
+                if meta_arg is not None and not isinstance(meta_arg, dict):
+                    err("meta must be a JSON object")
+                    continue
+                metas = [meta_arg] * len(texts) if meta_arg is not None else None
                 n = _ingest(
                     texts=texts,
                     store=_get_store(),
                     ns=args.get("ns", "default"),
                     summaries=summaries,
+                    meta=metas,
                 )
                 ok({"content": [{"type": "text", "text": f"Stored {n} chunks."}]})
 

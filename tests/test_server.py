@@ -1555,3 +1555,36 @@ def test_mcp_update_meta_missing_params(populated_store):
     else:
         text = str(r.get("error", ""))
     assert "error" in text.lower() or "meta" in text.lower()
+
+
+def test_mcp_ingest_with_meta(populated_store):
+    """MCP mnemonics_ingest passes meta dict to ingest()."""
+    store, docs, vecs = populated_store
+    with patch("mnemonics.server._ingest", return_value=1) as mock_ing:
+        resp = _mcp(store, {
+            "jsonrpc": "2.0", "id": 40,
+            "method": "tools/call",
+            "params": {"name": "mnemonics_ingest",
+                       "arguments": {"texts": ["hello"], "meta": {"tag": "test"}}},
+        })
+    text = resp[0]["result"]["content"][0]["text"]
+    assert "Stored" in text
+    call_kwargs = mock_ing.call_args[1]
+    assert call_kwargs["meta"] == [{"tag": "test"}]
+
+
+def test_mcp_ingest_meta_non_object(populated_store):
+    """MCP mnemonics_ingest rejects meta that is not an object."""
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 41,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_ingest",
+                   "arguments": {"texts": ["hello"], "meta": [1, 2, 3]}},
+    })
+    r = resp[0]
+    if "result" in r:
+        text = r["result"]["content"][0]["text"]
+    else:
+        text = str(r.get("error", ""))
+    assert "error" in text.lower() or "meta" in text.lower()
