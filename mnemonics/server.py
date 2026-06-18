@@ -262,6 +262,23 @@ class _Handler(BaseHTTPRequestHandler):
             n_mtn = _get_store().move_to_ns([int(i) for i in mtn_ids], mtn_ns)
             self._json(200, {"moved": n_mtn, "target_ns": mtn_ns})
 
+        elif self.path == "/clear-ns":
+            cns_ns = body.get("ns")
+            if not cns_ns:
+                self._json(400, {"error": "'ns' (str) is required"})
+                return
+            n_cns = _get_store().clear_ns(str(cns_ns))
+            self._json(200, {"ns": cns_ns, "deleted": n_cns})
+
+        elif self.path == "/copy-to-ns":
+            ctn_ids = body.get("ids")
+            ctn_dst = body.get("dst_ns")
+            if not ctn_ids or not ctn_dst:
+                self._json(400, {"error": "'ids' (list[int]) and 'dst_ns' (str) are required"})
+                return
+            n_ctn = _get_store().copy_to_ns([int(i) for i in ctn_ids], str(ctn_dst))
+            self._json(200, {"copied": n_ctn, "dst_ns": ctn_dst})
+
         elif self.path == "/replace-text":
             rt_id = body.get("id")
             rt_text = body.get("text")
@@ -602,6 +619,20 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(200, _get_store().health_check())
         elif path == "/namespaces":
             self._json(200, {"namespaces": _get_store().list_namespaces()})
+        elif path.startswith("/search-text"):
+            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_st
+            qs_st = parse_qs(urlparse(self.path).query)
+            q_st = (qs_st.get("q") or [None])[0]
+            if not q_st:
+                self._json(400, {"error": "'q' query param is required"})
+                return
+            ns_st_raw = qs_st.get("ns", [None])[0]
+            ns_st = _uqp_st(ns_st_raw) if ns_st_raw is not None else None
+            limit_st = int((qs_st.get("limit") or ["20"])[0])
+            hits_st = _get_store().search_text(_uqp_st(q_st), ns=ns_st, limit=limit_st)
+            self._json(200, {"count": len(hits_st), "results": hits_st})
+        elif path == "/count-by-ns":
+            self._json(200, {"by_ns": _get_store().count_by_ns()})
         elif path.startswith("/list-by-tier"):
             from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_lbt
             qs_lbt = parse_qs(urlparse(self.path).query)
@@ -1121,6 +1152,45 @@ def _mcp_loop() -> None:
                             "max_tier": {"type": "integer", "description": "Only return memories with tier <= this value"},
                         },
                         "required": ["query", "vector"],
+                    },
+                },
+                {
+                    "name": "mnemonics_search_text",
+                    "description": "Case-insensitive LIKE search on the text field. Complements mnemonics_search_by_summary. Omit ns to span all namespaces.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string"},
+                            "ns": {"type": "string"},
+                            "limit": {"type": "integer", "default": 20},
+                        },
+                        "required": ["query"],
+                    },
+                },
+                {
+                    "name": "mnemonics_count_by_ns",
+                    "description": "Return a {namespace: count} dict of all namespaces and their memory counts. Useful for dashboards.",
+                    "inputSchema": {"type": "object", "properties": {}},
+                },
+                {
+                    "name": "mnemonics_clear_ns",
+                    "description": "Delete ALL memories from a namespace. IRREVERSIBLE. Returns count deleted.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {"ns": {"type": "string"}},
+                        "required": ["ns"],
+                    },
+                },
+                {
+                    "name": "mnemonics_copy_to_ns",
+                    "description": "Copy memories to dst_ns without removing from source. Vectors are zero-filled; call reindex_all after. Returns count copied.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ids": {"type": "array", "items": {"type": "integer"}},
+                            "dst_ns": {"type": "string"},
+                        },
+                        "required": ["ids", "dst_ns"],
                     },
                 },
                 {
@@ -2049,6 +2119,45 @@ def _mcp_loop() -> None:
                         if r.get("summary"):
                             lines_hs.append(f"           summary: {r['summary'][:120]}")
                     ok({"content": [{"type": "text", "text": "\n".join(lines_hs)}]})
+
+            elif name == "mnemonics_search_text":
+                st_q_m = args.get("query", "").strip()
+                if not st_q_m:
+                    err("mnemonics_search_text: 'query' is required")
+                    continue
+                st_ns_m = args.get("ns")
+                st_limit_m = int(args.get("limit", 20))
+                st_hits_m = _get_store().search_text(st_q_m, ns=st_ns_m, limit=st_limit_m)
+                import json as _j_st
+                ok({"content": [{"type": "text", "text":
+                    f"Found {len(st_hits_m)} memories with text matching {st_q_m!r}.\n" +
+                    _j_st.dumps(st_hits_m, default=str, ensure_ascii=False)}]})
+
+            elif name == "mnemonics_count_by_ns":
+                cbn_result = _get_store().count_by_ns()
+                import json as _j_cbn
+                ok({"content": [{"type": "text", "text":
+                    f"Memory counts by namespace:\n" +
+                    _j_cbn.dumps(cbn_result, ensure_ascii=False, indent=2)}]})
+
+            elif name == "mnemonics_clear_ns":
+                cns_ns_m = args.get("ns", "").strip()
+                if not cns_ns_m:
+                    err("mnemonics_clear_ns: 'ns' is required")
+                    continue
+                n_cns_m = _get_store().clear_ns(cns_ns_m)
+                ok({"content": [{"type": "text", "text":
+                    f"Deleted {n_cns_m} memories from ns={cns_ns_m!r}."}]})
+
+            elif name == "mnemonics_copy_to_ns":
+                ctn_ids_m = args.get("ids")
+                ctn_dst_m = args.get("dst_ns", "").strip()
+                if not ctn_ids_m or not ctn_dst_m:
+                    err("mnemonics_copy_to_ns: 'ids' and 'dst_ns' are required")
+                    continue
+                n_ctn_m = _get_store().copy_to_ns([int(i) for i in ctn_ids_m], ctn_dst_m)
+                ok({"content": [{"type": "text", "text":
+                    f"Copied {n_ctn_m} memories to ns={ctn_dst_m!r} (vectors zero-filled; reindex to fix)."}]})
 
             elif name == "mnemonics_list_by_tier":
                 lbt_tier_m = args.get("tier")

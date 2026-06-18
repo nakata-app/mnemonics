@@ -3490,3 +3490,150 @@ def test_replace_text_updates_field(populated_store):
 def test_replace_text_missing_id(tmp_store):
     """replace_text returns False for non-existent memory."""
     assert tmp_store.replace_text(999999, "x") is False
+
+
+# ── search_text ───────────────────────────────────────────────────────────────
+
+def test_search_text_finds_match(tmp_store):
+    """search_text returns memories whose text contains the query."""
+    import numpy as np
+    vecs = np.random.rand(3, 384).astype(np.float32)
+    tmp_store.add(["the quick brown fox", "lazy dog", "quick summary"], vecs, ns="default")
+    hits = tmp_store.search_text("quick", ns="default")
+    assert len(hits) == 2
+
+
+def test_search_text_no_match(tmp_store):
+    """search_text returns empty list when no text matches."""
+    import numpy as np
+    vecs = np.random.rand(2, 384).astype(np.float32)
+    tmp_store.add(["alpha text", "beta text"], vecs, ns="default")
+    hits = tmp_store.search_text("gamma", ns="default")
+    assert hits == []
+
+
+def test_search_text_all_ns(tmp_store):
+    """search_text ns=None spans all namespaces."""
+    import numpy as np
+    v1 = np.random.rand(1, 384).astype(np.float32)
+    v2 = np.random.rand(1, 384).astype(np.float32)
+    tmp_store.add(["needle in ns1"], v1, ns="ns1")
+    tmp_store.add(["needle in ns2"], v2, ns="ns2")
+    hits = tmp_store.search_text("needle", ns=None)
+    assert len(hits) == 2
+
+
+def test_search_text_limit(tmp_store):
+    """search_text respects limit."""
+    import numpy as np
+    vecs = np.random.rand(5, 384).astype(np.float32)
+    tmp_store.add(["match a", "match b", "match c", "match d", "match e"], vecs, ns="default")
+    hits = tmp_store.search_text("match", ns="default", limit=3)
+    assert len(hits) == 3
+
+
+# ── count_by_ns ───────────────────────────────────────────────────────────────
+
+def test_count_by_ns_returns_correct_counts(tmp_store):
+    """count_by_ns returns accurate counts per namespace."""
+    import numpy as np
+    v1 = np.random.rand(3, 384).astype(np.float32)
+    v2 = np.random.rand(2, 384).astype(np.float32)
+    tmp_store.add(["a", "b", "c"], v1, ns="ns_a")
+    tmp_store.add(["x", "y"], v2, ns="ns_b")
+    counts = tmp_store.count_by_ns()
+    assert counts["ns_a"] == 3
+    assert counts["ns_b"] == 2
+
+
+def test_count_by_ns_empty(tmp_store):
+    """count_by_ns returns empty dict when no memories."""
+    assert tmp_store.count_by_ns() == {}
+
+
+# ── clear_ns ──────────────────────────────────────────────────────────────────
+
+def test_clear_ns_deletes_all(tmp_store):
+    """clear_ns removes all memories from the namespace."""
+    import numpy as np
+    vecs = np.random.rand(3, 384).astype(np.float32)
+    tmp_store.add(["a", "b", "c"], vecs, ns="to_clear")
+    n = tmp_store.clear_ns("to_clear")
+    assert n == 3
+    remaining = tmp_store._db.execute(
+        "SELECT count(*) FROM memories WHERE ns='to_clear'"
+    ).fetchone()[0]
+    assert remaining == 0
+
+
+def test_clear_ns_returns_zero_for_empty(tmp_store):
+    """clear_ns returns 0 when namespace is already empty."""
+    n = tmp_store.clear_ns("nonexistent")
+    assert n == 0
+
+
+def test_clear_ns_does_not_affect_other_ns(tmp_store):
+    """clear_ns only removes memories from the target namespace."""
+    import numpy as np
+    v1 = np.random.rand(2, 384).astype(np.float32)
+    v2 = np.random.rand(2, 384).astype(np.float32)
+    tmp_store.add(["a", "b"], v1, ns="to_clear")
+    tmp_store.add(["x", "y"], v2, ns="keep")
+    tmp_store.clear_ns("to_clear")
+    kept = tmp_store._db.execute(
+        "SELECT count(*) FROM memories WHERE ns='keep'"
+    ).fetchone()[0]
+    assert kept == 2
+
+
+# ── copy_to_ns ────────────────────────────────────────────────────────────────
+
+def test_copy_to_ns_copies_memories(tmp_store):
+    """copy_to_ns duplicates memories into dst_ns."""
+    import numpy as np
+    vecs = np.random.rand(3, 384).astype(np.float32)
+    ids = tmp_store.add(["alpha", "beta", "gamma"], vecs, ns="src")
+    n = tmp_store.copy_to_ns(ids[:2], "dst")
+    assert n == 2
+    dst_count = tmp_store._db.execute(
+        "SELECT count(*) FROM memories WHERE ns='dst'"
+    ).fetchone()[0]
+    assert dst_count == 2
+    src_count = tmp_store._db.execute(
+        "SELECT count(*) FROM memories WHERE ns='src'"
+    ).fetchone()[0]
+    assert src_count == 3  # source untouched
+
+
+def test_copy_to_ns_empty_ids(tmp_store):
+    """copy_to_ns returns 0 when ids list is empty."""
+    n = tmp_store.copy_to_ns([], "dst")
+    assert n == 0
+
+
+def test_copy_to_ns_preserves_text(tmp_store):
+    """copy_to_ns copies text and summary correctly."""
+    import numpy as np
+    vecs = np.random.rand(1, 384).astype(np.float32)
+    ids = tmp_store.add(["original text"], vecs, ns="src", summaries=["orig summary"])
+    tmp_store.copy_to_ns(ids, "dst")
+    row = tmp_store._db.execute(
+        "SELECT text, summary FROM memories WHERE ns='dst'"
+    ).fetchone()
+    assert row[0] == "original text"
+    assert row[1] == "orig summary"
+
+
+def test_copy_to_ns_preserves_non_default_tier(tmp_store):
+    """copy_to_ns carries over non-default (tier != 1) values."""
+    import numpy as np
+    vecs = np.random.rand(1, 384).astype(np.float32)
+    ids = tmp_store.add(["pinned memory"], vecs, ns="src")
+    # make it pinned (tier=0)
+    tmp_store._db.execute("UPDATE memories SET tier=0 WHERE id=?", (ids[0],))
+    tmp_store._db.commit()
+    tmp_store.copy_to_ns(ids, "dst")
+    row = tmp_store._db.execute(
+        "SELECT tier FROM memories WHERE ns='dst'"
+    ).fetchone()
+    assert row[0] == 0

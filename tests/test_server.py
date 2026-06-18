@@ -661,6 +661,10 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_newest",
         "mnemonics_oldest",
         "mnemonics_replace_text",
+        "mnemonics_search_text",
+        "mnemonics_count_by_ns",
+        "mnemonics_clear_ns",
+        "mnemonics_copy_to_ns",
     }
 
 
@@ -4868,4 +4872,178 @@ def test_mcp_replace_text_not_found(tmp_path):
     resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
                          "params": {"name": "mnemonics_replace_text",
                                     "arguments": {"id": 99999, "text": "x"}}})[0]
+    assert "error" in resp
+
+
+# ── search-text REST ───────────────────────────────────────────────────────────
+
+def test_http_search_text_returns_matches(tmp_path):
+    """GET /search-text returns memories with matching text."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(2, DIM).astype(np.float32)
+    store.add(["hello world", "goodbye world"], vecs, ns="default")
+    code, data = http_call(store, "GET", "/search-text?q=hello&ns=default")
+    assert code == 200
+    assert data["count"] == 1
+
+
+def test_http_search_text_missing_q(tmp_path):
+    """GET /search-text returns 400 when q missing."""
+    store = Store(tmp_path)
+    code, data = http_call(store, "GET", "/search-text?ns=default")
+    assert code == 400
+
+
+def test_http_search_text_all_ns(tmp_path):
+    """GET /search-text without ns spans all namespaces."""
+    import numpy as np
+    store = Store(tmp_path)
+    v1 = np.random.rand(1, DIM).astype(np.float32)
+    store.add(["needle text"], v1, ns="ns1")
+    code, data = http_call(store, "GET", "/search-text?q=needle")
+    assert code == 200
+    assert data["count"] == 1
+
+
+# ── count-by-ns REST ───────────────────────────────────────────────────────────
+
+def test_http_count_by_ns(tmp_path):
+    """GET /count-by-ns returns per-namespace counts."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(2, DIM).astype(np.float32)
+    store.add(["a", "b"], vecs, ns="myns")
+    code, data = http_call(store, "GET", "/count-by-ns")
+    assert code == 200
+    assert data["by_ns"]["myns"] == 2
+
+
+def test_http_count_by_ns_empty(tmp_path):
+    """GET /count-by-ns returns empty dict for empty store."""
+    store = Store(tmp_path)
+    code, data = http_call(store, "GET", "/count-by-ns")
+    assert code == 200
+    assert data["by_ns"] == {}
+
+
+# ── clear-ns REST ──────────────────────────────────────────────────────────────
+
+def test_http_clear_ns_deletes(tmp_path):
+    """POST /clear-ns deletes all memories in namespace."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(2, DIM).astype(np.float32)
+    store.add(["a", "b"], vecs, ns="to_del")
+    code, data = http_call(store, "POST", "/clear-ns", {"ns": "to_del"})
+    assert code == 200
+    assert data["deleted"] == 2
+
+
+def test_http_clear_ns_missing_param(tmp_path):
+    """POST /clear-ns returns 400 when ns missing."""
+    store = Store(tmp_path)
+    code, data = http_call(store, "POST", "/clear-ns", {})
+    assert code == 400
+
+
+# ── copy-to-ns REST ────────────────────────────────────────────────────────────
+
+def test_http_copy_to_ns_copies(tmp_path):
+    """POST /copy-to-ns copies memories to dst namespace."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(2, DIM).astype(np.float32)
+    ids = store.add(["x", "y"], vecs, ns="src")
+    code, data = http_call(store, "POST", "/copy-to-ns",
+                           {"ids": ids, "dst_ns": "dst"})
+    assert code == 200
+    assert data["copied"] == 2
+
+
+def test_http_copy_to_ns_missing_params(tmp_path):
+    """POST /copy-to-ns returns 400 when ids missing."""
+    store = Store(tmp_path)
+    code, data = http_call(store, "POST", "/copy-to-ns", {"dst_ns": "dst"})
+    assert code == 400
+
+
+# ── MCP: search_text, count_by_ns, clear_ns, copy_to_ns ──────────────────────
+
+def test_mcp_search_text(tmp_path):
+    """MCP mnemonics_search_text returns matching memories."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(1, DIM).astype(np.float32)
+    store.add(["unique phrase in text"], vecs, ns="default")
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_search_text",
+                                    "arguments": {"query": "unique phrase", "ns": "default"}}})[0]
+    text = resp["result"]["content"][0]["text"]
+    assert "1" in text
+
+
+def test_mcp_search_text_missing_query(tmp_path):
+    """MCP mnemonics_search_text returns error when query missing."""
+    store = Store(tmp_path)
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_search_text",
+                                    "arguments": {}}})[0]
+    assert "error" in resp
+
+
+def test_mcp_count_by_ns(tmp_path):
+    """MCP mnemonics_count_by_ns returns namespace counts."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(2, DIM).astype(np.float32)
+    store.add(["a", "b"], vecs, ns="testns")
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_count_by_ns",
+                                    "arguments": {}}})[0]
+    text = resp["result"]["content"][0]["text"]
+    assert "testns" in text
+
+
+def test_mcp_clear_ns(tmp_path):
+    """MCP mnemonics_clear_ns deletes memories."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(2, DIM).astype(np.float32)
+    store.add(["a", "b"], vecs, ns="todel")
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_clear_ns",
+                                    "arguments": {"ns": "todel"}}})[0]
+    text = resp["result"]["content"][0]["text"]
+    assert "2" in text
+
+
+def test_mcp_clear_ns_missing(tmp_path):
+    """MCP mnemonics_clear_ns returns error when ns missing."""
+    store = Store(tmp_path)
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_clear_ns",
+                                    "arguments": {}}})[0]
+    assert "error" in resp
+
+
+def test_mcp_copy_to_ns(tmp_path):
+    """MCP mnemonics_copy_to_ns copies memories."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(2, DIM).astype(np.float32)
+    ids = store.add(["p", "q"], vecs, ns="src")
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_copy_to_ns",
+                                    "arguments": {"ids": ids, "dst_ns": "dst"}}})[0]
+    text = resp["result"]["content"][0]["text"]
+    assert "2" in text
+
+
+def test_mcp_copy_to_ns_missing(tmp_path):
+    """MCP mnemonics_copy_to_ns returns error when ids missing."""
+    store = Store(tmp_path)
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_copy_to_ns",
+                                    "arguments": {"dst_ns": "dst"}}})[0]
     assert "error" in resp

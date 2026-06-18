@@ -3993,3 +3993,113 @@ def test_cli_recent_json_coverage(tmp_path, capsys):
         main()
     parsed = _json.loads(capsys.readouterr().out)
     assert parsed[0]["id"] == 2
+
+
+# ── search-text CLI ────────────────────────────────────────────────────────────
+
+def test_cli_search_text_text(tmp_path, capsys):
+    """search-text prints matching memories."""
+    mock_store = MagicMock()
+    mock_store.search_text.return_value = [
+        {"id": 3, "text": "needle found here", "tier": 1, "ns": "default",
+         "summary": None, "created": "t"}
+    ]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "search-text", "needle",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "[3]" in out
+
+
+def test_cli_search_text_json(tmp_path, capsys):
+    """search-text --json outputs JSON."""
+    mock_store = MagicMock()
+    mock_store.search_text.return_value = [{"id": 3, "text": "needle"}]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "search-text", "needle", "--json",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert json.loads(out)[0]["id"] == 3
+
+
+def test_cli_search_text_all_ns(tmp_path, capsys):
+    """search-text --all-ns passes ns=None."""
+    mock_store = MagicMock()
+    mock_store.search_text.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "search-text", "q", "--all-ns",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.search_text.assert_called_once_with("q", ns=None, limit=20)
+
+
+# ── count-by-ns CLI ────────────────────────────────────────────────────────────
+
+def test_cli_count_by_ns_text(tmp_path, capsys):
+    """count-by-ns prints namespace counts."""
+    mock_store = MagicMock()
+    mock_store.count_by_ns.return_value = {"myns": 5, "other": 2}
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "count-by-ns", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "myns" in out
+    assert "5" in out
+
+
+def test_cli_count_by_ns_json(tmp_path, capsys):
+    """count-by-ns --json outputs JSON."""
+    mock_store = MagicMock()
+    mock_store.count_by_ns.return_value = {"ns1": 3}
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "count-by-ns", "--json",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert json.loads(out)["ns1"] == 3
+
+
+# ── clear-ns CLI ───────────────────────────────────────────────────────────────
+
+def test_cli_clear_ns(tmp_path, capsys):
+    """clear-ns prints deletion count."""
+    mock_store = MagicMock()
+    mock_store.clear_ns.return_value = 7
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "clear-ns", "myns",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.clear_ns.assert_called_once_with("myns")
+    out = capsys.readouterr().out
+    assert "7" in out
+
+
+# ── copy-to-ns CLI ─────────────────────────────────────────────────────────────
+
+def test_cli_copy_to_ns(tmp_path, capsys):
+    """copy-to-ns copies memories and prints count."""
+    mock_store = MagicMock()
+    mock_store.copy_to_ns.return_value = 3
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "copy-to-ns", "1", "2", "3",
+                           "--dst-ns", "newns", "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.copy_to_ns.assert_called_once_with([1, 2, 3], "newns")
+    out = capsys.readouterr().out
+    assert "3" in out

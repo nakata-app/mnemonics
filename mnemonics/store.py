@@ -832,6 +832,111 @@ class Store:
             self._db.commit()
         return True
 
+    def search_text(
+        self,
+        query: str,
+        ns: str | None = "default",
+        limit: int = 20,
+    ) -> list[dict]:
+        """Case-insensitive LIKE search on the *text* field.
+
+        Complements :meth:`search_by_summary` which searches summaries.
+        *ns=None* spans all namespaces.  Returns dicts with ``id``, ``ns``,
+        ``text``, ``summary``, ``tier``, and ``created``.
+        """
+        pattern = f"%{query}%"
+        if ns is not None:
+            rows = self._db.execute(
+                "SELECT id, ns, text, summary, tier, created FROM memories "
+                "WHERE ns=? AND text LIKE ? ORDER BY created DESC LIMIT ?",
+                (ns, pattern, limit),
+            ).fetchall()
+        else:
+            rows = self._db.execute(
+                "SELECT id, ns, text, summary, tier, created FROM memories "
+                "WHERE text LIKE ? ORDER BY created DESC LIMIT ?",
+                (pattern, limit),
+            ).fetchall()
+
+        return [
+            {"id": r[0], "ns": r[1], "text": r[2], "summary": r[3],
+             "tier": r[4], "created": r[5]}
+            for r in rows
+        ]
+
+    def count_by_ns(self) -> dict[str, int]:
+        """Return a ``{namespace: count}`` mapping for all namespaces.
+
+        Useful for dashboards and health checks.  Empty namespaces (i.e.
+        those that exist in hnswlib but have no SQL rows) are not included.
+        """
+        rows = self._db.execute(
+            "SELECT ns, COUNT(*) FROM memories GROUP BY ns ORDER BY ns"
+        ).fetchall()
+        return {r[0]: r[1] for r in rows}
+
+    def clear_ns(self, ns: str) -> int:
+        """Delete **all** memories from *ns*.
+
+        Returns the number of rows deleted.  Does NOT purge the hnswlib
+        index file — call ``reindex_all(ns)`` afterwards if you plan to
+        re-populate the same namespace.  Irreversible.
+        """
+        with self._lock:
+            cur = self._db.execute(
+                "DELETE FROM memories WHERE ns=?", (ns,)
+            )
+            n = cur.rowcount
+            self._db.commit()
+        return n
+
+    def copy_to_ns(
+        self,
+        memory_ids: list[int],
+        dst_ns: str,
+    ) -> int:
+        """Copy memories to *dst_ns* without removing them from the source.
+
+        Each copied memory gets a fresh ``id`` and ``created`` timestamp in
+        *dst_ns*.  The hnswlib vector for each memory is zero-filled in the
+        destination index — call ``reindex_all(dst_ns)`` to rebuild accurate
+        vectors after copying.  Returns the number of rows successfully copied.
+        """
+        import json as _j_ctn
+
+        rows = self._db.execute(
+            f"SELECT text, summary, meta, tier "
+            f"FROM memories WHERE id IN ({','.join('?' * len(memory_ids))})",
+            memory_ids,
+        ).fetchall() if memory_ids else []
+
+        if not rows:
+            return 0
+
+        import numpy as _np_ctn
+
+        texts = [r[0] for r in rows]
+        summaries = [r[1] for r in rows]
+        metas = [_j_ctn.loads(r[2]) if r[2] else {} for r in rows]
+        tiers = [r[3] for r in rows]
+
+        zero_vecs = _np_ctn.zeros((len(rows), self.dim), dtype=_np_ctn.float32)
+        new_ids = self.add(
+            texts,
+            zero_vecs,
+            ns=dst_ns,
+            meta=metas,
+            summaries=summaries,
+        )
+        # Apply tiers
+        for new_id, tier in zip(new_ids, tiers):
+            if tier != 1:
+                self._db.execute(
+                    "UPDATE memories SET tier=? WHERE id=?", (tier, new_id)
+                )
+        self._db.commit()
+        return len(new_ids)
+
     def list_by_tier(
         self,
         tier: int,

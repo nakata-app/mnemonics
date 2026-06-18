@@ -80,6 +80,31 @@ def main() -> None:
     ts.add_argument("--json", dest="json_out", action="store_true", help="Output results as JSON array")
     ts.add_argument("--path", default="~/.mnemonics")
 
+    # search-text
+    srchtxt = sub.add_parser("search-text", help="LIKE search on text field")
+    srchtxt.add_argument("query", help="Text to search for (case-insensitive LIKE)")
+    srchtxt.add_argument("--ns", default="default")
+    srchtxt.add_argument("--all-ns", action="store_true")
+    srchtxt.add_argument("--limit", type=int, default=20)
+    srchtxt.add_argument("--json", action="store_true", dest="as_json")
+    srchtxt.add_argument("--path", default="~/.mnemonics")
+
+    # count-by-ns
+    cbn = sub.add_parser("count-by-ns", help="Show memory count per namespace")
+    cbn.add_argument("--json", action="store_true", dest="as_json")
+    cbn.add_argument("--path", default="~/.mnemonics")
+
+    # clear-ns
+    clrns = sub.add_parser("clear-ns", help="Delete ALL memories from a namespace (irreversible)")
+    clrns.add_argument("ns", help="Namespace to clear")
+    clrns.add_argument("--path", default="~/.mnemonics")
+
+    # copy-to-ns
+    ctn = sub.add_parser("copy-to-ns", help="Copy memories to another namespace (no re-embed)")
+    ctn.add_argument("ids", nargs="+", type=int, help="Memory IDs to copy")
+    ctn.add_argument("--dst-ns", required=True, help="Destination namespace")
+    ctn.add_argument("--path", default="~/.mnemonics")
+
     # list-by-tier
     lbt = sub.add_parser("list-by-tier", help="List memories with a given tier")
     lbt.add_argument("tier", type=int, help="Tier: 0=pinned, 1=default, 2=ambient")
@@ -734,6 +759,42 @@ def main() -> None:
                 print(line)
                 if r.get("summary"):
                     print(f"           summary: {r['summary']}")
+
+    elif args.cmd == "search-text":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        ns_q = None if args.all_ns else args.ns
+        hits = store.search_text(args.query, ns=ns_q, limit=args.limit)
+        if args.as_json:
+            print(json.dumps(hits, default=str, ensure_ascii=False))
+        else:
+            ns_label = repr(ns_q) if ns_q is not None else "(all)"
+            print(f"Found {len(hits)} memories matching {args.query!r} in text (ns={ns_label}):")
+            for r in hits:
+                print(f"  [{r['id']}] {r['text'][:80]}")
+
+    elif args.cmd == "count-by-ns":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        counts = store.count_by_ns()
+        if args.as_json:
+            print(json.dumps(counts, ensure_ascii=False))
+        else:
+            print("Memory counts by namespace:")
+            for ns_name, cnt in sorted(counts.items()):
+                print(f"  {ns_name}: {cnt}")
+
+    elif args.cmd == "clear-ns":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        n = store.clear_ns(args.ns)
+        print(f"Deleted {n} memories from ns={args.ns!r}.")
+
+    elif args.cmd == "copy-to-ns":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        n = store.copy_to_ns(args.ids, args.dst_ns)
+        print(f"Copied {n} memories to ns={args.dst_ns!r}.")
 
     elif args.cmd == "list-by-tier":
         from mnemonics.store import Store
