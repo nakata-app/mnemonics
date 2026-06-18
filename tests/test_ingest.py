@@ -370,3 +370,22 @@ def test_ingest_summaries_length_mismatch(tmp_path):
     with patch("mnemonics.ingest._get_encoder", return_value=enc):
         with pytest.raises(ValueError, match="summaries length"):
             ingest(["a", "b"], store=store, summaries=["only one"])
+
+
+def test_resolve_model_default_return(monkeypatch):
+    from mnemonics.ingest import _resolve_model
+    monkeypatch.delenv("MNEMONICS_ENCODER_MODEL", raising=False)
+    monkeypatch.delenv("MNEMONICS_ADAPTMEM_PATH", raising=False)
+    # No env vars → return model unchanged
+    assert _resolve_model("custom-model-xyz") == "custom-model-xyz"
+
+
+def test_assistant_segments_multiline_and_role_transition():
+    """Lines 148 (role transition with buf) and 152 (non-role-marker lines)."""
+    from mnemonics.ingest import _assistant_segments
+    text = "[user] hello\n[assistant] first line\nsecond line\n[user] next"
+    parts = _assistant_segments(text)
+    # Should capture the assistant block "first line\nsecond line"
+    assert len(parts) == 1
+    assert "first line" in parts[0]
+    assert "second line" in parts[0]

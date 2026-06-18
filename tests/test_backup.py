@@ -124,3 +124,41 @@ def test_restore_skips_malicious_archive_members(tmp_path):
     assert written == ["memories.db"]
     # The traversal target must not exist anywhere outside dest.
     assert not (tmp_path / "escape.txt").exists()
+
+
+def test_restore_skips_directory_member(tmp_path):
+    """Line 106: non-file member (directory) → skipped, no crash."""
+    arc = tmp_path / "withdir.tar.gz"
+    with tarfile.open(arc, "w:gz") as tf:
+        # Add a real file
+        fi = tarfile.TarInfo(name="memories.db")
+        fi.size = 4
+        tf.addfile(fi, fileobj=__import__("io").BytesIO(b"data"))
+        # Add a directory entry (isfile() → False)
+        di = tarfile.TarInfo(name="somedir")
+        di.type = tarfile.DIRTYPE
+        tf.addfile(di)
+
+    dest = tmp_path / "dest"
+    written = restore(archive=arc, store_path=dest)
+    assert "memories.db" in written
+    assert "somedir" not in written
+
+
+def test_restore_skips_member_with_none_extractfile(tmp_path):
+    """Line 114: extractfile() returns None for symlinks — must be skipped."""
+    arc = tmp_path / "withlink.tar.gz"
+    with tarfile.open(arc, "w:gz") as tf:
+        # Real file first
+        fi = tarfile.TarInfo(name="memories.db")
+        fi.size = 4
+        tf.addfile(fi, fileobj=__import__("io").BytesIO(b"data"))
+        # Symlink — extractfile() returns None for these
+        lnk = tarfile.TarInfo(name="index_default.bin")
+        lnk.type = tarfile.SYMTYPE
+        lnk.linkname = "memories.db"
+        tf.addfile(lnk)
+
+    dest = tmp_path / "dest"
+    written = restore(archive=arc, store_path=dest)
+    assert written == ["memories.db"]  # symlink skipped, not extracted
