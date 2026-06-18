@@ -1334,6 +1334,76 @@ class Store:
 
         return result
 
+    def deduplicate(
+        self,
+        ns: str = "default",
+        threshold: float = 0.98,
+        dry_run: bool = True,
+        keep: str = "newest",
+    ) -> dict:
+        """Find and optionally delete near-duplicate memories in a namespace.
+
+        Two memories are considered duplicates when their cosine similarity
+        (1 - hnswlib distance) is >= *threshold*. For each duplicate pair,
+        the *keep* policy decides which to retain:
+        - ``"newest"`` (default): keep the higher ID (inserted later)
+        - ``"oldest"``: keep the lower ID (inserted earlier)
+
+        When *dry_run* is True (default) no rows are deleted; the list of
+        duplicate pairs is returned for inspection. When *dry_run* is False,
+        the designated duplicates are deleted.
+
+        Returns a dict with keys:
+        - ``pairs``: list of dicts with ``kept_id``, ``removed_id``, ``similarity``
+        - ``removed``: count of rows deleted (0 when dry_run=True)
+        """
+        import numpy as _np_ded
+        try:
+            idx = self._index_for(ns)
+        except Exception:
+            return {"pairs": [], "removed": 0}
+        n = idx.get_current_count()
+        if n < 2:
+            return {"pairs": [], "removed": 0}
+        rows = self._db.execute(
+            "SELECT id FROM memories WHERE ns=? ORDER BY id", (ns,)
+        ).fetchall()
+        ids_in_db = [r[0] for r in rows]
+        if len(ids_in_db) < 2:
+            return {"pairs": [], "removed": 0}
+        pairs: list[dict] = []
+        to_remove: set[int] = set()
+        for mem_id in ids_in_db:
+            if mem_id in to_remove:
+                continue
+            try:
+                vec = _np_ded.array(idx.get_items([mem_id])[0], dtype="float32")
+            except Exception:
+                continue
+            fetch_n = min(6, n)
+            try:
+                labels, distances = idx.knn_query(vec, k=fetch_n)
+            except RuntimeError:
+                continue
+            for label, dist in zip(labels[0], distances[0]):
+                label = int(label)
+                if label == mem_id or label in to_remove:
+                    continue
+                sim = float(1.0 - dist)
+                if sim >= threshold:
+                    if keep == "oldest":
+                        kept, removed = min(mem_id, label), max(mem_id, label)
+                    else:
+                        kept, removed = max(mem_id, label), min(mem_id, label)
+                    to_remove.add(removed)
+                    pairs.append({"kept_id": kept, "removed_id": removed, "similarity": round(sim, 6)})
+        removed_count = 0
+        if not dry_run:
+            for rid in to_remove:
+                if self.delete(rid):
+                    removed_count += 1
+        return {"pairs": pairs, "removed": removed_count}
+
     def expire(
         self,
         ns: str | None = None,

@@ -2182,3 +2182,144 @@ def test_bulk_update_summary_clears(populated_store):
     n = store.bulk_update_summary({mid: None})
     assert n == 1
     assert store.get(mid)["summary"] is None
+
+
+# ── deduplicate ───────────────────────────────────────────────────────────────
+
+def test_deduplicate_finds_exact_duplicates(tmp_store):
+    """deduplicate finds pairs with similarity >= threshold."""
+    import numpy as np
+    from mnemonics.store import DIM
+    rng = np.random.default_rng(42)
+    v = rng.random((DIM,)).astype("float32")
+    v /= np.linalg.norm(v)
+    # Two identical vectors → similarity == 1.0
+    ids = tmp_store.add(["doc A", "doc B"], np.stack([v, v]))
+    result = tmp_store.deduplicate(threshold=0.99, dry_run=True)
+    assert len(result["pairs"]) == 1
+    assert result["removed"] == 0  # dry_run
+
+
+def test_deduplicate_dry_run_does_not_delete(tmp_store):
+    """dry_run=True returns pairs but does not actually delete."""
+    import numpy as np
+    from mnemonics.store import DIM
+    rng = np.random.default_rng(5)
+    v = rng.random((DIM,)).astype("float32")
+    v /= np.linalg.norm(v)
+    ids = tmp_store.add(["A", "B"], np.stack([v, v]))
+    result = tmp_store.deduplicate(threshold=0.99, dry_run=True)
+    assert len(result["pairs"]) >= 1
+    assert tmp_store.count() == 2  # still 2 after dry run
+
+
+def test_deduplicate_execute_deletes(tmp_store):
+    """dry_run=False actually deletes the duplicate."""
+    import numpy as np
+    from mnemonics.store import DIM
+    rng = np.random.default_rng(9)
+    v = rng.random((DIM,)).astype("float32")
+    v /= np.linalg.norm(v)
+    tmp_store.add(["A", "B"], np.stack([v, v]))
+    result = tmp_store.deduplicate(threshold=0.99, dry_run=False)
+    assert result["removed"] == 1
+    assert tmp_store.count() == 1
+
+
+def test_deduplicate_keep_oldest(tmp_store):
+    """keep='oldest' retains the lower ID."""
+    import numpy as np
+    from mnemonics.store import DIM
+    rng = np.random.default_rng(7)
+    v = rng.random((DIM,)).astype("float32")
+    v /= np.linalg.norm(v)
+    ids = tmp_store.add(["A", "B"], np.stack([v, v]))
+    result = tmp_store.deduplicate(threshold=0.99, dry_run=True, keep="oldest")
+    pair = result["pairs"][0]
+    assert pair["kept_id"] == min(ids)
+    assert pair["removed_id"] == max(ids)
+
+
+def test_deduplicate_no_duplicates(populated_store):
+    """deduplicate returns empty pairs when no matches above threshold."""
+    store, docs, vecs = populated_store
+    result = store.deduplicate(threshold=0.9999, dry_run=True)
+    # Random vecs are very unlikely to be 99.99% similar
+    assert result["removed"] == 0
+
+
+def test_deduplicate_empty_ns(tmp_store):
+    """deduplicate on empty namespace returns empty result."""
+    result = tmp_store.deduplicate(ns="nonexistent", threshold=0.5, dry_run=True)
+    assert result == {"pairs": [], "removed": 0}
+
+
+def test_deduplicate_single_doc(tmp_store):
+    """deduplicate with only 1 doc returns empty result (no pairs possible)."""
+    import numpy as np
+    from mnemonics.store import DIM
+    v = np.ones((1, DIM), dtype="float32")
+    v /= np.linalg.norm(v)
+    tmp_store.add(["only"], v)
+    result = tmp_store.deduplicate(threshold=0.5, dry_run=True)
+    assert result == {"pairs": [], "removed": 0}
+
+
+def test_deduplicate_index_for_exception(tmp_store):
+    """deduplicate returns empty when _index_for raises (line 1363-1364)."""
+    from unittest.mock import patch
+    with patch.object(tmp_store, "_index_for", side_effect=RuntimeError("no idx")):
+        result = tmp_store.deduplicate(ns="default", threshold=0.5, dry_run=True)
+    assert result == {"pairs": [], "removed": 0}
+
+
+def test_deduplicate_few_ids_in_db(tmp_store):
+    """deduplicate returns empty when index has 2+ but SQL has <2 (line 1373)."""
+    import numpy as np
+    from unittest.mock import patch, MagicMock
+    from mnemonics.store import DIM
+    rng = np.random.default_rng(111)
+    v = rng.random((DIM,)).astype("float32")
+    v /= np.linalg.norm(v)
+    tmp_store.add(["only"], v.reshape(1, -1))
+    mock_idx = MagicMock()
+    mock_idx.get_current_count.return_value = 5  # trick: pretend index has 5
+    with patch.object(tmp_store, "_index_for", return_value=mock_idx):
+        # Only 1 row in DB — triggers ids_in_db < 2 branch
+        result = tmp_store.deduplicate(ns="default", threshold=0.5, dry_run=True)
+    assert result == {"pairs": [], "removed": 0}
+
+
+def test_deduplicate_get_items_exception(tmp_store):
+    """deduplicate continues to next ID when get_items raises (line 1381-1382)."""
+    import numpy as np
+    from unittest.mock import patch, MagicMock
+    from mnemonics.store import DIM
+    rng = np.random.default_rng(222)
+    v = rng.random((DIM,)).astype("float32")
+    v /= np.linalg.norm(v)
+    tmp_store.add(["A", "B"], np.stack([v, v]))
+    mock_idx = MagicMock()
+    mock_idx.get_current_count.return_value = 2
+    mock_idx.get_items.side_effect = Exception("no items")
+    with patch.object(tmp_store, "_index_for", return_value=mock_idx):
+        result = tmp_store.deduplicate(ns="default", threshold=0.5, dry_run=True)
+    assert result["pairs"] == []
+
+
+def test_deduplicate_knn_runtime_error(tmp_store):
+    """deduplicate continues when knn_query raises RuntimeError (line 1386-1387)."""
+    import numpy as np
+    from unittest.mock import patch, MagicMock
+    from mnemonics.store import DIM
+    rng = np.random.default_rng(333)
+    v = rng.random((DIM,)).astype("float32")
+    v /= np.linalg.norm(v)
+    tmp_store.add(["A", "B"], np.stack([v, v]))
+    mock_idx = MagicMock()
+    mock_idx.get_current_count.return_value = 2
+    mock_idx.get_items.return_value = [v.tolist()]
+    mock_idx.knn_query.side_effect = RuntimeError("empty index")
+    with patch.object(tmp_store, "_index_for", return_value=mock_idx):
+        result = tmp_store.deduplicate(ns="default", threshold=0.5, dry_run=True)
+    assert result["pairs"] == []

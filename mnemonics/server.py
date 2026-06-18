@@ -249,6 +249,16 @@ class _Handler(BaseHTTPRequestHandler):
             )
             self._json(200, {"query": query, "ns": ns_val, "results": hits})
 
+        elif self.path == "/deduplicate":
+            ded_ns = body.get("ns", "default")
+            ded_threshold = float(body.get("threshold", 0.98))
+            ded_dry = bool(body.get("dry_run", True))
+            ded_keep = body.get("keep", "newest")
+            result_ded = _get_store().deduplicate(
+                ns=ded_ns, threshold=ded_threshold, dry_run=ded_dry, keep=ded_keep
+            )
+            self._json(200, result_ded)
+
         elif self.path == "/expire":
             exp_ns = body.get("ns") or None
             exp_age = int(body.get("age_days", 30))
@@ -773,6 +783,19 @@ def _mcp_loop() -> None:
                     },
                 },
                 {
+                    "name": "mnemonics_deduplicate",
+                    "description": "Find near-duplicate memories in a namespace using cosine similarity on stored vectors. Two memories are duplicates when similarity >= threshold. dry_run=true (default) returns the pairs list without deleting; set dry_run=false to delete. keep='newest' (default) retains the higher ID; keep='oldest' retains the lower ID.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ns": {"type": "string", "description": "Namespace to deduplicate (default: 'default')"},
+                            "threshold": {"type": "number", "description": "Cosine similarity threshold (0-1, default: 0.98). Lower = more aggressive dedup."},
+                            "dry_run": {"type": "boolean", "description": "If true (default), only list pairs without deleting"},
+                            "keep": {"type": "string", "enum": ["newest", "oldest"], "description": "Which duplicate to keep (default: 'newest')"},
+                        },
+                    },
+                },
+                {
                     "name": "mnemonics_bulk_update_summary",
                     "description": "Update (or clear) summaries for multiple memories in a single transaction. Pass a dict mapping memory_id (as string or int) to a summary string or null to clear. Returns the count of rows actually updated — missing IDs are silently skipped.",
                     "inputSchema": {
@@ -1288,6 +1311,19 @@ def _mcp_loop() -> None:
                         if r.get("summary"):
                             lines_hs.append(f"           summary: {r['summary'][:120]}")
                     ok({"content": [{"type": "text", "text": "\n".join(lines_hs)}]})
+
+            elif name == "mnemonics_deduplicate":
+                ded_ns_m = args.get("ns", "default")
+                ded_thr_m = float(args.get("threshold", 0.98))
+                ded_dry_m = bool(args.get("dry_run", True))
+                ded_keep_m = args.get("keep", "newest")
+                res_ded = _get_store().deduplicate(
+                    ns=ded_ns_m, threshold=ded_thr_m, dry_run=ded_dry_m, keep=ded_keep_m
+                )
+                lines_ded = [f"Found {len(res_ded['pairs'])} duplicate pair(s). Removed: {res_ded['removed']}."]
+                for p in res_ded["pairs"][:20]:
+                    lines_ded.append(f"  kept={p['kept_id']} removed={p['removed_id']} sim={p['similarity']:.4f}")
+                ok({"content": [{"type": "text", "text": "\n".join(lines_ded)}]})
 
             elif name == "mnemonics_bulk_update_summary":
                 raw_upd = args.get("updates")

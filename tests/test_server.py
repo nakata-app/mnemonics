@@ -623,6 +623,7 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_similar_to",
         "mnemonics_expire",
         "mnemonics_bulk_update_summary",
+        "mnemonics_deduplicate",
     }
 
 
@@ -3106,3 +3107,44 @@ def test_mcp_bulk_update_summary_missing_arg(populated_store):
         "params": {"name": "mnemonics_bulk_update_summary", "arguments": {}},
     })[0]
     assert "error" in r
+
+
+# ── deduplicate REST + MCP ────────────────────────────────────────────────────
+
+def test_http_deduplicate_dry_run(populated_store):
+    """POST /deduplicate dry_run returns pairs without deleting."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/deduplicate", {"dry_run": True})
+    assert code == 200
+    assert "pairs" in data
+    assert "removed" in data
+
+
+def test_mcp_deduplicate_ok(populated_store):
+    """MCP mnemonics_deduplicate returns a result."""
+    store, docs, vecs = populated_store
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_deduplicate",
+                   "arguments": {"threshold": 0.99, "dry_run": True}},
+    })[0]
+    assert "result" in r
+    assert "pair" in r["result"]["content"][0]["text"].lower()
+
+
+def test_mcp_deduplicate_with_pairs(tmp_store):
+    """MCP mnemonics_deduplicate formats pair lines when duplicates exist."""
+    import numpy as np
+    from mnemonics.store import DIM
+    rng = np.random.default_rng(321)
+    v = rng.random((DIM,)).astype("float32")
+    v /= np.linalg.norm(v)
+    tmp_store.add(["dup A", "dup B"], np.stack([v, v]))
+    r = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_deduplicate",
+                   "arguments": {"threshold": 0.99, "dry_run": True}},
+    })[0]
+    assert "result" in r
+    text = r["result"]["content"][0]["text"]
+    assert "kept=" in text

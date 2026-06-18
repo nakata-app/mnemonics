@@ -80,6 +80,18 @@ def main() -> None:
     ts.add_argument("--json", dest="json_out", action="store_true", help="Output results as JSON array")
     ts.add_argument("--path", default="~/.mnemonics")
 
+    # deduplicate
+    ded = sub.add_parser("deduplicate", help="Find (and optionally remove) near-duplicate memories")
+    ded.add_argument("--ns", default="default", help="Namespace to deduplicate (default: 'default')")
+    ded.add_argument("--threshold", type=float, default=0.98,
+                     help="Cosine similarity threshold (default: 0.98)")
+    ded.add_argument("--execute", action="store_true",
+                     help="Actually delete duplicates (default: dry-run, list only)")
+    ded.add_argument("--keep", choices=["newest", "oldest"], default="newest",
+                     help="Which duplicate to keep (default: newest)")
+    ded.add_argument("--json", dest="json_out", action="store_true", help="Output as JSON")
+    ded.add_argument("--path", default="~/.mnemonics")
+
     # bulk-update-summary
     bus = sub.add_parser("bulk-update-summary",
                          help="Update summaries for multiple memories (id:summary pairs)")
@@ -484,6 +496,25 @@ def main() -> None:
                 print(line)
                 if r.get("summary"):
                     print(f"           summary: {r['summary']}")
+
+    elif args.cmd == "deduplicate":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        result = store.deduplicate(
+            ns=args.ns,
+            threshold=args.threshold,
+            dry_run=not args.execute,
+            keep=args.keep,
+        )
+        if args.json_out:
+            print(json.dumps(result, ensure_ascii=False))
+        elif not result["pairs"]:
+            print(f"No duplicates found (threshold={args.threshold}, ns={args.ns!r}).")
+        else:
+            mode = "Deleted" if args.execute else "Would delete"
+            print(f"Found {len(result['pairs'])} pair(s). {mode} {result['removed']} memories.")
+            for p in result["pairs"]:
+                print(f"  kept={p['kept_id']}  removed={p['removed_id']}  sim={p['similarity']:.4f}")
 
     elif args.cmd == "bulk-update-summary":
         from mnemonics.store import Store

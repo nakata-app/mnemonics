@@ -1,4 +1,5 @@
 """Tests for mnemonics CLI."""
+import json
 import sys
 from unittest.mock import MagicMock, patch
 import pytest
@@ -2569,3 +2570,54 @@ def test_cli_bulk_update_summary_bad_format(tmp_path, capsys):
         with pytest.raises(SystemExit) as exc:
             main()
     assert exc.value.code == 1
+
+
+# ── deduplicate CLI ───────────────────────────────────────────────────────────
+
+def test_cli_deduplicate_dry_run(tmp_path, capsys):
+    """deduplicate --dry-run lists pairs."""
+    mock_store = MagicMock()
+    mock_store.deduplicate.return_value = {
+        "pairs": [{"kept_id": 2, "removed_id": 1, "similarity": 0.9998}],
+        "removed": 0,
+    }
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "deduplicate", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "1 pair" in out
+    mock_store.deduplicate.assert_called_once_with(
+        ns="default", threshold=0.98, dry_run=True, keep="newest"
+    )
+
+
+def test_cli_deduplicate_execute(tmp_path, capsys):
+    """deduplicate --execute deletes."""
+    mock_store = MagicMock()
+    mock_store.deduplicate.return_value = {"pairs": [], "removed": 0}
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "deduplicate", "--execute",
+                           "--threshold", "0.95", "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.deduplicate.assert_called_once_with(
+        ns="default", threshold=0.95, dry_run=False, keep="newest"
+    )
+
+
+def test_cli_deduplicate_json(tmp_path, capsys):
+    """deduplicate --json outputs JSON."""
+    mock_store = MagicMock()
+    mock_store.deduplicate.return_value = {"pairs": [], "removed": 0}
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "deduplicate", "--json",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    parsed = json.loads(out)
+    assert "pairs" in parsed
