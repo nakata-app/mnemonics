@@ -3637,3 +3637,168 @@ def test_copy_to_ns_preserves_non_default_tier(tmp_store):
         "SELECT tier FROM memories WHERE ns='dst'"
     ).fetchone()
     assert row[0] == 0
+
+
+# ── rename_tag ─────────────────────────────────────────────────────────────────
+
+def test_rename_tag_renames_correctly(tmp_store):
+    """rename_tag replaces old_tag with new_tag in meta.tags."""
+    import numpy as np, json
+    vecs = np.random.rand(2, 384).astype(np.float32)
+    ids = tmp_store.add(["a", "b"], vecs, ns="default",
+                        meta=[{"tags": ["alpha", "beta"]}, {"tags": ["beta", "gamma"]}])
+    n = tmp_store.rename_tag("beta", "delta", ns="default")
+    assert n == 2
+    row = tmp_store._db.execute("SELECT meta FROM memories WHERE id=?", (ids[0],)).fetchone()
+    tags = json.loads(row[0])["tags"]
+    assert "delta" in tags
+    assert "beta" not in tags
+
+
+def test_rename_tag_skips_missing(tmp_store):
+    """rename_tag returns 0 when old_tag not present in any memory."""
+    import numpy as np
+    vecs = np.random.rand(1, 384).astype(np.float32)
+    tmp_store.add(["a"], vecs, ns="default", meta=[{"tags": ["foo"]}])
+    n = tmp_store.rename_tag("nonexistent", "bar", ns="default")
+    assert n == 0
+
+
+def test_rename_tag_same_tag_noop(tmp_store):
+    """rename_tag returns 0 when old_tag == new_tag."""
+    n = tmp_store.rename_tag("x", "x", ns="default")
+    assert n == 0
+
+
+def test_rename_tag_all_ns(tmp_store):
+    """rename_tag ns=None spans all namespaces."""
+    import numpy as np
+    v1 = np.random.rand(1, 384).astype(np.float32)
+    v2 = np.random.rand(1, 384).astype(np.float32)
+    tmp_store.add(["a"], v1, ns="ns1", meta=[{"tags": ["shared"]}])
+    tmp_store.add(["b"], v2, ns="ns2", meta=[{"tags": ["shared"]}])
+    n = tmp_store.rename_tag("shared", "unified", ns=None)
+    assert n == 2
+
+
+# ── find_duplicates ────────────────────────────────────────────────────────────
+
+def test_find_duplicates_detects_dupes(tmp_store):
+    """find_duplicates returns groups with identical text."""
+    import numpy as np
+    vecs = np.random.rand(4, 384).astype(np.float32)
+    tmp_store.add(["same", "same", "unique", "same"], vecs, ns="default")
+    groups = tmp_store.find_duplicates(ns="default")
+    assert len(groups) == 1
+    assert groups[0]["count"] == 3
+    assert groups[0]["text"] == "same"
+
+
+def test_find_duplicates_empty(tmp_store):
+    """find_duplicates returns empty list when no duplicates."""
+    import numpy as np
+    vecs = np.random.rand(3, 384).astype(np.float32)
+    tmp_store.add(["a", "b", "c"], vecs, ns="default")
+    assert tmp_store.find_duplicates(ns="default") == []
+
+
+def test_find_duplicates_all_ns(tmp_store):
+    """find_duplicates ns=None spans all namespaces."""
+    import numpy as np
+    v1 = np.random.rand(2, 384).astype(np.float32)
+    tmp_store.add(["dupe", "dupe"], v1, ns="ns1")
+    groups = tmp_store.find_duplicates(ns=None)
+    assert len(groups) == 1
+
+
+def test_find_duplicates_limit(tmp_store):
+    """find_duplicates respects limit."""
+    import numpy as np
+    vecs = np.random.rand(6, 384).astype(np.float32)
+    tmp_store.add(["a", "a", "b", "b", "c", "c"], vecs, ns="default")
+    groups = tmp_store.find_duplicates(ns="default", limit=1)
+    assert len(groups) == 1
+
+
+# ── swap_tier ─────────────────────────────────────────────────────────────────
+
+def test_swap_tier_moves_memories(tmp_store):
+    """swap_tier bulk-changes tier in a namespace."""
+    import numpy as np
+    vecs = np.random.rand(3, 384).astype(np.float32)
+    ids = tmp_store.add(["a", "b", "c"], vecs, ns="myns")
+    # set two to tier=0
+    tmp_store._db.execute("UPDATE memories SET tier=0 WHERE id IN (?,?)", ids[:2])
+    tmp_store._db.commit()
+    n = tmp_store.swap_tier("myns", 0, 2)
+    assert n == 2
+    rows = tmp_store._db.execute(
+        "SELECT tier FROM memories WHERE ns='myns'"
+    ).fetchall()
+    tiers = [r[0] for r in rows]
+    assert 0 not in tiers
+    assert tiers.count(2) == 2
+
+
+def test_swap_tier_same_tier_noop(tmp_store):
+    """swap_tier returns 0 when from_tier == to_tier."""
+    n = tmp_store.swap_tier("myns", 1, 1)
+    assert n == 0
+
+
+def test_swap_tier_invalid_tier(tmp_store):
+    """swap_tier raises ValueError for invalid tier values."""
+    import pytest
+    with pytest.raises(ValueError):
+        tmp_store.swap_tier("myns", 0, 5)
+
+
+def test_swap_tier_returns_zero_for_nonexistent_ns(tmp_store):
+    """swap_tier returns 0 for namespace with no matching memories."""
+    n = tmp_store.swap_tier("noexist", 1, 2)
+    assert n == 0
+
+
+# ── ns_summary ────────────────────────────────────────────────────────────────
+
+def test_ns_summary_returns_correct_stats(tmp_store):
+    """ns_summary returns accurate counts and stats for a populated ns."""
+    import numpy as np
+    vecs = np.random.rand(3, 384).astype(np.float32)
+    tmp_store.add(["hello world", "foo", "bar baz qux"], vecs, ns="myns")
+    # pin one (SQLite has no UPDATE...LIMIT without a separate compile flag)
+    first_id = tmp_store._db.execute(
+        "SELECT id FROM memories WHERE ns='myns' LIMIT 1"
+    ).fetchone()[0]
+    tmp_store._db.execute("UPDATE memories SET tier=0 WHERE id=?", (first_id,))
+    tmp_store._db.commit()
+    s = tmp_store.ns_summary("myns")
+    assert s["ns"] == "myns"
+    assert s["count"] == 3
+    assert s["tiers"]["pinned"] == 1
+    assert s["min_chars"] > 0
+    assert s["oldest"] is not None
+
+
+def test_ns_summary_empty_ns(tmp_store):
+    """ns_summary returns zeroed dict for empty namespace."""
+    s = tmp_store.ns_summary("does_not_exist")
+    assert s["count"] == 0
+    assert s["tiers"]["pinned"] == 0
+    assert s["oldest"] is None
+
+
+def test_rename_tag_skips_invalid_json(tmp_store):
+    """rename_tag skips memories with malformed meta JSON without crashing."""
+    import numpy as np
+    vecs = np.random.rand(1, 384).astype(np.float32)
+    ids = tmp_store.add(["x"], vecs, ns="default")
+    # Inject broken JSON that still passes the LIKE '%"tags"%' query filter
+    tmp_store._db.execute(
+        "UPDATE memories SET meta=? WHERE id=?",
+        ('{"tags": broken_not_json}', ids[0]),
+    )
+    tmp_store._db.commit()
+    # Should not raise, should return 0 (no update possible)
+    n = tmp_store.rename_tag("foo", "bar", ns="default")
+    assert n == 0

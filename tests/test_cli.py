@@ -4103,3 +4103,150 @@ def test_cli_copy_to_ns(tmp_path, capsys):
     mock_store.copy_to_ns.assert_called_once_with([1, 2, 3], "newns")
     out = capsys.readouterr().out
     assert "3" in out
+
+
+# ── rename-tag CLI ─────────────────────────────────────────────────────────────
+
+def test_cli_rename_tag(tmp_path, capsys):
+    """rename-tag prints updated count."""
+    mock_store = MagicMock()
+    mock_store.rename_tag.return_value = 3
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "rename-tag", "old", "new",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.rename_tag.assert_called_once_with("old", "new", ns="default")
+    out = capsys.readouterr().out
+    assert "3" in out
+
+
+def test_cli_rename_tag_all_ns(tmp_path):
+    """rename-tag --all-ns passes ns=None."""
+    mock_store = MagicMock()
+    mock_store.rename_tag.return_value = 0
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "rename-tag", "old", "new", "--all-ns",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.rename_tag.assert_called_once_with("old", "new", ns=None)
+
+
+# ── find-duplicates CLI ────────────────────────────────────────────────────────
+
+def test_cli_find_duplicates_text(tmp_path, capsys):
+    """find-duplicates prints duplicate groups."""
+    mock_store = MagicMock()
+    mock_store.find_duplicates.return_value = [
+        {"text": "hello", "count": 2, "ids": [1, 2]}
+    ]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "find-duplicates",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "1" in out
+
+
+def test_cli_find_duplicates_json(tmp_path, capsys):
+    """find-duplicates --json outputs JSON."""
+    mock_store = MagicMock()
+    mock_store.find_duplicates.return_value = [{"text": "dup", "count": 2, "ids": [1, 2]}]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "find-duplicates", "--json",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    assert data[0]["count"] == 2
+
+
+def test_cli_find_duplicates_all_ns(tmp_path):
+    """find-duplicates --all-ns passes ns=None."""
+    mock_store = MagicMock()
+    mock_store.find_duplicates.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "find-duplicates", "--all-ns",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.find_duplicates.assert_called_once_with(ns=None, limit=20)
+
+
+# ── swap-tier CLI ──────────────────────────────────────────────────────────────
+
+def test_cli_swap_tier(tmp_path, capsys):
+    """swap-tier prints updated count."""
+    mock_store = MagicMock()
+    mock_store.swap_tier.return_value = 5
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "swap-tier", "myns", "1", "2",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.swap_tier.assert_called_once_with("myns", 1, 2)
+    out = capsys.readouterr().out
+    assert "5" in out
+
+
+def test_cli_swap_tier_error(tmp_path, capsys):
+    """swap-tier prints error when ValueError raised."""
+    mock_store = MagicMock()
+    mock_store.swap_tier.side_effect = ValueError("tier must be 0, 1, or 2")
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "swap-tier", "myns", "0", "9",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "Error" in out
+
+
+# ── ns-summary CLI ─────────────────────────────────────────────────────────────
+
+def test_cli_ns_summary_text(tmp_path, capsys):
+    """ns-summary prints namespace dashboard."""
+    mock_store = MagicMock()
+    mock_store.ns_summary.return_value = {
+        "ns": "myns", "count": 10,
+        "tiers": {"pinned": 1, "default": 8, "ambient": 1},
+        "avg_chars": 42.0, "min_chars": 3, "max_chars": 100,
+        "avg_accesses": 1.5, "max_accesses": 7, "never_accessed": 3,
+        "oldest": "2026-01-01", "newest": "2026-06-01",
+    }
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "ns-summary", "myns",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "10" in out
+    assert "myns" in out
+
+
+def test_cli_ns_summary_json(tmp_path, capsys):
+    """ns-summary --json outputs JSON."""
+    mock_store = MagicMock()
+    mock_store.ns_summary.return_value = {"ns": "x", "count": 5, "tiers": {}, "avg_chars": 0,
+                                          "min_chars": 0, "max_chars": 0, "avg_accesses": 0,
+                                          "max_accesses": 0, "never_accessed": 0,
+                                          "oldest": None, "newest": None}
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "ns-summary", "x", "--json",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert json.loads(out)["count"] == 5

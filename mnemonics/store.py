@@ -832,6 +832,159 @@ class Store:
             self._db.commit()
         return True
 
+    def rename_tag(
+        self,
+        old_tag: str,
+        new_tag: str,
+        ns: str | None = "default",
+    ) -> int:
+        """Rename *old_tag* to *new_tag* in every memory's ``meta.tags`` array.
+
+        Only memories that currently have *old_tag* in their tags list are
+        updated; memories without it are untouched.  *ns=None* spans all
+        namespaces.  Returns the number of memories updated.
+
+        Implementation: fetches affected rows, rewrites the JSON in Python
+        (sqlite3 has no native array-element-replace), and bulk-updates back.
+        This is intentionally row-by-row rather than a single UPDATE so the
+        JSON round-trip is correct for all meta shapes.
+        """
+        import json as _j_rt
+
+        if not old_tag or not new_tag or old_tag == new_tag:
+            return 0
+
+        if ns is not None:
+            rows = self._db.execute(
+                "SELECT id, meta FROM memories WHERE ns=? AND meta LIKE '%\"tags\"%'",
+                (ns,),
+            ).fetchall()
+        else:
+            rows = self._db.execute(
+                "SELECT id, meta FROM memories WHERE meta LIKE '%\"tags\"%'"
+            ).fetchall()
+
+        updated = 0
+        with self._lock:
+            for row_id, meta_str in rows:
+                try:
+                    meta = _j_rt.loads(meta_str)
+                except Exception:
+                    continue
+                tags = meta.get("tags")
+                if not isinstance(tags, list) or old_tag not in tags:
+                    continue
+                meta["tags"] = [new_tag if t == old_tag else t for t in tags]
+                self._db.execute(
+                    "UPDATE memories SET meta=? WHERE id=?",
+                    (_j_rt.dumps(meta, ensure_ascii=False), row_id),
+                )
+                updated += 1
+            if updated:
+                self._db.commit()
+        return updated
+
+    def find_duplicates(
+        self,
+        ns: str | None = "default",
+        limit: int = 20,
+    ) -> list[dict]:
+        """Find memories that share identical text within *ns*.
+
+        Returns a list of ``{"text": str, "count": int, "ids": list[int]}``
+        dicts, ordered by count descending.  Only groups with ``count ≥ 2``
+        are returned.  *ns=None* spans all namespaces.  *limit* caps the
+        number of duplicate *groups* returned (not the total memory count).
+        """
+        if ns is not None:
+            rows = self._db.execute(
+                "SELECT text, COUNT(*) AS cnt, GROUP_CONCAT(id) AS id_list "
+                "FROM memories WHERE ns=? GROUP BY text HAVING cnt >= 2 "
+                "ORDER BY cnt DESC LIMIT ?",
+                (ns, limit),
+            ).fetchall()
+        else:
+            rows = self._db.execute(
+                "SELECT text, COUNT(*) AS cnt, GROUP_CONCAT(id) AS id_list "
+                "FROM memories GROUP BY text HAVING cnt >= 2 "
+                "ORDER BY cnt DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [
+            {"text": r[0], "count": r[1], "ids": [int(i) for i in r[2].split(",")]}
+            for r in rows
+        ]
+
+    def swap_tier(
+        self,
+        ns: str,
+        from_tier: int,
+        to_tier: int,
+    ) -> int:
+        """Bulk-move all memories in *ns* from *from_tier* to *to_tier*.
+
+        Returns the number of memories updated.  *ns* is required (no
+        all-namespace variant — a cross-namespace bulk tier flip is almost
+        always a mistake).
+        """
+        if from_tier not in (0, 1, 2) or to_tier not in (0, 1, 2):
+            raise ValueError("from_tier and to_tier must each be 0, 1, or 2")
+        if from_tier == to_tier:
+            return 0
+        with self._lock:
+            cur = self._db.execute(
+                "UPDATE memories SET tier=? WHERE ns=? AND tier=?",
+                (to_tier, ns, from_tier),
+            )
+            self._db.commit()
+        return cur.rowcount
+
+    def ns_summary(self, ns: str) -> dict:
+        """Return a one-call dashboard dict for *ns*.
+
+        Combines count, tier breakdown, text-length stats, access stats, and
+        date range into a single response suitable for a CLI ``info`` command
+        or a dashboard widget.  Returns an empty summary dict (all zeroes) for
+        namespaces that do not exist or have no memories.
+        """
+        row = self._db.execute(
+            "SELECT COUNT(*), "
+            "  SUM(CASE WHEN tier=0 THEN 1 ELSE 0 END), "
+            "  SUM(CASE WHEN tier=1 THEN 1 ELSE 0 END), "
+            "  SUM(CASE WHEN tier=2 THEN 1 ELSE 0 END), "
+            "  AVG(LENGTH(text)), MIN(LENGTH(text)), MAX(LENGTH(text)), "
+            "  AVG(access_count), MAX(access_count), "
+            "  SUM(CASE WHEN access_count=0 THEN 1 ELSE 0 END), "
+            "  MIN(created), MAX(created) "
+            "FROM memories WHERE ns=?",
+            (ns,),
+        ).fetchone()
+        if not row or row[0] == 0:
+            return {
+                "ns": ns, "count": 0,
+                "tiers": {"pinned": 0, "default": 0, "ambient": 0},
+                "avg_chars": 0, "min_chars": 0, "max_chars": 0,
+                "avg_accesses": 0.0, "max_accesses": 0, "never_accessed": 0,
+                "oldest": None, "newest": None,
+            }
+        return {
+            "ns": ns,
+            "count": row[0] or 0,
+            "tiers": {
+                "pinned": row[1] or 0,
+                "default": row[2] or 0,
+                "ambient": row[3] or 0,
+            },
+            "avg_chars": round(row[4] or 0, 1),
+            "min_chars": row[5] or 0,
+            "max_chars": row[6] or 0,
+            "avg_accesses": round(row[7] or 0, 2),
+            "max_accesses": row[8] or 0,
+            "never_accessed": row[9] or 0,
+            "oldest": row[10],
+            "newest": row[11],
+        }
+
     def search_text(
         self,
         query: str,

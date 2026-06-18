@@ -665,6 +665,10 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_count_by_ns",
         "mnemonics_clear_ns",
         "mnemonics_copy_to_ns",
+        "mnemonics_rename_tag",
+        "mnemonics_find_duplicates",
+        "mnemonics_swap_tier",
+        "mnemonics_ns_summary",
     }
 
 
@@ -5046,4 +5050,188 @@ def test_mcp_copy_to_ns_missing(tmp_path):
     resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
                          "params": {"name": "mnemonics_copy_to_ns",
                                     "arguments": {"dst_ns": "dst"}}})[0]
+    assert "error" in resp
+
+
+# ── rename-tag REST ────────────────────────────────────────────────────────────
+
+def test_http_rename_tag(tmp_path):
+    """POST /rename-tag renames tag in memories."""
+    import numpy as np, json as _j
+    store = Store(tmp_path)
+    vecs = np.random.rand(1, DIM).astype(np.float32)
+    store.add(["m"], vecs, ns="default", meta=[{"tags": ["old"]}])
+    code, data = http_call(store, "POST", "/rename-tag",
+                           {"old_tag": "old", "new_tag": "new"})
+    assert code == 200
+    assert data["updated"] == 1
+
+
+def test_http_rename_tag_missing_params(tmp_path):
+    """POST /rename-tag returns 400 when params missing."""
+    store = Store(tmp_path)
+    code, data = http_call(store, "POST", "/rename-tag", {"old_tag": "x"})
+    assert code == 400
+
+
+# ── swap-tier REST ─────────────────────────────────────────────────────────────
+
+def test_http_swap_tier(tmp_path):
+    """POST /swap-tier moves memories between tiers."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(2, DIM).astype(np.float32)
+    store.add(["a", "b"], vecs, ns="myns")
+    code, data = http_call(store, "POST", "/swap-tier",
+                           {"ns": "myns", "from_tier": 1, "to_tier": 2})
+    assert code == 200
+    assert data["updated"] == 2
+
+
+def test_http_swap_tier_missing_params(tmp_path):
+    """POST /swap-tier returns 400 when params missing."""
+    store = Store(tmp_path)
+    code, data = http_call(store, "POST", "/swap-tier", {"ns": "myns"})
+    assert code == 400
+
+
+def test_http_swap_tier_invalid_tier(tmp_path):
+    """POST /swap-tier returns 400 for invalid tier value."""
+    store = Store(tmp_path)
+    code, data = http_call(store, "POST", "/swap-tier",
+                           {"ns": "myns", "from_tier": 0, "to_tier": 9})
+    assert code == 400
+
+
+# ── find-duplicates REST ───────────────────────────────────────────────────────
+
+def test_http_find_duplicates_returns_groups(tmp_path):
+    """GET /find-duplicates returns duplicate groups."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(2, DIM).astype(np.float32)
+    store.add(["same", "same"], vecs, ns="default")
+    code, data = http_call(store, "GET", "/find-duplicates?ns=default")
+    assert code == 200
+    assert data["groups"] == 1
+
+
+def test_http_find_duplicates_all_ns(tmp_path):
+    """GET /find-duplicates without ns spans all namespaces."""
+    import numpy as np
+    store = Store(tmp_path)
+    v1 = np.random.rand(2, DIM).astype(np.float32)
+    store.add(["dup", "dup"], v1, ns="ns1")
+    code, data = http_call(store, "GET", "/find-duplicates")
+    assert code == 200
+    assert data["groups"] >= 1
+
+
+# ── ns-summary REST ────────────────────────────────────────────────────────────
+
+def test_http_ns_summary(tmp_path):
+    """GET /ns-summary returns namespace dashboard."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(3, DIM).astype(np.float32)
+    store.add(["a", "b", "c"], vecs, ns="sumns")
+    code, data = http_call(store, "GET", "/ns-summary?ns=sumns")
+    assert code == 200
+    assert data["count"] == 3
+
+
+def test_http_ns_summary_missing_ns(tmp_path):
+    """GET /ns-summary returns 400 when ns missing."""
+    store = Store(tmp_path)
+    code, data = http_call(store, "GET", "/ns-summary")
+    assert code == 400
+
+
+# ── MCP: rename_tag, find_duplicates, swap_tier, ns_summary ───────────────────
+
+def test_mcp_rename_tag(tmp_path):
+    """MCP mnemonics_rename_tag renames tag."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(1, DIM).astype(np.float32)
+    store.add(["x"], vecs, ns="default", meta=[{"tags": ["old"]}])
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_rename_tag",
+                                    "arguments": {"old_tag": "old", "new_tag": "new", "ns": "default"}}})[0]
+    text = resp["result"]["content"][0]["text"]
+    assert "1" in text
+
+
+def test_mcp_rename_tag_missing(tmp_path):
+    """MCP mnemonics_rename_tag returns error when params missing."""
+    store = Store(tmp_path)
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_rename_tag",
+                                    "arguments": {"old_tag": "x"}}})[0]
+    assert "error" in resp
+
+
+def test_mcp_find_duplicates(tmp_path):
+    """MCP mnemonics_find_duplicates returns groups."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(2, DIM).astype(np.float32)
+    store.add(["dup", "dup"], vecs, ns="default")
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_find_duplicates",
+                                    "arguments": {"ns": "default"}}})[0]
+    text = resp["result"]["content"][0]["text"]
+    assert "1" in text
+
+
+def test_mcp_swap_tier(tmp_path):
+    """MCP mnemonics_swap_tier moves memories."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(2, DIM).astype(np.float32)
+    store.add(["a", "b"], vecs, ns="myns")
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_swap_tier",
+                                    "arguments": {"ns": "myns", "from_tier": 1, "to_tier": 2}}})[0]
+    text = resp["result"]["content"][0]["text"]
+    assert "2" in text
+
+
+def test_mcp_swap_tier_missing(tmp_path):
+    """MCP mnemonics_swap_tier returns error when params missing."""
+    store = Store(tmp_path)
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_swap_tier",
+                                    "arguments": {"ns": "myns"}}})[0]
+    assert "error" in resp
+
+
+def test_mcp_swap_tier_invalid(tmp_path):
+    """MCP mnemonics_swap_tier returns error for invalid tier."""
+    store = Store(tmp_path)
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_swap_tier",
+                                    "arguments": {"ns": "x", "from_tier": 0, "to_tier": 9}}})[0]
+    assert "error" in resp
+
+
+def test_mcp_ns_summary(tmp_path):
+    """MCP mnemonics_ns_summary returns namespace stats."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(2, DIM).astype(np.float32)
+    store.add(["a", "b"], vecs, ns="sumns")
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_ns_summary",
+                                    "arguments": {"ns": "sumns"}}})[0]
+    text = resp["result"]["content"][0]["text"]
+    assert "sumns" in text
+
+
+def test_mcp_ns_summary_missing(tmp_path):
+    """MCP mnemonics_ns_summary returns error when ns missing."""
+    store = Store(tmp_path)
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_ns_summary",
+                                    "arguments": {}}})[0]
     assert "error" in resp

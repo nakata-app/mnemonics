@@ -80,6 +80,35 @@ def main() -> None:
     ts.add_argument("--json", dest="json_out", action="store_true", help="Output results as JSON array")
     ts.add_argument("--path", default="~/.mnemonics")
 
+    # rename-tag
+    rt_p = sub.add_parser("rename-tag", help="Rename a tag across memories")
+    rt_p.add_argument("old_tag", help="Tag to rename from")
+    rt_p.add_argument("new_tag", help="Tag to rename to")
+    rt_p.add_argument("--ns", default="default")
+    rt_p.add_argument("--all-ns", action="store_true")
+    rt_p.add_argument("--path", default="~/.mnemonics")
+
+    # find-duplicates
+    fd_p = sub.add_parser("find-duplicates", help="Find memories with identical text")
+    fd_p.add_argument("--ns", default="default")
+    fd_p.add_argument("--all-ns", action="store_true")
+    fd_p.add_argument("--limit", type=int, default=20)
+    fd_p.add_argument("--json", action="store_true", dest="as_json")
+    fd_p.add_argument("--path", default="~/.mnemonics")
+
+    # swap-tier
+    st_p = sub.add_parser("swap-tier", help="Bulk-move memories from one tier to another")
+    st_p.add_argument("ns", help="Target namespace")
+    st_p.add_argument("from_tier", type=int, help="Source tier (0/1/2)")
+    st_p.add_argument("to_tier", type=int, help="Destination tier (0/1/2)")
+    st_p.add_argument("--path", default="~/.mnemonics")
+
+    # ns-summary
+    nss_p = sub.add_parser("ns-summary", help="One-call namespace dashboard")
+    nss_p.add_argument("ns", help="Namespace to summarize")
+    nss_p.add_argument("--json", action="store_true", dest="as_json")
+    nss_p.add_argument("--path", default="~/.mnemonics")
+
     # search-text
     srchtxt = sub.add_parser("search-text", help="LIKE search on text field")
     srchtxt.add_argument("query", help="Text to search for (case-insensitive LIKE)")
@@ -759,6 +788,51 @@ def main() -> None:
                 print(line)
                 if r.get("summary"):
                     print(f"           summary: {r['summary']}")
+
+    elif args.cmd == "rename-tag":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        ns_q = None if args.all_ns else args.ns
+        n = store.rename_tag(args.old_tag, args.new_tag, ns=ns_q)
+        ns_label = repr(ns_q) if ns_q is not None else "(all)"
+        print(f"Renamed tag {args.old_tag!r} → {args.new_tag!r} in {n} memories (ns={ns_label}).")
+
+    elif args.cmd == "find-duplicates":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        ns_q = None if args.all_ns else args.ns
+        groups = store.find_duplicates(ns=ns_q, limit=args.limit)
+        if args.as_json:
+            print(json.dumps(groups, default=str, ensure_ascii=False))
+        else:
+            print(f"Found {len(groups)} duplicate group(s):")
+            for g in groups:
+                print(f"  count={g['count']} ids={g['ids']} text={g['text'][:60]!r}")
+
+    elif args.cmd == "swap-tier":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        try:
+            n = store.swap_tier(args.ns, args.from_tier, args.to_tier)
+        except ValueError as e:
+            print(f"Error: {e}")
+            return
+        print(f"Moved {n} memories in ns={args.ns!r} from tier {args.from_tier} to tier {args.to_tier}.")
+
+    elif args.cmd == "ns-summary":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        summary = store.ns_summary(args.ns)
+        if args.as_json:
+            print(json.dumps(summary, default=str, ensure_ascii=False))
+        else:
+            print(f"Summary for ns={args.ns!r}:")
+            print(f"  count       : {summary['count']}")
+            t = summary['tiers']
+            print(f"  tiers       : pinned={t['pinned']} default={t['default']} ambient={t['ambient']}")
+            print(f"  chars       : avg={summary['avg_chars']} min={summary['min_chars']} max={summary['max_chars']}")
+            print(f"  accesses    : avg={summary['avg_accesses']} max={summary['max_accesses']} never={summary['never_accessed']}")
+            print(f"  date range  : {summary['oldest']} → {summary['newest']}")
 
     elif args.cmd == "search-text":
         from mnemonics.store import Store

@@ -262,6 +262,30 @@ class _Handler(BaseHTTPRequestHandler):
             n_mtn = _get_store().move_to_ns([int(i) for i in mtn_ids], mtn_ns)
             self._json(200, {"moved": n_mtn, "target_ns": mtn_ns})
 
+        elif self.path == "/rename-tag":
+            rt_old = body.get("old_tag")
+            rt_new = body.get("new_tag")
+            if not rt_old or not rt_new:
+                self._json(400, {"error": "'old_tag' and 'new_tag' (str) are required"})
+                return
+            rt_ns = body.get("ns")
+            n_rt = _get_store().rename_tag(str(rt_old), str(rt_new), ns=rt_ns if rt_ns else "default")
+            self._json(200, {"old_tag": rt_old, "new_tag": rt_new, "updated": n_rt})
+
+        elif self.path == "/swap-tier":
+            st_ns = body.get("ns")
+            st_from = body.get("from_tier")
+            st_to = body.get("to_tier")
+            if not st_ns or st_from is None or st_to is None:
+                self._json(400, {"error": "'ns' (str), 'from_tier' (int), 'to_tier' (int) are required"})
+                return
+            try:
+                n_st = _get_store().swap_tier(str(st_ns), int(st_from), int(st_to))
+            except ValueError as e_st:
+                self._json(400, {"error": str(e_st)})
+                return
+            self._json(200, {"ns": st_ns, "from_tier": int(st_from), "to_tier": int(st_to), "updated": n_st})
+
         elif self.path == "/clear-ns":
             cns_ns = body.get("ns")
             if not cns_ns:
@@ -619,6 +643,23 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(200, _get_store().health_check())
         elif path == "/namespaces":
             self._json(200, {"namespaces": _get_store().list_namespaces()})
+        elif path.startswith("/find-duplicates"):
+            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_fd
+            qs_fd = parse_qs(urlparse(self.path).query)
+            ns_fd_raw = qs_fd.get("ns", [None])[0]
+            ns_fd = _uqp_fd(ns_fd_raw) if ns_fd_raw is not None else None
+            limit_fd = int((qs_fd.get("limit") or ["20"])[0])
+            groups_fd = _get_store().find_duplicates(ns=ns_fd, limit=limit_fd)
+            self._json(200, {"groups": len(groups_fd), "duplicates": groups_fd})
+        elif path.startswith("/ns-summary"):
+            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_ns
+            qs_ns = parse_qs(urlparse(self.path).query)
+            ns_ns_raw = (qs_ns.get("ns") or [None])[0]
+            if not ns_ns_raw:
+                self._json(400, {"error": "'ns' query param is required"})
+                return
+            summary_ns = _get_store().ns_summary(_uqp_ns(ns_ns_raw))
+            self._json(200, summary_ns)
         elif path.startswith("/search-text"):
             from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_st
             qs_st = parse_qs(urlparse(self.path).query)
@@ -1152,6 +1193,52 @@ def _mcp_loop() -> None:
                             "max_tier": {"type": "integer", "description": "Only return memories with tier <= this value"},
                         },
                         "required": ["query", "vector"],
+                    },
+                },
+                {
+                    "name": "mnemonics_rename_tag",
+                    "description": "Rename a tag across all memories in a namespace. Updates meta.tags arrays atomically. ns=None spans all namespaces.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "old_tag": {"type": "string"},
+                            "new_tag": {"type": "string"},
+                            "ns": {"type": "string"},
+                        },
+                        "required": ["old_tag", "new_tag"],
+                    },
+                },
+                {
+                    "name": "mnemonics_find_duplicates",
+                    "description": "Find memories with identical text. Returns groups with count>=2. Useful before dedup cleanup.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ns": {"type": "string"},
+                            "limit": {"type": "integer", "default": 20},
+                        },
+                    },
+                },
+                {
+                    "name": "mnemonics_swap_tier",
+                    "description": "Bulk-move all memories in ns from from_tier to to_tier. Requires ns (no cross-namespace bulk flip).",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ns": {"type": "string"},
+                            "from_tier": {"type": "integer"},
+                            "to_tier": {"type": "integer"},
+                        },
+                        "required": ["ns", "from_tier", "to_tier"],
+                    },
+                },
+                {
+                    "name": "mnemonics_ns_summary",
+                    "description": "One-call namespace dashboard: count, tier breakdown, text stats, access stats, date range.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {"ns": {"type": "string"}},
+                        "required": ["ns"],
                     },
                 },
                 {
@@ -2119,6 +2206,52 @@ def _mcp_loop() -> None:
                         if r.get("summary"):
                             lines_hs.append(f"           summary: {r['summary'][:120]}")
                     ok({"content": [{"type": "text", "text": "\n".join(lines_hs)}]})
+
+            elif name == "mnemonics_rename_tag":
+                rt_old_m = args.get("old_tag", "").strip()
+                rt_new_m = args.get("new_tag", "").strip()
+                if not rt_old_m or not rt_new_m:
+                    err("mnemonics_rename_tag: 'old_tag' and 'new_tag' are required")
+                    continue
+                rt_ns_m = args.get("ns", "default") or "default"
+                n_rt_m = _get_store().rename_tag(rt_old_m, rt_new_m, ns=rt_ns_m)
+                ok({"content": [{"type": "text", "text":
+                    f"Renamed tag {rt_old_m!r} → {rt_new_m!r} in {n_rt_m} memories (ns={rt_ns_m!r})."}]})
+
+            elif name == "mnemonics_find_duplicates":
+                fd_ns_m = args.get("ns")
+                fd_limit_m = int(args.get("limit", 20))
+                fd_groups = _get_store().find_duplicates(ns=fd_ns_m, limit=fd_limit_m)
+                import json as _j_fd
+                ok({"content": [{"type": "text", "text":
+                    f"Found {len(fd_groups)} duplicate text group(s):\n" +
+                    _j_fd.dumps(fd_groups, default=str, ensure_ascii=False)}]})
+
+            elif name == "mnemonics_swap_tier":
+                st_ns_m = args.get("ns", "").strip()
+                st_from_m = args.get("from_tier")
+                st_to_m = args.get("to_tier")
+                if not st_ns_m or st_from_m is None or st_to_m is None:
+                    err("mnemonics_swap_tier: 'ns', 'from_tier', 'to_tier' are required")
+                    continue
+                try:
+                    n_st_m = _get_store().swap_tier(st_ns_m, int(st_from_m), int(st_to_m))
+                except ValueError as e_st_m:
+                    err(str(e_st_m))
+                    continue
+                ok({"content": [{"type": "text", "text":
+                    f"Moved {n_st_m} memories in ns={st_ns_m!r} from tier {st_from_m} to tier {st_to_m}."}]})
+
+            elif name == "mnemonics_ns_summary":
+                nss_ns_m = args.get("ns", "").strip()
+                if not nss_ns_m:
+                    err("mnemonics_ns_summary: 'ns' is required")
+                    continue
+                import json as _j_nss
+                nss_result = _get_store().ns_summary(nss_ns_m)
+                ok({"content": [{"type": "text", "text":
+                    f"Summary for ns={nss_ns_m!r}:\n" +
+                    _j_nss.dumps(nss_result, default=str, ensure_ascii=False, indent=2)}]})
 
             elif name == "mnemonics_search_text":
                 st_q_m = args.get("query", "").strip()
