@@ -232,6 +232,41 @@ def test_forget_nonexistent_ns(tmp_store):
 
 # ── health_check / doctor ─────────────────────────────────────────────────────
 
+def test_rebuild_ns_index_removes_orphan_vectors(tmp_path):
+    vecs = make_vecs(3)
+    s = Store(tmp_path)
+    ids = s.add(["a", "b", "c"], vecs, ns="alpha")
+
+    # Simulate pre-fix raw-SQL delete (orphan vector in index)
+    s._db.execute("DELETE FROM memories WHERE id=?", (ids[2],))
+    s._db.commit()
+    # Index still has 3 vectors; SQL has 2
+
+    old_n, new_n = s.rebuild_ns_index("alpha")
+    assert old_n == 3
+    assert new_n == 2
+
+    # Rebuilt index only returns the 2 surviving rows
+    results = s.search(vecs[0], ns="alpha", top_k=5)
+    returned_ids = {r["id"] for r in results}
+    assert ids[2] not in returned_ids
+    assert ids[0] in returned_ids or ids[1] in returned_ids
+
+
+def test_rebuild_ns_index_persists(tmp_path):
+    vecs = make_vecs(2)
+    s = Store(tmp_path)
+    ids = s.add(["x", "y"], vecs, ns="alpha")
+    s._db.execute("DELETE FROM memories WHERE id=?", (ids[1],))
+    s._db.commit()
+
+    s.rebuild_ns_index("alpha")
+
+    s2 = Store(tmp_path)
+    results = s2.search(vecs[0], ns="alpha", top_k=5)
+    assert all(r["id"] != ids[1] for r in results)
+
+
 def test_health_check_clean_store(tmp_path):
     vecs = make_vecs(2)
     s = Store(tmp_path)

@@ -436,6 +436,75 @@ class Store:
                     pass  # label absent from index (e.g. index rebuilt without this entry)
         return cur.rowcount > 0
 
+    def rebuild_ns_index(self, ns: str) -> tuple[int, int]:
+        """Rebuild the hnswlib index for *ns* from the SQL source of truth.
+
+        Reads vectors for current SQL row IDs from the existing on-disk index
+        (no re-encoding needed), builds a clean index without orphan labels,
+        and saves it. Returns (old_element_count, new_element_count).
+
+        Safe on empty namespaces: creates a fresh empty index and removes any
+        orphan .bin file (so doctor reports it as a missing index rather than
+        a mismatch).
+        """
+        with self._lock:
+            ids = [
+                r[0]
+                for r in self._db.execute(
+                    "SELECT id FROM memories WHERE ns=? ORDER BY id", (ns,)
+                ).fetchall()
+            ]
+
+        idx_path = self.root / f"index_{ns}.bin"
+        # Guard against case-insensitive filesystems (macOS APFS): if another
+        # namespace maps to the same on-disk path, the rebuild must be
+        # performed via ingest re-encoding, not a blind path overwrite.
+        resolved = idx_path.resolve() if idx_path.exists() else idx_path
+        for other_ns in self.list_namespaces():
+            if other_ns == ns:
+                continue
+            other_path = (self.root / f"index_{other_ns}.bin")
+            if other_path.exists() and other_path.resolve() == resolved:
+                raise RuntimeError(
+                    f"rebuild_ns_index('{ns}'): index path collides with ns='{other_ns}' "
+                    f"on a case-insensitive filesystem. Merge the namespaces first."
+                )
+        with self._ns_file_lock(ns, exclusive=True), self._lock:
+            old_count = 0
+            if idx_path.exists():
+                old_idx = hnswlib.Index(space="cosine", dim=self.dim)
+                old_idx.load_index(str(idx_path))
+                old_count = old_idx.get_current_count()
+            else:
+                old_idx = None
+
+            new_idx = hnswlib.Index(space="cosine", dim=self.dim)
+            new_idx.init_index(
+                max_elements=max(100_000, len(ids) * 2 or 1),
+                ef_construction=200,
+                M=16,
+            )
+            new_idx.set_ef(64)
+
+            if ids and old_idx is not None:
+                # Retrieve stored vectors in batches; skip IDs absent from index.
+                surviving, vecs = [], []
+                for mid in ids:
+                    try:
+                        vec = old_idx.get_items([mid])
+                        surviving.append(mid)
+                        vecs.append(vec[0])
+                    except Exception:
+                        pass
+                if surviving:
+                    new_idx.add_items(np.array(vecs, dtype="float32"), surviving)
+
+            new_idx.save_index(str(idx_path))
+            self._index[ns] = new_idx
+            self._index_mtime[ns] = idx_path.stat().st_mtime
+
+        return old_count, len(ids)
+
     def forget_candidates(
         self,
         ns: str,

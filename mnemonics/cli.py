@@ -72,6 +72,11 @@ def main() -> None:
     dr.add_argument("--path", default="~/.mnemonics")
     dr.add_argument("--json", dest="json_out", action="store_true", help="Output as JSON")
 
+    # rebuild-index
+    rb = sub.add_parser("rebuild-index", help="Rebuild hnswlib index for a namespace from SQL (removes orphan vectors)")
+    rb.add_argument("--ns", required=True, help="Namespace whose index to rebuild")
+    rb.add_argument("--path", default="~/.mnemonics")
+
     # forget
     ft = sub.add_parser("forget", help="Bulk-delete memories in a namespace (default: dry-run)")
     ft.add_argument("--ns", required=True, help="Namespace to forget")
@@ -318,6 +323,14 @@ def main() -> None:
         else:
             print(f"⚠ {issues} issue(s) found")
         sys.exit(0 if issues == 0 else 1)
+
+    elif args.cmd == "rebuild-index":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        old_n, new_n = store.rebuild_ns_index(args.ns)
+        removed = old_n - new_n
+        print(f"ns={args.ns}: {old_n} → {new_n} vectors  ({removed} orphan(s) removed)")
+        sys.exit(0)
 
     elif args.cmd == "forget":
         from mnemonics.store import Store
