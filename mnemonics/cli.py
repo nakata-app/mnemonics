@@ -98,6 +98,29 @@ def main() -> None:
     gt.add_argument("memory_id", type=int)
     gt.add_argument("--path", default="~/.mnemonics")
 
+    # get-many
+    gm = sub.add_parser("get-many", help="Fetch multiple memories by ID (space-separated)")
+    gm.add_argument("ids", type=int, nargs="+", metavar="ID")
+    gm.add_argument("--path", default="~/.mnemonics")
+
+    # delete-ids
+    di = sub.add_parser("delete-ids", help="Delete specific memories by ID")
+    di.add_argument("ids", type=int, nargs="+", metavar="ID")
+    di.add_argument("--path", default="~/.mnemonics")
+
+    # search-meta
+    sm = sub.add_parser("search-meta", help="Find memories matching metadata key=value filters")
+    sm.add_argument("filters", nargs="+", metavar="KEY=VALUE", help="Metadata filters (e.g. tag=important)")
+    sm.add_argument("--ns", default="default")
+    sm.add_argument("--limit", type=int, default=20)
+    sm.add_argument("--path", default="~/.mnemonics")
+
+    # update-meta
+    um = sub.add_parser("update-meta", help="Replace metadata of a memory with JSON")
+    um.add_argument("memory_id", type=int)
+    um.add_argument("meta_json", help="New metadata as a JSON object string (e.g. '{\"tag\":\"x\"}')")
+    um.add_argument("--path", default="~/.mnemonics")
+
     # set-summary
     ss = sub.add_parser("set-summary", help="Add or update the summary field of a memory")
     ss.add_argument("memory_id", type=int)
@@ -294,6 +317,57 @@ def main() -> None:
         if row["summary"]:
             print(f"summary: {row['summary']}")
         print(f"text: {row['text']}")
+
+    elif args.cmd == "get-many":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        rows = store.get_many(args.ids)
+        tier_label = {0: "pinned", 1: "default", 2: "ambient"}
+        for row in rows:
+            tl = tier_label.get(row["tier"], "?")
+            print(f"id={row['id']}  ns={row['ns']}  tier={tl}  {row['text'][:120]}")
+        if not rows:
+            print("No memories found for those IDs.")
+
+    elif args.cmd == "delete-ids":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        n = store.delete_many(args.ids)
+        print(f"Deleted {n} of {len(args.ids)} requested ID(s).")
+
+    elif args.cmd == "search-meta":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        filters: dict[str, str] = {}
+        for kv in args.filters:
+            if "=" not in kv:
+                print(f"Invalid filter '{kv}': must be KEY=VALUE", file=sys.stderr)
+                sys.exit(2)
+            k, _, v = kv.partition("=")
+            filters[k.strip()] = v.strip()
+        results = store.search_by_meta(filters, ns=args.ns, limit=args.limit)
+        if not results:
+            print(f"No results for {filters} in ns={args.ns!r}.")
+        else:
+            tier_label = {0: "pinned", 1: "default", 2: "ambient"}
+            for r in results:
+                tl = tier_label.get(r["tier"], "?")
+                print(f"id={r['id']}  tier={tl}  {r['text'][:120]}")
+
+    elif args.cmd == "update-meta":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        try:
+            meta = json.loads(args.meta_json)
+        except json.JSONDecodeError as e:
+            print(f"Invalid JSON: {e}", file=sys.stderr)
+            sys.exit(2)
+        if not isinstance(meta, dict):
+            print("meta_json must be a JSON object ({})", file=sys.stderr)
+            sys.exit(2)
+        ok_ = store.update_meta(args.memory_id, meta)
+        print(f"Meta updated for id={args.memory_id}" if ok_ else f"id={args.memory_id} not found")
+        sys.exit(0 if ok_ else 1)
 
     elif args.cmd == "set-summary":
         from mnemonics.store import Store

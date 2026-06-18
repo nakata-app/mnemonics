@@ -1242,3 +1242,145 @@ def test_ingest_interactive_cancelled(tmp_path, capsys, monkeypatch):
     assert exc.value.code == 0
     out = capsys.readouterr().out
     assert "Cancelled" in out
+
+
+# ── get-many ──────────────────────────────────────────────────────────────────
+
+def test_cli_get_many_found(tmp_path, capsys):
+    """get-many prints one line per found memory."""
+    fake_rows = [
+        {"id": 1, "ns": "default", "tier": 1, "text": "hello world"},
+        {"id": 2, "ns": "default", "tier": 0, "text": "pinned memory"},
+    ]
+    mock_store = MagicMock()
+    mock_store.get_many.return_value = fake_rows
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "get-many", "1", "2", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "id=1" in out
+    assert "id=2" in out
+    assert "pinned" in out
+
+
+def test_cli_get_many_none_found(tmp_path, capsys):
+    """get-many prints 'No memories' when all IDs are missing."""
+    mock_store = MagicMock()
+    mock_store.get_many.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "get-many", "99", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "No memories" in out
+
+
+# ── delete-ids ────────────────────────────────────────────────────────────────
+
+def test_cli_delete_ids(tmp_path, capsys):
+    """delete-ids reports deleted count."""
+    mock_store = MagicMock()
+    mock_store.delete_many.return_value = 2
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "delete-ids", "1", "2", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "Deleted 2 of 2" in out
+
+
+# ── search-meta ───────────────────────────────────────────────────────────────
+
+def test_cli_search_meta_found(tmp_path, capsys):
+    """search-meta prints matches."""
+    fake_rows = [{"id": 5, "tier": 1, "text": "tagged memory"}]
+    mock_store = MagicMock()
+    mock_store.search_by_meta.return_value = fake_rows
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "search-meta", "tag=important", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "id=5" in out
+    mock_store.search_by_meta.assert_called_once_with({"tag": "important"}, ns="default", limit=20)
+
+
+def test_cli_search_meta_no_results(tmp_path, capsys):
+    """search-meta prints 'No results' when nothing matches."""
+    mock_store = MagicMock()
+    mock_store.search_by_meta.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "search-meta", "tag=ghost", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "No results" in out
+
+
+def test_cli_search_meta_bad_filter(tmp_path, capsys):
+    """search-meta exits 2 when a filter has no '='."""
+    with (
+        patch("mnemonics.store.Store"),
+        patch("sys.argv", ["mnemonics", "search-meta", "badfilter", "--path", str(tmp_path)]),
+    ):
+        with pytest.raises(SystemExit) as exc:
+            main()
+    assert exc.value.code == 2
+
+
+# ── update-meta ───────────────────────────────────────────────────────────────
+
+def test_cli_update_meta_ok(tmp_path, capsys):
+    """update-meta updates and prints confirmation."""
+    mock_store = MagicMock()
+    mock_store.update_meta.return_value = True
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "update-meta", "3", '{"x": 1}', "--path", str(tmp_path)]),
+    ):
+        with pytest.raises(SystemExit) as exc:
+            main()
+    assert exc.value.code == 0
+    out = capsys.readouterr().out
+    assert "Meta updated" in out
+
+
+def test_cli_update_meta_not_found(tmp_path, capsys):
+    """update-meta exits 1 when ID doesn't exist."""
+    mock_store = MagicMock()
+    mock_store.update_meta.return_value = False
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "update-meta", "99", '{}', "--path", str(tmp_path)]),
+    ):
+        with pytest.raises(SystemExit) as exc:
+            main()
+    assert exc.value.code == 1
+
+
+def test_cli_update_meta_bad_json(tmp_path, capsys):
+    """update-meta exits 2 on invalid JSON."""
+    with (
+        patch("mnemonics.store.Store"),
+        patch("sys.argv", ["mnemonics", "update-meta", "1", "NOT_JSON", "--path", str(tmp_path)]),
+    ):
+        with pytest.raises(SystemExit) as exc:
+            main()
+    assert exc.value.code == 2
+
+
+def test_cli_update_meta_non_object_json(tmp_path, capsys):
+    """update-meta exits 2 when JSON is not an object."""
+    with (
+        patch("mnemonics.store.Store"),
+        patch("sys.argv", ["mnemonics", "update-meta", "1", "[1,2,3]", "--path", str(tmp_path)]),
+    ):
+        with pytest.raises(SystemExit) as exc:
+            main()
+    assert exc.value.code == 2
