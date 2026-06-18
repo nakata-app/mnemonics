@@ -747,3 +747,35 @@ def test_search_skips_orphan_vector(tmp_store):
     # Search should return empty (orphan vector filtered out)
     results = tmp_store.search(vecs[0], ns="default", top_k=5)
     assert all(r["id"] != ids[0] for r in results)
+
+
+# ── store exception path coverage ────────────────────────────────────────────
+
+def test_set_tier_invalid_raises(tmp_store):
+    ids = tmp_store.add(["text"], make_vecs(1))
+    with pytest.raises(ValueError, match="tier must be"):
+        tmp_store.set_tier(ids[0], 99)
+
+
+def test_delete_mark_deleted_exception_is_swallowed(tmp_store, monkeypatch):
+    from unittest.mock import MagicMock
+    ids = tmp_store.add(["text"], make_vecs(1))
+    bad_idx = MagicMock()
+    bad_idx.mark_deleted.side_effect = Exception("boom")
+    bad_idx.save_index.side_effect = Exception("boom")
+    monkeypatch.setitem(tmp_store._index, "default", bad_idx)
+    result = tmp_store.delete(ids[0])
+    assert result is True  # SQL delete succeeded, exception swallowed
+
+
+def test_gc_mark_deleted_exception_swallowed(tmp_store, monkeypatch):
+    from unittest.mock import MagicMock
+    tmp_store.add(["old"], make_vecs(1))
+    bad_idx = MagicMock()
+    bad_idx.mark_deleted.side_effect = Exception("boom")
+    bad_idx.save_index.side_effect = Exception("boom")
+    monkeypatch.setitem(tmp_store._index, "default", bad_idx)
+    n = tmp_store.gc(ns="default", age_days=0, tier=2)
+    assert n >= 0  # didn't raise
+
+
