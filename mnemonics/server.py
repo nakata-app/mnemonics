@@ -5,6 +5,7 @@ Endpoints:
   GET  /doctor                 — store health report (DB integrity, index vs SQL, capacity)
   POST /ingest   {"texts": [...], "ns": "default", "meta": [...]}
   POST /retrieve {"query": "...", "ns": "default", "top_k": 5}
+  POST /rebuild-index {"ns": "..."}  — rebuild index from SQL source of truth
   POST /gc       {"ns": "...", "age_days": 30, "tier": 2, "dry_run": true}
   POST /forget   {"ns": "...", "before": "2026-01-01", "tier": 1, "dry_run": true}
   POST /repair                 — auto-fix orphan vectors and orphan index files
@@ -91,6 +92,17 @@ class _Handler(BaseHTTPRequestHandler):
 
         if self.path == "/repair":
             self._json(200, _get_store().repair())
+
+        elif self.path == "/rebuild-index":
+            ns = body.get("ns", "").strip()
+            if not ns:
+                self._json(400, {"error": "ns is required"})
+                return
+            try:
+                old_n, new_n = _get_store().rebuild_ns_index(ns)
+                self._json(200, {"ns": ns, "old_count": old_n, "new_count": new_n, "removed": old_n - new_n})
+            except RuntimeError as e:
+                self._json(409, {"error": str(e)})
 
         elif self.path == "/gc":
             store = _get_store()

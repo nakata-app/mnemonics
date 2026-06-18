@@ -122,6 +122,24 @@ def test_http_repair(tmp_store):
     assert "missing_vectors_reported" in data
 
 
+# ── POST /rebuild-index ───────────────────────────────────────────────────────
+
+def test_http_rebuild_index(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/rebuild-index", {"ns": "default"})
+    assert code == 200
+    assert data["ns"] == "default"
+    assert "old_count" in data
+    assert "new_count" in data
+    assert "removed" in data
+
+
+def test_http_rebuild_index_missing_ns(tmp_store):
+    code, data = http_call(tmp_store, "POST", "/rebuild-index", {})
+    assert code == 400
+    assert "ns" in data["error"]
+
+
 # ── POST /gc ─────────────────────────────────────────────────────────────────
 
 def test_http_gc_dry_run(tmp_store):
