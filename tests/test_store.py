@@ -614,3 +614,32 @@ def test_get_after_pin(tmp_store):
     tmp_store.pin(mid)
     row = tmp_store.get(mid)
     assert row["tier"] == 0
+
+
+# ── Store.update_summary() ────────────────────────────────────────────────────
+
+def test_update_summary_sets_value(tmp_store):
+    ids = tmp_store.add(["some text"], make_vecs(1))
+    mid = ids[0]
+    assert tmp_store.update_summary(mid, "a short gist") is True
+    assert tmp_store.get(mid)["summary"] == "a short gist"
+
+
+def test_update_summary_clears_value(tmp_store):
+    ids = tmp_store.add(["some text"], make_vecs(1))
+    mid = ids[0]
+    tmp_store.update_summary(mid, "first")
+    assert tmp_store.update_summary(mid, None) is True
+    assert tmp_store.get(mid)["summary"] is None
+
+
+def test_update_summary_returns_false_on_missing(tmp_store):
+    assert tmp_store.update_summary(9999, "x") is False
+
+
+def test_update_summary_fts_indexed(tmp_store):
+    ids = tmp_store.add(["unrelated raw text"], make_vecs(1))
+    mid = ids[0]
+    tmp_store.update_summary(mid, "very specific gist phrase")
+    hits = tmp_store.search_bm25("specific gist phrase", top_k=5)
+    assert any(h["id"] == mid for h in hits)

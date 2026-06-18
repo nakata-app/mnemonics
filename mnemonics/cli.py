@@ -86,6 +86,17 @@ def main() -> None:
     ft.add_argument("--apply", action="store_true", help="Actually delete (default: dry-run)")
     ft.add_argument("--path", default="~/.mnemonics")
 
+    # get
+    gt = sub.add_parser("get", help="Fetch a single memory by ID")
+    gt.add_argument("memory_id", type=int)
+    gt.add_argument("--path", default="~/.mnemonics")
+
+    # set-summary
+    ss = sub.add_parser("set-summary", help="Add or update the summary field of a memory")
+    ss.add_argument("memory_id", type=int)
+    ss.add_argument("summary", nargs="?", default=None, help="Summary text (omit to clear)")
+    ss.add_argument("--path", default="~/.mnemonics")
+
     # list
     ls = sub.add_parser("list", help="Browse memories in a namespace, newest first")
     ls.add_argument("--ns", default="default", help="Namespace to list (default: 'default')")
@@ -239,6 +250,30 @@ def main() -> None:
                 print(f"      └─ raw: {r['text'][:120]}")
             else:
                 print(f"{header} {r['text'][:120]}")
+
+    elif args.cmd == "get":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        row = store.get(args.memory_id)
+        if row is None:
+            print(f"id={args.memory_id} not found")
+            sys.exit(1)
+        tier_label = {0: "pinned", 1: "default", 2: "ambient"}.get(row["tier"], "?")
+        print(f"id={row['id']}  ns={row['ns']}  tier={tier_label}  created={row['created']}")
+        if row["summary"]:
+            print(f"summary: {row['summary']}")
+        print(f"text: {row['text']}")
+
+    elif args.cmd == "set-summary":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        ok_ = store.update_summary(args.memory_id, args.summary)
+        if ok_:
+            action = "cleared" if args.summary is None else "updated"
+            print(f"Summary {action} for id={args.memory_id}")
+        else:
+            print(f"id={args.memory_id} not found")
+            sys.exit(1)
 
     elif args.cmd == "list":
         from mnemonics.store import Store
