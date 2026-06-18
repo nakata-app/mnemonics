@@ -2219,3 +2219,46 @@ def test_cli_recent_empty(tmp_path, capsys):
     ):
         main()
     assert "No recently" in capsys.readouterr().out
+
+
+# ── top-accessed ───────────────────────────────────────────────────────────────
+
+def test_cli_top_accessed_basic(tmp_path, capsys):
+    hits = [{"id": 1, "ns": "default", "tier": 1, "text": "popular memory",
+             "summary": None, "last_accessed": "2026-06-18", "access_count": 42}]
+    mock_store = MagicMock()
+    mock_store.top_accessed.return_value = hits
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "top-accessed", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "popular" in out
+    assert "42" in out
+
+
+def test_cli_top_accessed_json(tmp_path, capsys):
+    hits = [{"id": 2, "ns": "default", "tier": 0, "text": "pinned hot",
+             "summary": None, "last_accessed": None, "access_count": 7}]
+    mock_store = MagicMock()
+    mock_store.top_accessed.return_value = hits
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "top-accessed", "--json", "--path", str(tmp_path)]),
+    ):
+        main()
+    import json as _json
+    parsed = _json.loads(capsys.readouterr().out)
+    assert parsed[0]["access_count"] == 7
+
+
+def test_cli_top_accessed_empty(tmp_path, capsys):
+    mock_store = MagicMock()
+    mock_store.top_accessed.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "top-accessed", "--path", str(tmp_path)]),
+    ):
+        main()
+    assert "No memories" in capsys.readouterr().out

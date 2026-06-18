@@ -1543,3 +1543,47 @@ def test_recent_accessed_tier_filter(populated_store):
     hits = store.recent_accessed(ns="default", tier=0)
     assert all(h["tier"] == 0 for h in hits)
     assert len(hits) == 1
+
+
+# ── top_accessed ──────────────────────────────────────────────────────────────
+
+def test_top_accessed_returns_rows(populated_store):
+    store, docs, vecs = populated_store
+    hits = store.top_accessed(ns="default")
+    assert len(hits) == len(docs)
+
+
+def test_top_accessed_ordering(populated_store):
+    """Memories with higher access_count come first."""
+    store, docs, vecs = populated_store
+    ids = [r[0] for r in store._db.execute("SELECT id FROM memories").fetchall()]
+    # touch first two IDs 3 and 1 times respectively
+    store._db.execute("UPDATE memories SET access_count=3 WHERE id=?", (ids[0],))
+    store._db.execute("UPDATE memories SET access_count=1 WHERE id=?", (ids[1],))
+    store._db.commit()
+    hits = store.top_accessed(ns="default")
+    counts = [h["access_count"] for h in hits]
+    assert counts == sorted(counts, reverse=True)
+
+
+def test_top_accessed_limit(populated_store):
+    store, docs, vecs = populated_store
+    hits = store.top_accessed(ns="default", limit=2)
+    assert len(hits) <= 2
+
+
+def test_top_accessed_tier_filter(populated_store):
+    store, docs, vecs = populated_store
+    first_id = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    store.pin(first_id)
+    hits = store.top_accessed(ns="default", tier=0)
+    assert all(h["tier"] == 0 for h in hits)
+
+
+def test_top_accessed_all_ns(populated_store):
+    import numpy as np
+    store, docs, vecs = populated_store
+    v = np.random.rand(384).astype("float32"); v /= np.linalg.norm(v)
+    store.add(["ns2 doc"], v[None], ns="ns2")
+    hits = store.top_accessed(ns=None)
+    assert {h["ns"] for h in hits} >= {"default", "ns2"}

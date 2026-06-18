@@ -481,6 +481,43 @@ class Store:
             for r in rows
         ]
 
+    def top_accessed(
+        self,
+        ns: str | None = "default",
+        limit: int = 20,
+        tier: int | None = None,
+    ) -> list[dict]:
+        """Return memories ordered by access_count descending (most frequently used first).
+
+        Memories never accessed (access_count=0) appear last. Pairs with
+        recent_accessed: this surfaces long-term valuable memories; that one
+        surfaces active session context.
+        """
+        where: list[str] = []
+        params: list = []
+        if ns is not None:
+            where.append("ns=?")
+            params.append(ns)
+        if tier is not None:
+            where.append("tier=?")
+            params.append(tier)
+        where_clause = ("WHERE " + " AND ".join(where)) if where else ""
+        params.append(limit)
+        rows = self._db.execute(
+            f"SELECT id, ns, text, summary, tier, created, last_accessed, access_count "
+            f"FROM memories {where_clause} "
+            f"ORDER BY access_count DESC, id DESC LIMIT ?",
+            params,
+        ).fetchall()
+        return [
+            {
+                "id": r[0], "ns": r[1], "text": r[2], "summary": r[3],
+                "tier": r[4], "created": r[5], "last_accessed": r[6],
+                "access_count": r[7],
+            }
+            for r in rows
+        ]
+
     def set_tier_many(self, memory_ids: list[int], tier: int) -> int:
         """Set tier for multiple memories in a single transaction.
 

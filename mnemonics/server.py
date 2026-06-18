@@ -430,6 +430,18 @@ class _Handler(BaseHTTPRequestHandler):
                 tier=int(tier_raw) if tier_raw is not None else None,
             )
             self._json(200, {"count": len(hits), "results": hits})
+        elif path == "/top-accessed":
+            from urllib.parse import urlparse, parse_qs, unquote_plus
+            qs_parsed = parse_qs(urlparse(self.path).query)
+            ns_raw = qs_parsed.get("ns", ["default"])[0]
+            ns_val = None if ns_raw == "all" else unquote_plus(ns_raw)
+            tier_raw = qs_parsed.get("tier", [None])[0]
+            limit = min(int(qs_parsed.get("limit", ["20"])[0]), 100)
+            hits = _get_store().top_accessed(
+                ns=ns_val, limit=limit,
+                tier=int(tier_raw) if tier_raw is not None else None,
+            )
+            self._json(200, {"count": len(hits), "results": hits})
         elif path == "/text-search":
             from urllib.parse import urlparse, parse_qs, unquote_plus
             qs_parsed = parse_qs(urlparse(self.path).query)
@@ -759,6 +771,18 @@ def _mcp_loop() -> None:
                             "ids": {"type": "array", "items": {"type": "integer"}, "description": "Memory IDs to delete"},
                         },
                         "required": ["ids"],
+                    },
+                },
+                {
+                    "name": "mnemonics_top_accessed",
+                    "description": "Return the most frequently accessed memories, ordered by access count descending. Complements mnemonics_recent (time-based) with frequency-based retrieval — useful for surfacing long-term valuable memories.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ns": {"type": "string", "description": "Namespace to filter (default: 'default', use 'all' for all namespaces)"},
+                            "tier": {"type": "integer", "enum": [0, 1, 2], "description": "Filter by tier (omit for all tiers)"},
+                            "limit": {"type": "integer", "description": "Max results (default: 20, capped at 100)"},
+                        },
                     },
                 },
                 {
@@ -1183,6 +1207,25 @@ def _mcp_loop() -> None:
                     }, ensure_ascii=False))
                 result_text = "\n".join(lines) if lines else "(no memories matched)"
                 ok({"content": [{"type": "text", "text": result_text}]})
+
+            elif name == "mnemonics_top_accessed":
+                ns_arg_ta = args.get("ns", "default")
+                ns_val_ta = None if ns_arg_ta == "all" else ns_arg_ta
+                tier_arg_ta = args.get("tier")
+                limit_ta = min(int(args.get("limit", 20)), 100)
+                hits_ta = _get_store().top_accessed(
+                    ns=ns_val_ta, limit=limit_ta,
+                    tier=int(tier_arg_ta) if tier_arg_ta is not None else None,
+                )
+                if hits_ta:
+                    lines_ta = [
+                        f"id={h['id']} ns={h['ns']} tier={h['tier']} "
+                        f"count={h['access_count']}: {h['text'][:100]}"
+                        for h in hits_ta
+                    ]
+                    ok({"content": [{"type": "text", "text": "\n".join(lines_ta)}]})
+                else:
+                    ok({"content": [{"type": "text", "text": "(no accessed memories found)"}]})
 
             elif name == "mnemonics_recent":
                 ns_arg = args.get("ns", "default")

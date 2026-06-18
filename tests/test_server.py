@@ -618,7 +618,7 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_pin", "mnemonics_tier", "mnemonics_gc", "mnemonics_stats",
         "mnemonics_health", "mnemonics_repair",
         "mnemonics_search_by_meta", "mnemonics_delete_many", "mnemonics_update_meta",
-        "mnemonics_export", "mnemonics_import", "mnemonics_text_search", "mnemonics_rename_ns", "mnemonics_namespaces", "mnemonics_bulk_tier", "mnemonics_count", "mnemonics_recent", "mnemonics_get_many",
+        "mnemonics_export", "mnemonics_import", "mnemonics_text_search", "mnemonics_rename_ns", "mnemonics_namespaces", "mnemonics_bulk_tier", "mnemonics_count", "mnemonics_recent", "mnemonics_top_accessed", "mnemonics_get_many",
     }
 
 
@@ -2529,3 +2529,46 @@ def test_mcp_recent_in_tools_list(tmp_store):
         "jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {},
     })[0]
     assert "mnemonics_recent" in {t["name"] for t in resp["result"]["tools"]}
+
+
+# ── GET /top-accessed ─────────────────────────────────────────────────────────
+
+def test_http_top_accessed_basic(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/top-accessed?ns=default")
+    assert code == 200
+    assert data["count"] == len(docs)
+
+
+def test_http_top_accessed_limit(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/top-accessed?ns=default&limit=2")
+    assert code == 200
+    assert len(data["results"]) <= 2
+
+
+# ── MCP mnemonics_top_accessed ────────────────────────────────────────────────
+
+def test_mcp_top_accessed_basic(populated_store):
+    store, docs, vecs = populated_store
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_top_accessed", "arguments": {}},
+    })[0]
+    assert "result" in r
+    assert "id=" in r["result"]["content"][0]["text"]
+
+
+def test_mcp_top_accessed_empty(tmp_store):
+    r = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_top_accessed", "arguments": {}},
+    })[0]
+    assert "no accessed" in r["result"]["content"][0]["text"]
+
+
+def test_mcp_top_accessed_in_tools_list(tmp_store):
+    resp = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {},
+    })[0]
+    assert "mnemonics_top_accessed" in {t["name"] for t in resp["result"]["tools"]}
