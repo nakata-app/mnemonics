@@ -1863,3 +1863,136 @@ def test_cli_ingest_file_stdin(tmp_path, capsys):
         main()
     kwargs = mock_ingest.call_args[1]
     assert "hello from stdin" in kwargs["texts"][0]
+
+
+# ── import-jsonl ──────────────────────────────────────────────────────────────
+
+def test_cli_import_jsonl_file(tmp_path, capsys):
+    """import-jsonl reads a JSONL file and ingests rows."""
+    import json as _json
+    jsonl = tmp_path / "export.jsonl"
+    jsonl.write_text(
+        _json.dumps({"text": "hello world", "ns": "default", "tier": 1}) + "\n",
+        encoding="utf-8",
+    )
+    with (
+        patch("mnemonics.store.Store"),
+        patch("mnemonics.ingest.ingest", return_value=1) as mock_ingest,
+        patch("sys.argv", ["mnemonics", "import-jsonl", str(jsonl), "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_ingest.assert_called_once()
+    out = capsys.readouterr().out
+    assert "Imported" in out
+
+
+def test_cli_import_jsonl_dry_run(tmp_path, capsys):
+    """import-jsonl --dry-run does not call ingest."""
+    import json as _json
+    jsonl = tmp_path / "export.jsonl"
+    jsonl.write_text(_json.dumps({"text": "data"}) + "\n", encoding="utf-8")
+    with (
+        patch("mnemonics.store.Store"),
+        patch("mnemonics.ingest.ingest") as mock_ingest,
+        patch("sys.argv", ["mnemonics", "import-jsonl", str(jsonl), "--dry-run",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_ingest.assert_not_called()
+    out = capsys.readouterr().out
+    assert "dry-run" in out
+
+
+def test_cli_import_jsonl_missing_file(tmp_path, capsys):
+    """import-jsonl with a non-existent file exits with code 2."""
+    with (
+        patch("mnemonics.store.Store"),
+        patch("sys.argv", ["mnemonics", "import-jsonl", "/no/such/file.jsonl",
+                           "--path", str(tmp_path)]),
+    ):
+        with pytest.raises(SystemExit) as exc:
+            main()
+    assert exc.value.code == 2
+
+
+def test_cli_import_jsonl_invalid_lines(tmp_path, capsys):
+    """import-jsonl skips invalid JSON lines and rows without text."""
+    import json as _json
+    jsonl = tmp_path / "export.jsonl"
+    jsonl.write_text(
+        "not json\n" +
+        _json.dumps({"ns": "default"}) + "\n" +   # no text
+        _json.dumps({"text": "good row"}) + "\n",
+        encoding="utf-8",
+    )
+    with (
+        patch("mnemonics.store.Store"),
+        patch("mnemonics.ingest.ingest", return_value=1) as mock_ingest,
+        patch("sys.argv", ["mnemonics", "import-jsonl", str(jsonl), "--path", str(tmp_path)]),
+    ):
+        main()
+    assert mock_ingest.call_count == 1
+    out = capsys.readouterr().out
+    assert "skipped 2" in out
+
+
+def test_cli_import_jsonl_ns_override(tmp_path, capsys):
+    """import-jsonl --ns overrides namespace from rows."""
+    import json as _json
+    jsonl = tmp_path / "export.jsonl"
+    jsonl.write_text(_json.dumps({"text": "row", "ns": "original"}) + "\n", encoding="utf-8")
+    with (
+        patch("mnemonics.store.Store"),
+        patch("mnemonics.ingest.ingest", return_value=1) as mock_ingest,
+        patch("sys.argv", ["mnemonics", "import-jsonl", str(jsonl), "--ns", "override",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    kwargs = mock_ingest.call_args[1]
+    assert kwargs["ns"] == "override"
+
+
+def test_cli_import_jsonl_stdin(tmp_path, capsys):
+    """import-jsonl reads from stdin when no file given."""
+    import json as _json, io
+    line = _json.dumps({"text": "from stdin", "ns": "default"}) + "\n"
+    with (
+        patch("mnemonics.store.Store"),
+        patch("mnemonics.ingest.ingest", return_value=1) as mock_ingest,
+        patch("sys.stdin", io.StringIO(line)),
+        patch("sys.argv", ["mnemonics", "import-jsonl", "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_ingest.assert_called_once()
+
+
+def test_cli_import_jsonl_blank_lines_ignored(tmp_path, capsys):
+    """import-jsonl skips blank lines."""
+    import json as _json
+    jsonl = tmp_path / "data.jsonl"
+    jsonl.write_text(
+        "\n" + _json.dumps({"text": "row"}) + "\n\n",
+        encoding="utf-8",
+    )
+    with (
+        patch("mnemonics.store.Store"),
+        patch("mnemonics.ingest.ingest", return_value=1) as mock_ingest,
+        patch("sys.argv", ["mnemonics", "import-jsonl", str(jsonl), "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_ingest.assert_called_once()
+
+
+def test_cli_import_jsonl_bad_tier_clamped(tmp_path, capsys):
+    """import-jsonl clamps invalid tier to 1."""
+    import json as _json
+    jsonl = tmp_path / "data.jsonl"
+    jsonl.write_text(_json.dumps({"text": "row", "tier": 99}) + "\n", encoding="utf-8")
+    with (
+        patch("mnemonics.store.Store"),
+        patch("mnemonics.ingest.ingest", return_value=1) as mock_ingest,
+        patch("sys.argv", ["mnemonics", "import-jsonl", str(jsonl), "--path", str(tmp_path)]),
+    ):
+        main()
+    kwargs = mock_ingest.call_args[1]
+    assert kwargs["tier"] == 1

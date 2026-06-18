@@ -207,6 +207,17 @@ def main() -> None:
     ej.add_argument("--out", default=None, help="Output file path (default: stdout)")
     ej.add_argument("--path", default="~/.mnemonics", help="Store directory")
 
+    # import-jsonl
+    ij = sub.add_parser("import-jsonl", help="Import memories from a JSONL file (counterpart to export-jsonl)")
+    ij.add_argument("file", nargs="?", default=None,
+                    help="Path to JSONL file to import (default: stdin). Use '-' for stdin.")
+    ij.add_argument("--ns", default=None,
+                    help="Override namespace for all imported rows (default: use ns from each row)")
+    ij.add_argument("--tier", type=int, choices=[0, 1, 2], default=None,
+                    help="Override tier for all imported rows (default: use tier from each row)")
+    ij.add_argument("--dry-run", action="store_true", help="Parse and validate without writing to store")
+    ij.add_argument("--path", default="~/.mnemonics", help="Store directory")
+
     # restore
     rs = sub.add_parser("restore", help="Extract a backup archive into a store directory")
     rs.add_argument("archive", help="Path to the .tar.gz produced by `mnemonics backup`")
@@ -735,6 +746,61 @@ def main() -> None:
                 out_fd.close()
         if args.out:
             print(f"Exported {len(rows)} memories to {args.out}", file=_sys.stderr)
+
+    elif args.cmd == "import-jsonl":
+        from mnemonics.store import Store
+        from mnemonics.ingest import ingest as _ingest_fn
+        import sys as _sys
+        store = Store(args.path)
+        # Resolve input source
+        if args.file is None or args.file == "-":
+            in_fd = _sys.stdin
+        else:
+            try:
+                in_fd = open(args.file, encoding="utf-8")
+            except OSError as e:
+                print(f"Cannot open {args.file!r}: {e}", file=sys.stderr)
+                sys.exit(2)
+        imported = skipped = 0
+        errors: list[str] = []
+        try:
+            for lineno, line in enumerate(in_fd, start=1):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError as e:
+                    errors.append(f"line {lineno}: invalid JSON: {e}")
+                    skipped += 1
+                    continue
+                text = obj.get("text")
+                if not text or not isinstance(text, str):
+                    errors.append(f"line {lineno}: missing or non-string 'text'")
+                    skipped += 1
+                    continue
+                ns = args.ns if args.ns is not None else obj.get("ns", "default")
+                tier = args.tier if args.tier is not None else obj.get("tier", 1)
+                if tier not in (0, 1, 2):
+                    tier = 1
+                meta = obj.get("meta") or {}
+                summary = obj.get("summary")
+                if not args.dry_run:
+                    n = _ingest_fn(
+                        texts=[text], store=store, ns=ns,
+                        meta=[meta] if meta else None,
+                        summaries=[summary], tier=int(tier),
+                    )
+                    imported += n
+                else:
+                    imported += 1
+        finally:
+            if args.file and args.file != "-":
+                in_fd.close()
+        for err in errors[:5]:
+            print(f"  warning: {err}", file=sys.stderr)
+        label = "(dry-run) would import" if args.dry_run else "Imported"
+        print(f"{label} {imported} chunk(s), skipped {skipped} invalid row(s).")
 
     elif args.cmd == "backup":
         from mnemonics.backup import backup
