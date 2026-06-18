@@ -155,6 +155,81 @@ def test_gc_removes_from_vector_index(tmp_path):
     assert all(r["id"] != deleted_id for r in s2.search(vecs[0], top_k=5))
 
 
+# ── forget ───────────────────────────────────────────────────────────────────
+
+def test_forget_removes_entire_ns(tmp_path):
+    vecs = make_vecs(3)
+    s = Store(tmp_path)
+    ids = s.add(["a", "b", "c"], vecs, ns="test-ns")
+    assert s.count("test-ns") == 3
+
+    n = s.forget(ns="test-ns")
+    assert n == 3
+    assert s.count("test-ns") == 0
+    assert all(r["id"] not in ids for r in s.search(vecs[0], ns="test-ns", top_k=5))
+
+
+def test_forget_skips_pinned_by_default(tmp_path):
+    vecs = make_vecs(2)
+    s = Store(tmp_path)
+    ids = s.add(["pinned", "normal"], vecs, ns="test-ns")
+    s.pin(ids[0])  # tier=0
+
+    n = s.forget(ns="test-ns")
+    assert n == 1  # only the non-pinned row
+    assert s.count("test-ns") == 1
+
+
+def test_forget_includes_pinned_when_explicit(tmp_path):
+    vecs = make_vecs(1)
+    s = Store(tmp_path)
+    ids = s.add(["pinned"], vecs, ns="test-ns")
+    s.pin(ids[0])
+
+    n = s.forget(ns="test-ns", tier=0)
+    assert n == 1
+    assert s.count("test-ns") == 0
+
+
+def test_forget_before_date(tmp_path):
+    vecs = make_vecs(2)
+    s = Store(tmp_path)
+    ids = s.add(["old", "new"], vecs, ns="test-ns")
+    # Force "old" to appear older via direct SQL
+    s._db.execute("UPDATE memories SET created='2020-01-01' WHERE id=?", (ids[0],))
+    s._db.commit()
+
+    n = s.forget(ns="test-ns", before="2021-01-01")
+    assert n == 1
+    assert s.count("test-ns") == 1
+
+
+def test_forget_candidates_dry_run(tmp_path):
+    vecs = make_vecs(2)
+    s = Store(tmp_path)
+    ids = s.add(["a", "b"], vecs, ns="test-ns")
+
+    candidates = s.forget_candidates(ns="test-ns")
+    assert len(candidates) == 2
+    assert s.count("test-ns") == 2  # not deleted
+
+
+def test_forget_removes_from_vector_index(tmp_path):
+    vecs = make_vecs(2)
+    s = Store(tmp_path)
+    s.add(["x", "y"], vecs, ns="test-ns")
+
+    s.forget(ns="test-ns")
+    assert s.count("test-ns") == 0
+    # Reload and confirm vector index is clean
+    s2 = Store(tmp_path)
+    assert s2.search(vecs[0], ns="test-ns", top_k=5) == []
+
+
+def test_forget_nonexistent_ns(tmp_store):
+    assert tmp_store.forget(ns="no-such-ns") == 0
+
+
 # ── namespaces ───────────────────────────────────────────────────────────────
 
 def test_list_namespaces_empty(tmp_store):

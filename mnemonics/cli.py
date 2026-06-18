@@ -66,6 +66,14 @@ def main() -> None:
     gc.add_argument("--apply", action="store_true", help="Actually delete (default: dry-run, list only)")
     gc.add_argument("--path", default="~/.mnemonics")
 
+    # forget
+    ft = sub.add_parser("forget", help="Bulk-delete memories in a namespace (default: dry-run)")
+    ft.add_argument("--ns", required=True, help="Namespace to forget")
+    ft.add_argument("--before", default=None, metavar="YYYY-MM-DD", help="Only delete rows created before this date")
+    ft.add_argument("--tier", type=int, choices=[0, 1, 2], default=None, help="Limit to tier (default: excludes pinned/tier-0)")
+    ft.add_argument("--apply", action="store_true", help="Actually delete (default: dry-run)")
+    ft.add_argument("--path", default="~/.mnemonics")
+
     # sync export / import (peer transport)
     sy = sub.add_parser("sync", help="Export/import portable transport archive between stores")
     sy_sub = sy.add_subparsers(dest="sync_cmd")
@@ -248,6 +256,35 @@ def main() -> None:
         if args.apply:
             n = store.gc(ns=args.ns, age_days=args.age_days)
             print(f"\nDeleted: {n} row(s).")
+        else:
+            print(f"\nDry-run, {len(candidates)} candidate(s). Re-run with --apply to delete.")
+
+    elif args.cmd == "forget":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        candidates = store.forget_candidates(ns=args.ns, before=args.before, tier=args.tier)
+        tier_label = {0: "pin", 1: "def", 2: "amb"}
+        if not candidates:
+            filters = f"ns={args.ns}"
+            if args.before:
+                filters += f" before={args.before}"
+            if args.tier is not None:
+                filters += f" tier={args.tier}"
+            print(f"Nothing to forget ({filters}).")
+            sys.exit(0)
+        for c in candidates[:50]:
+            print(f"  id={c['id']:>5} tier={tier_label.get(c['tier'], '?')} created={c['created'][:10]}  {c['preview']}")
+        if len(candidates) > 50:
+            print(f"  ... and {len(candidates) - 50} more")
+        if args.tier is None:
+            pinned_count = store._db.execute(
+                "SELECT count(*) FROM memories WHERE ns=? AND tier=0", (args.ns,)
+            ).fetchone()[0]
+            if pinned_count:
+                print(f"\n  Note: {pinned_count} pinned (tier-0) row(s) excluded — pass --tier 0 to include.")
+        if args.apply:
+            n = store.forget(ns=args.ns, before=args.before, tier=args.tier)
+            print(f"\nDeleted: {n} row(s) from ns={args.ns}.")
         else:
             print(f"\nDry-run, {len(candidates)} candidate(s). Re-run with --apply to delete.")
 

@@ -436,6 +436,68 @@ class Store:
                     pass  # label absent from index (e.g. index rebuilt without this entry)
         return cur.rowcount > 0
 
+    def forget_candidates(
+        self,
+        ns: str,
+        before: str | None = None,
+        tier: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return rows that would be deleted by forget(). Does NOT modify the store."""
+        sql = (
+            "SELECT id, ns, tier, created, substr(text, 1, 80) AS preview "
+            "FROM memories WHERE ns=?"
+        )
+        params: list[Any] = [ns]
+        if before is not None:
+            sql += " AND created < ?"
+            params.append(before)
+        if tier is not None:
+            sql += " AND tier = ?"
+            params.append(tier)
+        else:
+            sql += " AND tier != 0"  # protect pinned rows by default
+        sql += " ORDER BY created"
+        rows = self._db.execute(sql, params).fetchall()
+        return [
+            {"id": r[0], "ns": r[1], "tier": r[2], "created": r[3], "preview": r[4]}
+            for r in rows
+        ]
+
+    def forget(
+        self,
+        ns: str,
+        before: str | None = None,
+        tier: int | None = None,
+    ) -> int:
+        """Bulk-delete memories in *ns*, optionally filtered by date/tier.
+
+        Pinned rows (tier=0) are skipped unless tier=0 is explicitly passed.
+        Also removes the deleted IDs from the hnswlib vector index.
+        Returns the number of rows deleted.
+        """
+        candidates = self.forget_candidates(ns=ns, before=before, tier=tier)
+        if not candidates:
+            return 0
+        ids = [c["id"] for c in candidates]
+        placeholders = ",".join("?" * len(ids))
+        with self._lock:
+            self._db.execute(f"DELETE FROM memories WHERE id IN ({placeholders})", ids)
+            self._db.commit()
+        with self._ns_file_lock(ns, exclusive=True), self._lock:
+            try:
+                idx = self._index_for(ns)
+                for mid in ids:
+                    try:
+                        idx.mark_deleted(mid)
+                    except Exception:
+                        pass
+                idx_path = self.root / f"index_{ns}.bin"
+                idx.save_index(str(idx_path))
+                self._index_mtime[ns] = idx_path.stat().st_mtime
+            except Exception:
+                pass
+        return len(ids)
+
     def gc_candidates(self, ns: str | None = None, age_days: int = 30) -> list[dict[str, Any]]:
         """Rows safe to garbage-collect: tier 2 (ambient) older than `age_days`, never accessed."""
         sql = (
