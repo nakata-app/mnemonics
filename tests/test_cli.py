@@ -623,3 +623,42 @@ def test_cli_get_not_found(tmp_path, capsys):
             pass
     out = capsys.readouterr().out
     assert "not found" in out
+
+
+# ── set-summary ───────────────────────────────────────────────────────────────
+
+def test_cli_set_summary(tmp_path, capsys):
+    import numpy as np
+    from mnemonics.store import Store, DIM
+    store = Store(tmp_path)
+    rng = np.random.default_rng(0)
+    vecs = rng.random((1, DIM)).astype("float32")
+    vecs = vecs / np.linalg.norm(vecs, axis=1, keepdims=True)
+    ids = store.add(["raw text"], vecs)
+    with patch("sys.argv", ["mnemonics", "set-summary", str(ids[0]), "my new summary",
+                             "--path", str(tmp_path)]):
+        try:
+            main()
+        except SystemExit:
+            pass
+    out = capsys.readouterr().out
+    assert "updated" in out.lower() or "Summary" in out
+    assert store.get(ids[0])["summary"] == "my new summary"
+
+
+def test_cli_set_summary_clear(tmp_path, capsys):
+    import numpy as np
+    from mnemonics.store import Store, DIM
+    store = Store(tmp_path)
+    rng = np.random.default_rng(0)
+    vecs = rng.random((1, DIM)).astype("float32")
+    vecs = vecs / np.linalg.norm(vecs, axis=1, keepdims=True)
+    ids = store.add(["raw text"], vecs)
+    store.update_summary(ids[0], "old summary")
+    with patch("sys.argv", ["mnemonics", "set-summary", str(ids[0]),
+                             "--path", str(tmp_path)]):
+        try:
+            main()
+        except SystemExit:
+            pass
+    assert store.get(ids[0])["summary"] is None

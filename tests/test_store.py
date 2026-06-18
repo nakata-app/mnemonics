@@ -684,3 +684,26 @@ def test_list_memories_tier_filter(tmp_store):
 def test_list_memories_empty_ns(tmp_store):
     rows = tmp_store.list_memories(ns="ghost")
     assert rows == []
+
+
+# ── search_bm25 ns isolation ─────────────────────────────────────────────────
+
+def test_bm25_ns_isolation(tmp_store):
+    tmp_store.add(["only in alpha"], make_vecs(1, seed=1), ns="alpha")
+    tmp_store.add(["only in beta"], make_vecs(1, seed=2), ns="beta")
+    hits_alpha = tmp_store.search_bm25("alpha", ns="alpha", top_k=5)
+    hits_beta = tmp_store.search_bm25("alpha", ns="beta", top_k=5)
+    assert any("alpha" in h["text"] for h in hits_alpha)
+    assert hits_beta == []  # "alpha" text not in beta namespace
+
+
+def test_bm25_empty_query_returns_empty(tmp_store):
+    tmp_store.add(["some content"], make_vecs(1))
+    assert tmp_store.search_bm25("", top_k=5) == []
+    assert tmp_store.search_bm25("   ", top_k=5) == []
+
+
+def test_bm25_score_is_positive(tmp_store):
+    tmp_store.add(["keyword match here"], make_vecs(1))
+    hits = tmp_store.search_bm25("keyword", top_k=5)
+    assert hits and hits[0]["score"] > 0
