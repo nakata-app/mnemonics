@@ -328,3 +328,45 @@ def test_ingest_can_stack_both_augments(tmp_store, mock_enc):
         augment_assistant_facts=True,
     )
     assert n == 3
+
+
+# ── _resolve_model env paths ──────────────────────────────────────────────────
+
+def test_resolve_model_env_override(monkeypatch):
+    from mnemonics.ingest import _resolve_model
+    monkeypatch.setenv("MNEMONICS_ENCODER_MODEL", "bge-base-en")
+    monkeypatch.delenv("MNEMONICS_ADAPTMEM_PATH", raising=False)
+    assert _resolve_model("all-MiniLM-L6-v2") == "bge-base-en"
+
+
+def test_resolve_model_adaptmem_path(monkeypatch):
+    from mnemonics.ingest import _resolve_model
+    monkeypatch.delenv("MNEMONICS_ENCODER_MODEL", raising=False)
+    monkeypatch.setenv("MNEMONICS_ADAPTMEM_PATH", "/models/my-checkpoint")
+    assert _resolve_model("all-MiniLM-L6-v2") == "/models/my-checkpoint"
+
+
+# ── ingest string guard ───────────────────────────────────────────────────────
+
+def _make_vecs(n: int):
+    rng = np.random.default_rng(42)
+    v = rng.random((n, DIM)).astype("float32")
+    return v / np.linalg.norm(v, axis=1, keepdims=True)
+
+
+def test_ingest_bare_string_wrapped(tmp_path):
+    store = Store(tmp_path)
+    enc = MagicMock()
+    enc.encode.return_value = _make_vecs(1)
+    with patch("mnemonics.ingest._get_encoder", return_value=enc):
+        n = ingest("single string text", store=store)
+    assert n >= 1  # was ingested as one chunk, not char-by-char
+
+
+def test_ingest_summaries_length_mismatch(tmp_path):
+    store = Store(tmp_path)
+    enc = MagicMock()
+    enc.encode.return_value = _make_vecs(1)
+    with patch("mnemonics.ingest._get_encoder", return_value=enc):
+        with pytest.raises(ValueError, match="summaries length"):
+            ingest(["a", "b"], store=store, summaries=["only one"])
