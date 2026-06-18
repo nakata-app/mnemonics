@@ -4677,3 +4677,183 @@ def test_cli_promote_by_access_bad_tier(tmp_path, capsys):
         main()
     out = capsys.readouterr().out
     assert "error" in out.lower() or "bad tier" in out.lower()
+
+
+# ─── Batch 6: filter-by-text-length, multi-tag-filter, tag-stats, split-memory ───
+
+def test_cli_filter_by_text_length_text(tmp_path, capsys):
+    """filter-by-text-length prints count."""
+    mock_store = MagicMock()
+    mock_store.filter_by_text_length.return_value = [
+        {"id": 1, "ns": "default", "text": "hi", "summary": None, "tier": 1, "created": "2024-01-01"}
+    ]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "filter-by-text-length", "--max-chars", "5",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "1" in out
+
+
+def test_cli_filter_by_text_length_json(tmp_path, capsys):
+    """filter-by-text-length --json outputs list."""
+    mock_store = MagicMock()
+    mock_store.filter_by_text_length.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "filter-by-text-length", "--json",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    import json
+    out = capsys.readouterr().out
+    assert json.loads(out) == []
+
+
+def test_cli_filter_by_text_length_all_ns(tmp_path, capsys):
+    """filter-by-text-length --all-ns passes ns=None."""
+    mock_store = MagicMock()
+    mock_store.filter_by_text_length.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "filter-by-text-length", "--all-ns",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    kw = mock_store.filter_by_text_length.call_args[1]
+    assert kw["ns"] is None
+
+
+def test_cli_multi_tag_filter_text(tmp_path, capsys):
+    """multi-tag-filter prints count."""
+    mock_store = MagicMock()
+    mock_store.multi_tag_filter.return_value = [
+        {"id": 2, "ns": "default", "text": "tagged", "summary": None, "tier": 1, "created": "2024-01-01"}
+    ]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "multi-tag-filter", "a", "b",
+                           "--mode", "any", "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.multi_tag_filter.assert_called_once()
+    out = capsys.readouterr().out
+    assert "1" in out
+
+
+def test_cli_multi_tag_filter_json(tmp_path, capsys):
+    """multi-tag-filter --json outputs list."""
+    mock_store = MagicMock()
+    mock_store.multi_tag_filter.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "multi-tag-filter", "x", "--json",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    import json
+    out = capsys.readouterr().out
+    assert json.loads(out) == []
+
+
+def test_cli_multi_tag_filter_all_ns(tmp_path, capsys):
+    """multi-tag-filter --all-ns passes ns=None."""
+    mock_store = MagicMock()
+    mock_store.multi_tag_filter.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "multi-tag-filter", "z", "--all-ns",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    kw = mock_store.multi_tag_filter.call_args[1]
+    assert kw["ns"] is None
+
+
+def test_cli_tag_stats_text(tmp_path, capsys):
+    """tag-stats prints count per tag."""
+    mock_store = MagicMock()
+    mock_store.tag_stats.return_value = [
+        {"tag": "a", "count": 3, "pinned": 1, "default": 2, "ambient": 0}
+    ]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "tag-stats", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "a" in out
+
+
+def test_cli_tag_stats_json(tmp_path, capsys):
+    """tag-stats --json outputs list."""
+    mock_store = MagicMock()
+    mock_store.tag_stats.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "tag-stats", "--json", "--path", str(tmp_path)]),
+    ):
+        main()
+    import json
+    out = capsys.readouterr().out
+    assert json.loads(out) == []
+
+
+def test_cli_tag_stats_all_ns(tmp_path, capsys):
+    """tag-stats --all-ns passes ns=None."""
+    mock_store = MagicMock()
+    mock_store.tag_stats.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "tag-stats", "--all-ns", "--path", str(tmp_path)]),
+    ):
+        main()
+    kw = mock_store.tag_stats.call_args[1]
+    assert kw["ns"] is None
+
+
+def test_cli_split_memory_separator(tmp_path, capsys):
+    """split-memory with separator prints new ids."""
+    mock_store = MagicMock()
+    mock_store.split_memory.return_value = [10, 11]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "split-memory", "5", "--separator", "\n\n",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.split_memory.assert_called_once_with(
+        5, separator="\n\n", max_chars=None, delete_original=False
+    )
+    out = capsys.readouterr().out
+    assert "2 parts" in out or "10" in out
+
+
+def test_cli_split_memory_not_found(tmp_path, capsys):
+    """split-memory prints message when memory not found or < 2 parts."""
+    mock_store = MagicMock()
+    mock_store.split_memory.return_value = None
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "split-memory", "99", "--separator", "X",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "not found" in out or "< 2" in out
+
+
+def test_cli_split_memory_delete_original(tmp_path, capsys):
+    """split-memory --delete-original passes flag to store."""
+    mock_store = MagicMock()
+    mock_store.split_memory.return_value = [20, 21, 22]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "split-memory", "3", "--separator", "\n",
+                           "--delete-original", "--path", str(tmp_path)]),
+    ):
+        main()
+    kw = mock_store.split_memory.call_args[1]
+    assert kw["delete_original"] is True

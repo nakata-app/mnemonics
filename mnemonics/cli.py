@@ -128,6 +128,42 @@ def main() -> None:
     trt_p.add_argument("--path", default="~/.mnemonics")
 
     # search-by-access-count
+    # filter-by-text-length
+    fbtl_cli = sub.add_parser("filter-by-text-length", help="Find memories by text length range")
+    fbtl_cli.add_argument("--min-chars", type=int, default=0, dest="min_chars")
+    fbtl_cli.add_argument("--max-chars", type=int, default=None, dest="max_chars")
+    fbtl_cli.add_argument("--ns", default="default")
+    fbtl_cli.add_argument("--all-ns", action="store_true")
+    fbtl_cli.add_argument("--limit", type=int, default=100)
+    fbtl_cli.add_argument("--json", action="store_true", dest="as_json")
+    fbtl_cli.add_argument("--path", default="~/.mnemonics")
+
+    # multi-tag-filter
+    mtf_cli = sub.add_parser("multi-tag-filter", help="Filter by multiple tags (ALL or ANY)")
+    mtf_cli.add_argument("tags", nargs="+", help="Tags to filter on")
+    mtf_cli.add_argument("--ns", default="default")
+    mtf_cli.add_argument("--all-ns", action="store_true")
+    mtf_cli.add_argument("--mode", choices=["all", "any"], default="all")
+    mtf_cli.add_argument("--limit", type=int, default=100)
+    mtf_cli.add_argument("--json", action="store_true", dest="as_json")
+    mtf_cli.add_argument("--path", default="~/.mnemonics")
+
+    # tag-stats
+    ts_cli = sub.add_parser("tag-stats", help="Show per-tag usage statistics")
+    ts_cli.add_argument("--ns", default="default")
+    ts_cli.add_argument("--all-ns", action="store_true")
+    ts_cli.add_argument("--json", action="store_true", dest="as_json")
+    ts_cli.add_argument("--path", default="~/.mnemonics")
+
+    # split-memory
+    spm_cli = sub.add_parser("split-memory", help="Split a memory's text into 2+ parts")
+    spm_cli.add_argument("id", type=int, help="Memory ID to split")
+    spm_cli.add_argument("--separator", default=None, help="String to split on")
+    spm_cli.add_argument("--max-chars", type=int, default=None, dest="max_chars",
+                         help="Max chars per part (word boundary)")
+    spm_cli.add_argument("--delete-original", action="store_true", dest="delete_original")
+    spm_cli.add_argument("--path", default="~/.mnemonics")
+
     # clone-memory
     clmem = sub.add_parser("clone-memory", help="Clone a memory to same or different namespace")
     clmem.add_argument("id", type=int, help="Memory ID to clone")
@@ -2144,6 +2180,61 @@ def main() -> None:
                     print(f"[eval] wrote {out_dir / f'{slug}.json'}")
         print()
         print(compare_table(results))
+
+    elif args.cmd == "filter-by-text-length":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        ns_q = None if args.all_ns else args.ns
+        hits = store.filter_by_text_length(
+            min_chars=args.min_chars, max_chars=args.max_chars, ns=ns_q, limit=args.limit
+        )
+        if args.as_json:
+            print(json.dumps(hits, default=str, ensure_ascii=False))
+        else:
+            rng = f"[{args.min_chars}, {args.max_chars}]" if args.max_chars else f"[{args.min_chars}, ∞)"
+            ns_label = repr(ns_q) if ns_q is not None else "(all)"
+            print(f"Found {len(hits)} memories with text length in {rng} (ns={ns_label}):")
+            for r in hits:
+                print(f"  [{r['id']}] ({len(r['text'])}c) {r['text'][:70]}")
+
+    elif args.cmd == "multi-tag-filter":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        ns_q = None if args.all_ns else args.ns
+        hits = store.multi_tag_filter(
+            args.tags, ns=ns_q, mode=args.mode, limit=args.limit,
+        )
+        if args.as_json:
+            print(json.dumps(hits, default=str, ensure_ascii=False))
+        else:
+            print(f"Found {len(hits)} memories matching tags {args.tags} (mode={args.mode!r}):")
+            for r in hits:
+                print(f"  [{r['id']}] {r['text'][:80]}")
+
+    elif args.cmd == "tag-stats":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        ns_q = None if args.all_ns else args.ns
+        stats = store.tag_stats(ns=ns_q)
+        if args.as_json:
+            print(json.dumps(stats, default=str, ensure_ascii=False))
+        else:
+            ns_label = repr(ns_q) if ns_q is not None else "(all)"
+            print(f"Tag stats for ns={ns_label}: {len(stats)} tag(s)")
+            for s in stats:
+                print(f"  {s['tag']:30s} count={s['count']}")
+
+    elif args.cmd == "split-memory":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        new_ids = store.split_memory(
+            args.id, separator=args.separator, max_chars=args.max_chars,
+            delete_original=args.delete_original,
+        )
+        if new_ids is None:
+            print(f"Memory {args.id} not found or split produced < 2 parts.")
+        else:
+            print(f"Split id={args.id} → {len(new_ids)} parts: {new_ids}.")
 
     elif args.cmd == "clone-memory":
         from mnemonics.store import Store

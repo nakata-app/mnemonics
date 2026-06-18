@@ -956,6 +956,191 @@ class Store:
             for r in rows
         ]
 
+    def filter_by_text_length(
+        self,
+        min_chars: int = 0,
+        max_chars: int | None = None,
+        ns: str | None = "default",
+        limit: int = 100,
+    ) -> list[dict]:
+        """Return memories whose text length falls in [min_chars, max_chars].
+
+        Useful for identifying very short stubs (min=0, max=20) or very long
+        chunks that may need splitting.  *ns=None* spans all namespaces.
+        """
+        conds = ["1=1"]
+        params: list = []
+        if ns is not None:
+            conds.append("ns=?")
+            params.append(ns)
+        conds.append("LENGTH(text) >= ?")
+        params.append(min_chars)
+        if max_chars is not None:
+            conds.append("LENGTH(text) <= ?")
+            params.append(max_chars)
+        params.append(limit)
+        rows = self._db.execute(
+            f"SELECT id, ns, text, summary, tier, created FROM memories "
+            f"WHERE {' AND '.join(conds)} "
+            f"ORDER BY LENGTH(text) DESC LIMIT ?",
+            params,
+        ).fetchall()
+        return [
+            {"id": r[0], "ns": r[1], "text": r[2], "summary": r[3],
+             "tier": r[4], "created": r[5]}
+            for r in rows
+        ]
+
+    def multi_tag_filter(
+        self,
+        tags: list[str],
+        ns: str | None = "default",
+        mode: str = "all",
+        limit: int = 100,
+    ) -> list[dict]:
+        """Return memories that have ALL (mode='all') or ANY (mode='any') of the given tags.
+
+        *ns=None* spans all namespaces.  Returns empty list when *tags* is empty.
+        """
+        if not tags:
+            return []
+        import json as _j_mtf
+
+        if ns is not None:
+            rows_all = self._db.execute(
+                "SELECT id, ns, text, summary, tier, created, meta FROM memories WHERE ns=?",
+                (ns,),
+            ).fetchall()
+        else:
+            rows_all = self._db.execute(
+                "SELECT id, ns, text, summary, tier, created, meta FROM memories"
+            ).fetchall()
+
+        out = []
+        tag_set = set(tags)
+        for r in rows_all:
+            try:
+                meta_obj = _j_mtf.loads(r[6]) if r[6] else {}
+                row_tags = set(meta_obj.get("tags") or [])
+            except Exception:
+                row_tags = set()
+            if mode == "all":
+                match = tag_set.issubset(row_tags)
+            else:
+                match = bool(tag_set & row_tags)
+            if match:
+                out.append({"id": r[0], "ns": r[1], "text": r[2], "summary": r[3],
+                            "tier": r[4], "created": r[5]})
+                if len(out) >= limit:
+                    break
+        return out
+
+    def tag_stats(self, ns: str | None = "default") -> list[dict]:
+        """Return tag usage statistics: tag name, count, and tier breakdown.
+
+        Each dict has: ``{"tag": str, "count": int, "pinned": int,
+        "default": int, "ambient": int}``.
+        Ordered by count DESC.  *ns=None* spans all namespaces.
+        """
+        import json as _j_ts
+
+        if ns is not None:
+            rows = self._db.execute(
+                "SELECT meta, tier FROM memories WHERE ns=?", (ns,)
+            ).fetchall()
+        else:
+            rows = self._db.execute("SELECT meta, tier FROM memories").fetchall()
+
+        stats: dict[str, dict[str, int]] = {}
+        for meta_str, tier in rows:
+            try:
+                tags = (_j_ts.loads(meta_str) if meta_str else {}).get("tags") or []
+            except Exception:
+                tags = []
+            for tag in tags:
+                if tag not in stats:
+                    stats[tag] = {"count": 0, "pinned": 0, "default": 0, "ambient": 0}
+                stats[tag]["count"] += 1
+                label = {0: "pinned", 1: "default", 2: "ambient"}.get(tier, "default")
+                stats[tag][label] = stats[tag].get(label, 0) + 1
+
+        return sorted(
+            [{"tag": t, **v} for t, v in stats.items()],
+            key=lambda x: x["count"],
+            reverse=True,
+        )
+
+    def split_memory(
+        self,
+        memory_id: int,
+        separator: str | None = None,
+        max_chars: int | None = None,
+        delete_original: bool = False,
+    ) -> list[int] | None:
+        """Split a memory's text into two or more parts.
+
+        Two split modes:
+        - *separator*: split on the given string (e.g. ``"\\n\\n"``).  Empty parts are dropped.
+        - *max_chars*: split into word-boundary chunks of at most *max_chars* characters.
+
+        Parts inherit the original's ns, meta, tier, summary.  Vectors are
+        zero-filled; call ``reindex_all`` afterwards.
+
+        Returns the list of new IDs, or ``None`` if *memory_id* not found or
+        fewer than 2 non-empty parts.
+        """
+        import json as _j_sm
+        import numpy as _np_sm
+
+        row = self._db.execute(
+            "SELECT ns, text, summary, meta, tier FROM memories WHERE id=?",
+            (memory_id,),
+        ).fetchone()
+        if row is None:
+            return None
+
+        ns, text, summary, meta_str, tier = row
+        meta_obj = _j_sm.loads(meta_str) if meta_str else {}
+
+        if separator is not None:
+            parts = [p.strip() for p in text.split(separator)]
+        elif max_chars is not None and max_chars > 0:
+            words = text.split()
+            parts = []
+            buf: list[str] = []
+            for word in words:
+                if buf and (sum(len(w) for w in buf) + len(buf) - 1 + len(word) + 1) > max_chars:
+                    parts.append(" ".join(buf))
+                    buf = [word]
+                else:
+                    buf.append(word)
+            if buf:
+                parts.append(" ".join(buf))
+        else:
+            parts = [text]
+
+        parts = [p for p in parts if p]
+        if len(parts) < 2:
+            return None
+
+        zero_vec = _np_sm.zeros((len(parts), self.dim), dtype=_np_sm.float32)
+        new_ids = self.add(
+            parts, zero_vec, ns=ns, meta=[meta_obj] * len(parts),
+            summaries=[summary] * len(parts),
+        )
+
+        if tier != 1:
+            ph = ",".join("?" * len(new_ids))
+            self._db.execute(
+                f"UPDATE memories SET tier=? WHERE id IN ({ph})", (tier, *new_ids)
+            )
+            self._db.commit()
+
+        if delete_original:
+            self.delete(memory_id)
+
+        return new_ids
+
     def clone_memory(
         self,
         memory_id: int,

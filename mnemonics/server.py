@@ -262,6 +262,42 @@ class _Handler(BaseHTTPRequestHandler):
             n_mtn = _get_store().move_to_ns([int(i) for i in mtn_ids], mtn_ns)
             self._json(200, {"moved": n_mtn, "target_ns": mtn_ns})
 
+        elif self.path == "/multi-tag-filter":
+            mtf_tags = body.get("tags")
+            if not isinstance(mtf_tags, list) or not mtf_tags:
+                self._json(400, {"error": "'tags' (non-empty list) is required"})
+                return
+            mtf_ns = body.get("ns")
+            mtf_mode = body.get("mode", "all")
+            if mtf_mode not in ("all", "any"):
+                self._json(400, {"error": "'mode' must be 'all' or 'any'"})
+                return
+            mtf_limit = int(body.get("limit", 100))
+            hits_mtf = _get_store().multi_tag_filter(
+                mtf_tags, ns=mtf_ns if mtf_ns else "default",
+                mode=mtf_mode, limit=mtf_limit,
+            )
+            self._json(200, {"count": len(hits_mtf), "results": hits_mtf})
+
+        elif self.path == "/split-memory":
+            sm_id = body.get("id")
+            if sm_id is None:
+                self._json(400, {"error": "'id' (int) is required"})
+                return
+            sm_sep = body.get("separator")
+            sm_max = body.get("max_chars")
+            if sm_max is not None:
+                sm_max = int(sm_max)
+            sm_del = bool(body.get("delete_original", False))
+            new_ids_sm = _get_store().split_memory(
+                int(sm_id), separator=sm_sep, max_chars=sm_max, delete_original=sm_del
+            )
+            if new_ids_sm is None:
+                self._json(400, {"error": f"Memory {sm_id} not found or split produced < 2 parts"})
+                return
+            self._json(201, {"original_id": int(sm_id), "new_ids": new_ids_sm,
+                             "count": len(new_ids_sm)})
+
         elif self.path == "/clone-memory":
             clm_id = body.get("id")
             if clm_id is None:
@@ -732,6 +768,28 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(200, _get_store().health_check())
         elif path == "/namespaces":
             self._json(200, {"namespaces": _get_store().list_namespaces()})
+        elif path.startswith("/filter-by-text-length"):
+            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_fbtl
+            qs_fbtl = parse_qs(urlparse(self.path).query)
+            min_c = int((qs_fbtl.get("min_chars") or ["0"])[0])
+            max_c_raw = (qs_fbtl.get("max_chars") or [None])[0]
+            max_c = int(max_c_raw) if max_c_raw is not None else None
+            ns_fbtl_raw = (qs_fbtl.get("ns") or [None])[0]
+            ns_fbtl = _uqp_fbtl(ns_fbtl_raw) if ns_fbtl_raw is not None else None
+            lim_fbtl = int((qs_fbtl.get("limit") or ["100"])[0])
+            hits_fbtl = _get_store().filter_by_text_length(
+                min_chars=min_c, max_chars=max_c, ns=ns_fbtl, limit=lim_fbtl
+            )
+            self._json(200, {"count": len(hits_fbtl), "results": hits_fbtl})
+
+        elif path.startswith("/tag-stats"):
+            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_ts
+            qs_ts = parse_qs(urlparse(self.path).query)
+            ns_ts_raw = (qs_ts.get("ns") or [None])[0]
+            ns_ts = _uqp_ts(ns_ts_raw) if ns_ts_raw is not None else None
+            stats_ts = _get_store().tag_stats(ns=ns_ts)
+            self._json(200, {"count": len(stats_ts), "stats": stats_ts})
+
         elif path.startswith("/memories-without-summary"):
             from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_mws
             qs_mws = parse_qs(urlparse(self.path).query)
@@ -1338,6 +1396,57 @@ def _mcp_loop() -> None:
                             "max_tier": {"type": "integer", "description": "Only return memories with tier <= this value"},
                         },
                         "required": ["query", "vector"],
+                    },
+                },
+                {
+                    "name": "mnemonics_filter_by_text_length",
+                    "description": "Return memories whose text length falls within [min_chars, max_chars]. Great for finding stubs or oversized chunks.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "min_chars": {"type": "integer", "default": 0},
+                            "max_chars": {"type": "integer"},
+                            "ns": {"type": "string"},
+                            "limit": {"type": "integer", "default": 100},
+                        },
+                    },
+                },
+                {
+                    "name": "mnemonics_multi_tag_filter",
+                    "description": "Return memories that have ALL or ANY of the specified tags. mode='all' (default) requires every tag; mode='any' requires at least one.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "tags": {"type": "array", "items": {"type": "string"}},
+                            "ns": {"type": "string"},
+                            "mode": {"type": "string", "enum": ["all", "any"], "default": "all"},
+                            "limit": {"type": "integer", "default": 100},
+                        },
+                        "required": ["tags"],
+                    },
+                },
+                {
+                    "name": "mnemonics_tag_stats",
+                    "description": "Return per-tag usage statistics (count + tier breakdown) for a namespace.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ns": {"type": "string"},
+                        },
+                    },
+                },
+                {
+                    "name": "mnemonics_split_memory",
+                    "description": "Split a memory into 2+ parts by separator string or max_chars word-boundary. Parts inherit original's ns/meta/tier. Vectors zero-filled.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer"},
+                            "separator": {"type": "string"},
+                            "max_chars": {"type": "integer"},
+                            "delete_original": {"type": "boolean", "default": False},
+                        },
+                        "required": ["id"],
                     },
                 },
                 {
@@ -3528,6 +3637,75 @@ def _mcp_loop() -> None:
                     amb = tiers.get(2, 0)
                     lines.append(f"  {ns_name}: {total} chunks  (pin={pin} def={def_} amb={amb})")
                 ok({"content": [{"type": "text", "text": "\n".join(lines) or "(empty)"}]})
+
+            elif name == "mnemonics_filter_by_text_length":
+                fbtl_min = int(args.get("min_chars", 0))
+                fbtl_max = args.get("max_chars")
+                if fbtl_max is not None:
+                    fbtl_max = int(fbtl_max)
+                fbtl_ns = args.get("ns")
+                fbtl_lim = int(args.get("limit", 100))
+                fbtl_hits = _get_store().filter_by_text_length(
+                    min_chars=fbtl_min, max_chars=fbtl_max, ns=fbtl_ns, limit=fbtl_lim
+                )
+                ok({"content": [{"type": "text", "text":
+                    f"Found {len(fbtl_hits)} memories with text length in "
+                    f"[{fbtl_min}, {fbtl_max}].\n" +
+                    "\n".join(f"  [{h['id']}] ({len(h['text'])}c) {h['text'][:60]}"
+                               for h in fbtl_hits)}]})
+
+            elif name == "mnemonics_multi_tag_filter":
+                mtf_tags_m = args.get("tags")
+                if not isinstance(mtf_tags_m, list) or not mtf_tags_m:
+                    err("mnemonics_multi_tag_filter: 'tags' (non-empty list) is required")
+                    continue
+                mtf_ns_m = args.get("ns")
+                mtf_mode_m = args.get("mode", "all")
+                mtf_lim_m = int(args.get("limit", 100))
+                mtf_hits_m = _get_store().multi_tag_filter(
+                    mtf_tags_m,
+                    ns=mtf_ns_m if mtf_ns_m else "default",
+                    mode=mtf_mode_m,
+                    limit=mtf_lim_m,
+                )
+                ok({"content": [{"type": "text", "text":
+                    f"Found {len(mtf_hits_m)} memories matching tags {mtf_tags_m} "
+                    f"(mode={mtf_mode_m!r}).\n" +
+                    "\n".join(f"  [{h['id']}] {h['text'][:80]}" for h in mtf_hits_m)}]})
+
+            elif name == "mnemonics_tag_stats":
+                ts_ns_m = args.get("ns")
+                ts_stats_m = _get_store().tag_stats(ns=ts_ns_m)
+                if not ts_stats_m:
+                    ok({"content": [{"type": "text", "text": "(no tags found)"}]})
+                else:
+                    lines_ts_m = [f"Tag stats for ns={ts_ns_m!r}:"]
+                    for s in ts_stats_m[:30]:
+                        lines_ts_m.append(
+                            f"  {s['tag']:30s} count={s['count']} "
+                            f"pinned={s['pinned']} default={s['default']} ambient={s['ambient']}"
+                        )
+                    ok({"content": [{"type": "text", "text": "\n".join(lines_ts_m)}]})
+
+            elif name == "mnemonics_split_memory":
+                spm_id_m = args.get("id")
+                if spm_id_m is None:
+                    err("mnemonics_split_memory: 'id' is required")
+                    continue
+                spm_sep_m = args.get("separator")
+                spm_max_m = args.get("max_chars")
+                if spm_max_m is not None:
+                    spm_max_m = int(spm_max_m)
+                spm_del_m = bool(args.get("delete_original", False))
+                new_ids_spm = _get_store().split_memory(
+                    int(spm_id_m), separator=spm_sep_m,
+                    max_chars=spm_max_m, delete_original=spm_del_m
+                )
+                if new_ids_spm is None:
+                    err(f"mnemonics_split_memory: id={spm_id_m!r} not found or < 2 parts")
+                    continue
+                ok({"content": [{"type": "text", "text":
+                    f"Split id={spm_id_m} → {len(new_ids_spm)} parts: {new_ids_spm}."}]})
 
             elif name == "mnemonics_clone_memory":
                 clm_id_m = args.get("id")

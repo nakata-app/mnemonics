@@ -4205,3 +4205,193 @@ def test_promote_by_access_bad_tier(tmp_store):
 def test_promote_by_access_empty_ns(tmp_store):
     n = tmp_store.promote_by_access("nonexistent", n=5, from_tier=2, to_tier=1)
     assert n == 0
+
+
+# ─── Batch 6: filter_by_text_length, multi_tag_filter, tag_stats, split_memory ───
+
+def test_filter_by_text_length_max(tmp_store):
+    import numpy as np
+    vecs = np.zeros((3, 384), dtype=np.float32)
+    tmp_store.add(["short", "a medium length text here", "a much longer text that is quite extended"], vecs, ns="default")
+    hits = tmp_store.filter_by_text_length(max_chars=10, ns="default")
+    texts = [h["text"] for h in hits]
+    assert "short" in texts
+    assert "a much longer text that is quite extended" not in texts
+
+
+def test_filter_by_text_length_min(tmp_store):
+    import numpy as np
+    vecs = np.zeros((2, 384), dtype=np.float32)
+    tmp_store.add(["x", "long enough text"], vecs, ns="default")
+    hits = tmp_store.filter_by_text_length(min_chars=5, ns="default")
+    texts = [h["text"] for h in hits]
+    assert "x" not in texts
+    assert "long enough text" in texts
+
+
+def test_filter_by_text_length_all_ns(tmp_store):
+    import numpy as np
+    vecs = np.zeros((1, 384), dtype=np.float32)
+    tmp_store.add(["hi"], vecs, ns="other")
+    hits = tmp_store.filter_by_text_length(max_chars=10, ns=None)
+    assert any(h["text"] == "hi" for h in hits)
+
+
+def test_filter_by_text_length_limit(tmp_store):
+    import numpy as np
+    vecs = np.zeros((5, 384), dtype=np.float32)
+    tmp_store.add(["a", "b", "c", "d", "e"], vecs, ns="default")
+    hits = tmp_store.filter_by_text_length(max_chars=5, ns="default", limit=2)
+    assert len(hits) <= 2
+
+
+def test_multi_tag_filter_all(tmp_store):
+    import numpy as np
+    vecs = np.zeros((2, 384), dtype=np.float32)
+    ids = tmp_store.add(["x", "y"], vecs, ns="default")
+    tmp_store.bulk_tag([ids[0]], ["a", "b"])
+    tmp_store.bulk_tag([ids[1]], ["a"])
+    hits = tmp_store.multi_tag_filter(["a", "b"], ns="default", mode="all")
+    assert len(hits) == 1 and hits[0]["id"] == ids[0]
+
+
+def test_multi_tag_filter_any(tmp_store):
+    import numpy as np
+    vecs = np.zeros((2, 384), dtype=np.float32)
+    ids = tmp_store.add(["x", "y"], vecs, ns="default")
+    tmp_store.bulk_tag([ids[0]], ["a"])
+    tmp_store.bulk_tag([ids[1]], ["b"])
+    hits = tmp_store.multi_tag_filter(["a", "b"], ns="default", mode="any")
+    assert len(hits) == 2
+
+
+def test_multi_tag_filter_empty_tags(tmp_store):
+    hits = tmp_store.multi_tag_filter([], ns="default")
+    assert hits == []
+
+
+def test_multi_tag_filter_all_ns(tmp_store):
+    import numpy as np
+    ids1 = tmp_store.add(["x"], np.zeros((1, 384), dtype=np.float32), ns="ns1")
+    tmp_store.bulk_tag(ids1, ["q"])
+    hits = tmp_store.multi_tag_filter(["q"], ns=None, mode="any")
+    assert len(hits) >= 1
+
+
+def test_multi_tag_filter_limit(tmp_store):
+    import numpy as np
+    vecs = np.zeros((4, 384), dtype=np.float32)
+    ids = tmp_store.add(["a", "b", "c", "d"], vecs, ns="default")
+    tmp_store.bulk_tag(ids, ["x"])
+    hits = tmp_store.multi_tag_filter(["x"], ns="default", mode="any", limit=2)
+    assert len(hits) <= 2
+
+
+def test_tag_stats_basic(tmp_store):
+    import numpy as np
+    vecs = np.zeros((2, 384), dtype=np.float32)
+    ids = tmp_store.add(["x", "y"], vecs, ns="default")
+    tmp_store.bulk_tag([ids[0]], ["a", "b"])
+    tmp_store.bulk_tag([ids[1]], ["a"])
+    stats = tmp_store.tag_stats(ns="default")
+    tag_names = [s["tag"] for s in stats]
+    assert "a" in tag_names and "b" in tag_names
+    a_stat = next(s for s in stats if s["tag"] == "a")
+    assert a_stat["count"] == 2
+
+
+def test_tag_stats_all_ns(tmp_store):
+    import numpy as np
+    ids1 = tmp_store.add(["p"], np.zeros((1, 384), dtype=np.float32), ns="ns1")
+    tmp_store.bulk_tag(ids1, ["z"])
+    stats = tmp_store.tag_stats(ns=None)
+    assert any(s["tag"] == "z" for s in stats)
+
+
+def test_tag_stats_no_tags(tmp_store):
+    import numpy as np
+    vecs = np.zeros((1, 384), dtype=np.float32)
+    tmp_store.add(["x"], vecs, ns="default")
+    stats = tmp_store.tag_stats(ns="default")
+    assert stats == []
+
+
+def test_split_memory_separator(tmp_store):
+    import numpy as np
+    vecs = np.zeros((1, 384), dtype=np.float32)
+    ids = tmp_store.add(["part one\n\npart two\n\npart three"], vecs, ns="default")
+    new_ids = tmp_store.split_memory(ids[0], separator="\n\n")
+    assert new_ids is not None and len(new_ids) == 3
+    assert tmp_store.get(new_ids[0])["text"] == "part one"
+
+
+def test_split_memory_max_chars(tmp_store):
+    import numpy as np
+    vecs = np.zeros((1, 384), dtype=np.float32)
+    ids = tmp_store.add(["hello world foo bar baz"], vecs, ns="default")
+    new_ids = tmp_store.split_memory(ids[0], max_chars=15)
+    assert new_ids is not None and len(new_ids) >= 2
+
+
+def test_split_memory_delete_original(tmp_store):
+    import numpy as np
+    vecs = np.zeros((1, 384), dtype=np.float32)
+    ids = tmp_store.add(["a\n\nb"], vecs, ns="default")
+    tmp_store.split_memory(ids[0], separator="\n\n", delete_original=True)
+    assert tmp_store.get(ids[0]) is None
+
+
+def test_split_memory_not_found(tmp_store):
+    result = tmp_store.split_memory(999999, separator="\n\n")
+    assert result is None
+
+
+def test_split_memory_too_few_parts(tmp_store):
+    import numpy as np
+    vecs = np.zeros((1, 384), dtype=np.float32)
+    ids = tmp_store.add(["no separator here"], vecs, ns="default")
+    result = tmp_store.split_memory(ids[0], separator="ZZZNOMATCH")
+    assert result is None
+
+
+def test_split_memory_preserves_tier(tmp_store):
+    import numpy as np
+    vecs = np.zeros((1, 384), dtype=np.float32)
+    ids = tmp_store.add(["part a\n\npart b"], vecs, ns="default")
+    tmp_store.set_tier(ids[0], 0)
+    new_ids = tmp_store.split_memory(ids[0], separator="\n\n")
+    assert new_ids is not None
+    for nid in new_ids:
+        assert tmp_store.get(nid)["tier"] == 0
+
+
+def test_multi_tag_filter_broken_json(tmp_store):
+    """multi_tag_filter skips memories with broken JSON meta."""
+    import numpy as np
+    vecs = np.zeros((1, 384), dtype=np.float32)
+    ids = tmp_store.add(["broken"], vecs, ns="default")
+    tmp_store._db.execute("UPDATE memories SET meta=? WHERE id=?", ("{bad json", ids[0]))
+    tmp_store._db.commit()
+    # Should not raise; broken meta treated as no tags
+    hits = tmp_store.multi_tag_filter(["x"], ns="default", mode="any")
+    assert all(h["id"] != ids[0] for h in hits)
+
+
+def test_tag_stats_broken_json(tmp_store):
+    """tag_stats skips memories with broken JSON meta."""
+    import numpy as np
+    vecs = np.zeros((1, 384), dtype=np.float32)
+    ids = tmp_store.add(["x"], vecs, ns="default")
+    tmp_store._db.execute("UPDATE memories SET meta=? WHERE id=?", ("{bad", ids[0]))
+    tmp_store._db.commit()
+    stats = tmp_store.tag_stats(ns="default")
+    assert stats == []
+
+
+def test_split_memory_no_separator_no_max_chars(tmp_store):
+    """split_memory with neither separator nor max_chars returns None (single part)."""
+    import numpy as np
+    vecs = np.zeros((1, 384), dtype=np.float32)
+    ids = tmp_store.add(["just one part"], vecs, ns="default")
+    result = tmp_store.split_memory(ids[0])
+    assert result is None

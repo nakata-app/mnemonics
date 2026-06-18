@@ -681,6 +681,10 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_memories_without_summary",
         "mnemonics_pin_by_tag",
         "mnemonics_promote_by_access",
+        "mnemonics_filter_by_text_length",
+        "mnemonics_multi_tag_filter",
+        "mnemonics_tag_stats",
+        "mnemonics_split_memory",
     }
 
 
@@ -5815,5 +5819,188 @@ def test_mcp_promote_by_access_bad_tier(populated_store):
         "method": "tools/call",
         "params": {"name": "mnemonics_promote_by_access",
                    "arguments": {"ns": "default", "from_tier": 9, "to_tier": 1}},
+    })[0]
+    assert "error" in resp
+
+
+# ─── Batch 6: filter_by_text_length, multi_tag_filter, tag_stats, split_memory ───
+
+def test_rest_filter_by_text_length(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/filter-by-text-length?min_chars=1&max_chars=200&ns=default")
+    assert code == 200
+    assert "results" in data
+
+
+def test_rest_filter_by_text_length_all_ns(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/filter-by-text-length?max_chars=500")
+    assert code == 200
+
+
+def test_rest_tag_stats(populated_store):
+    store, docs, vecs = populated_store
+    store.tag(1, "t1")
+    code, data = http_call(store, "GET", "/tag-stats?ns=default")
+    assert code == 200
+    assert "stats" in data
+
+
+def test_rest_tag_stats_all_ns(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/tag-stats")
+    assert code == 200
+
+
+def test_rest_multi_tag_filter(populated_store):
+    store, docs, vecs = populated_store
+    store.tag(1, "p")
+    code, data = http_call(store, "POST", "/multi-tag-filter", {"tags": ["p"], "mode": "any"})
+    assert code == 200
+    assert data["count"] >= 1
+
+
+def test_rest_multi_tag_filter_missing_tags(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/multi-tag-filter", {})
+    assert code == 400
+
+
+def test_rest_multi_tag_filter_bad_mode(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/multi-tag-filter", {"tags": ["x"], "mode": "bad"})
+    assert code == 400
+
+
+def test_rest_split_memory(populated_store):
+    store, docs, vecs = populated_store
+    ids = store.add(["part1\n\npart2"], vecs[:1], ns="default")
+    code, data = http_call(store, "POST", "/split-memory", {"id": ids[0], "separator": "\n\n"})
+    assert code == 201
+    assert data["count"] == 2
+
+
+def test_rest_split_memory_max_chars(populated_store):
+    store, docs, vecs = populated_store
+    ids = store.add(["hello world foo bar"], vecs[:1], ns="default")
+    code, data = http_call(store, "POST", "/split-memory", {"id": ids[0], "max_chars": "8"})
+    assert code == 201
+    assert data["count"] >= 2
+
+
+def test_rest_split_memory_missing_id(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/split-memory", {})
+    assert code == 400
+
+
+def test_rest_split_memory_not_found(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/split-memory", {"id": 999999, "separator": "\n\n"})
+    assert code == 400
+
+
+def test_mcp_filter_by_text_length(populated_store):
+    """MCP mnemonics_filter_by_text_length finds memories by text length."""
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 10,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_filter_by_text_length", "arguments": {"max_chars": 200, "ns": "default"}},
+    })[0]
+    assert "Found" in resp["result"]["content"][0]["text"]
+
+
+def test_mcp_multi_tag_filter(populated_store):
+    """MCP mnemonics_multi_tag_filter works."""
+    store, docs, vecs = populated_store
+    store.tag(1, "x")
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 11,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_multi_tag_filter", "arguments": {"tags": ["x"], "mode": "any"}},
+    })[0]
+    assert "Found" in resp["result"]["content"][0]["text"]
+
+
+def test_mcp_multi_tag_filter_missing_tags(populated_store):
+    """MCP mnemonics_multi_tag_filter returns error for missing tags."""
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 12,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_multi_tag_filter", "arguments": {}},
+    })[0]
+    assert "error" in resp
+
+
+def test_mcp_tag_stats(populated_store):
+    """MCP mnemonics_tag_stats returns tag stats."""
+    store, docs, vecs = populated_store
+    store.tag(1, "urgent")
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 13,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_tag_stats", "arguments": {"ns": "default"}},
+    })[0]
+    assert "urgent" in resp["result"]["content"][0]["text"]
+
+
+def test_mcp_tag_stats_empty(populated_store):
+    """MCP mnemonics_tag_stats returns '(no tags found)' for empty ns."""
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 14,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_tag_stats", "arguments": {"ns": "empty_ns_xyz"}},
+    })[0]
+    assert "no tags" in resp["result"]["content"][0]["text"].lower()
+
+
+def test_mcp_split_memory(populated_store):
+    """MCP mnemonics_split_memory splits a memory."""
+    store, docs, vecs = populated_store
+    ids = store.add(["part1\n\npart2"], vecs[:1], ns="default")
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 15,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_split_memory",
+                   "arguments": {"id": ids[0], "separator": "\n\n"}},
+    })[0]
+    assert "Split" in resp["result"]["content"][0]["text"]
+
+
+def test_mcp_split_memory_max_chars(populated_store):
+    """MCP mnemonics_split_memory works with max_chars."""
+    store, docs, vecs = populated_store
+    ids = store.add(["hello world foo bar"], vecs[:1], ns="default")
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 18,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_split_memory",
+                   "arguments": {"id": ids[0], "max_chars": "8"}},
+    })[0]
+    assert "Split" in resp["result"]["content"][0]["text"]
+
+
+def test_mcp_split_memory_missing_id(populated_store):
+    """MCP mnemonics_split_memory returns error when id omitted."""
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 16,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_split_memory", "arguments": {}},
+    })[0]
+    assert "error" in resp
+
+
+def test_mcp_split_memory_not_found(populated_store):
+    """MCP mnemonics_split_memory returns error for missing id."""
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 17,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_split_memory",
+                   "arguments": {"id": 999999, "separator": "\n\n"}},
     })[0]
     assert "error" in resp
