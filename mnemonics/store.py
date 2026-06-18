@@ -769,6 +769,55 @@ class Store:
             self._db.commit()
         return cur.rowcount
 
+    def find_by_tag(self, tag: str, ns: str | None = "default", limit: int = 100) -> list[dict]:
+        """Return memories whose meta JSON contains *tag* in the ``tags`` list.
+
+        Uses SQLite's ``json_each`` to scan the ``meta.tags`` array.
+        When *ns* is ``None`` the search spans all namespaces.
+        """
+        limit = max(1, min(int(limit), 1000))
+        if ns is not None:
+            rows = self._db.execute(
+                "SELECT m.id, m.ns, m.text, m.summary, m.tier, m.created "
+                "FROM memories m, json_each(json_extract(m.meta, '$.tags')) je "
+                "WHERE m.ns=? AND je.value=? LIMIT ?",
+                (ns, tag, limit),
+            ).fetchall()
+        else:
+            rows = self._db.execute(
+                "SELECT m.id, m.ns, m.text, m.summary, m.tier, m.created "
+                "FROM memories m, json_each(json_extract(m.meta, '$.tags')) je "
+                "WHERE je.value=? LIMIT ?",
+                (tag, limit),
+            ).fetchall()
+        return [
+            {"id": r[0], "ns": r[1], "text": r[2], "summary": r[3],
+             "tier": r[4], "created": r[5]}
+            for r in rows
+        ]
+
+    def list_tags(self, ns: str | None = "default") -> list[dict]:
+        """Return all distinct tags used in *ns* with their occurrence counts.
+
+        Returns a list of ``{"tag": str, "count": int}`` dicts sorted by count
+        descending. When *ns* is ``None`` the query spans all namespaces.
+        """
+        if ns is not None:
+            rows = self._db.execute(
+                "SELECT je.value, COUNT(*) as cnt "
+                "FROM memories m, json_each(json_extract(m.meta, '$.tags')) je "
+                "WHERE m.ns=? "
+                "GROUP BY je.value ORDER BY cnt DESC",
+                (ns,),
+            ).fetchall()
+        else:
+            rows = self._db.execute(
+                "SELECT je.value, COUNT(*) as cnt "
+                "FROM memories m, json_each(json_extract(m.meta, '$.tags')) je "
+                "GROUP BY je.value ORDER BY cnt DESC",
+            ).fetchall()
+        return [{"tag": r[0], "count": int(r[1])} for r in rows]
+
     def tag(self, memory_id: int, tag: str) -> bool:
         """Add *tag* to the ``tags`` list inside a memory's meta JSON.
 

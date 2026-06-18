@@ -531,6 +531,24 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(200, _get_store().health_check())
         elif path == "/namespaces":
             self._json(200, {"namespaces": _get_store().list_namespaces()})
+        elif path.startswith("/find-by-tag"):
+            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_fbt
+            qs_fbt = parse_qs(urlparse(self.path).query)
+            tag_fbt = _uqp_fbt(qs_fbt.get("tag", [""])[0]).strip()
+            ns_fbt_raw = qs_fbt.get("ns", [None])[0]
+            ns_fbt = _uqp_fbt(ns_fbt_raw) if ns_fbt_raw is not None else None
+            limit_fbt = int(qs_fbt.get("limit", ["100"])[0])
+            if not tag_fbt:
+                self._json(400, {"error": "'tag' query param is required"})
+                return
+            hits_fbt = _get_store().find_by_tag(tag_fbt, ns=ns_fbt, limit=limit_fbt)
+            self._json(200, {"tag": tag_fbt, "ns": ns_fbt, "results": hits_fbt})
+        elif path.startswith("/list-tags"):
+            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_lt
+            qs_lt = parse_qs(urlparse(self.path).query)
+            ns_lt_raw = qs_lt.get("ns", [None])[0]
+            ns_lt = _uqp_lt(ns_lt_raw) if ns_lt_raw is not None else None
+            self._json(200, {"ns": ns_lt, "tags": _get_store().list_tags(ns_lt)})
         elif path.startswith("/access-stats"):
             from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_as
             qs_as = parse_qs(urlparse(self.path).query)
@@ -871,6 +889,29 @@ def _mcp_loop() -> None:
                             "max_tier": {"type": "integer", "description": "Only return memories with tier <= this value"},
                         },
                         "required": ["query", "vector"],
+                    },
+                },
+                {
+                    "name": "mnemonics_find_by_tag",
+                    "description": "Find memories that have a specific tag in their meta.tags list. Returns id, ns, text, summary, tier, and created for each match.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "tag": {"type": "string", "description": "Tag to search for"},
+                            "ns": {"type": "string", "description": "Namespace to search (omit for all namespaces)"},
+                            "limit": {"type": "integer", "default": 100, "description": "Max results"},
+                        },
+                        "required": ["tag"],
+                    },
+                },
+                {
+                    "name": "mnemonics_list_tags",
+                    "description": "List all distinct tags used in a namespace (or all namespaces) with their occurrence counts, sorted by count descending.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ns": {"type": "string", "description": "Namespace to query (omit for all namespaces)"},
+                        },
                     },
                 },
                 {
@@ -1501,6 +1542,35 @@ def _mcp_loop() -> None:
                         if r.get("summary"):
                             lines_hs.append(f"           summary: {r['summary'][:120]}")
                     ok({"content": [{"type": "text", "text": "\n".join(lines_hs)}]})
+
+            elif name == "mnemonics_find_by_tag":
+                fbt_tag = args.get("tag", "").strip()
+                fbt_ns = args.get("ns")
+                fbt_limit = int(args.get("limit", 100))
+                if not fbt_tag:
+                    err("mnemonics_find_by_tag: 'tag' is required")
+                    continue
+                fbt_hits = _get_store().find_by_tag(fbt_tag, ns=fbt_ns, limit=fbt_limit)
+                if not fbt_hits:
+                    ok({"content": [{"type": "text", "text": f"No memories found with tag {fbt_tag!r}."}]})
+                    continue
+                lines_fbt = [f"Found {len(fbt_hits)} memor{'y' if len(fbt_hits)==1 else 'ies'} with tag {fbt_tag!r}:"]
+                for h in fbt_hits[:20]:
+                    snippet = h["text"][:80].replace("\n", " ")
+                    lines_fbt.append(f"  id={h['id']} ns={h['ns']} [{h['tier']}] {snippet}")
+                ok({"content": [{"type": "text", "text": "\n".join(lines_fbt)}]})
+
+            elif name == "mnemonics_list_tags":
+                lt_ns = args.get("ns")
+                lt_tags = _get_store().list_tags(lt_ns)
+                lt_ns_label = repr(lt_ns) if lt_ns is not None else "(all)"
+                if not lt_tags:
+                    ok({"content": [{"type": "text", "text": f"No tags found in ns={lt_ns_label}."}]})
+                    continue
+                lines_lt = [f"Tags in ns={lt_ns_label}:"]
+                for t in lt_tags:
+                    lines_lt.append(f"  {t['tag']:30s} {t['count']}")
+                ok({"content": [{"type": "text", "text": "\n".join(lines_lt)}]})
 
             elif name == "mnemonics_tag":
                 tg_id_m = args.get("id")

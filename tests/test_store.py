@@ -2648,3 +2648,67 @@ def test_untag_idempotent(populated_store):
 def test_untag_nonexistent_returns_false(tmp_store):
     """untag returns False for missing ID."""
     assert tmp_store.untag(99999, "x") is False
+
+
+# ── find_by_tag / list_tags ───────────────────────────────────────────────────
+
+def test_find_by_tag_returns_tagged_memories(populated_store):
+    """find_by_tag returns memories with matching tag."""
+    store, docs, vecs = populated_store
+    ids = [r[0] for r in store._db.execute("SELECT id FROM memories LIMIT 3").fetchall()]
+    for mid in ids:
+        store.tag(mid, "research")
+    results = store.find_by_tag("research", ns="default")
+    result_ids = {r["id"] for r in results}
+    assert set(ids) <= result_ids
+
+
+def test_find_by_tag_returns_empty_for_unknown_tag(populated_store):
+    """find_by_tag returns empty list for non-existent tag."""
+    store, docs, vecs = populated_store
+    assert store.find_by_tag("no-such-tag", ns="default") == []
+
+
+def test_find_by_tag_all_ns(populated_store):
+    """find_by_tag with ns=None searches all namespaces."""
+    store, docs, vecs = populated_store
+    mid = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    store.tag(mid, "cross-ns")
+    results = store.find_by_tag("cross-ns", ns=None)
+    assert any(r["id"] == mid for r in results)
+
+
+def test_find_by_tag_respects_limit(populated_store):
+    """find_by_tag respects the limit parameter."""
+    store, docs, vecs = populated_store
+    for mid_row in store._db.execute("SELECT id FROM memories").fetchall():
+        store.tag(mid_row[0], "all-tagged")
+    results = store.find_by_tag("all-tagged", ns="default", limit=2)
+    assert len(results) <= 2
+
+
+def test_list_tags_returns_tags_with_counts(populated_store):
+    """list_tags returns all distinct tags with counts."""
+    store, docs, vecs = populated_store
+    ids = [r[0] for r in store._db.execute("SELECT id FROM memories LIMIT 3").fetchall()]
+    store.tag(ids[0], "alpha")
+    store.tag(ids[1], "alpha")
+    store.tag(ids[2], "beta")
+    tags = store.list_tags(ns="default")
+    tag_map = {t["tag"]: t["count"] for t in tags}
+    assert tag_map.get("alpha") == 2
+    assert tag_map.get("beta") == 1
+
+
+def test_list_tags_empty_returns_empty(tmp_store):
+    """list_tags on empty namespace returns empty list."""
+    assert tmp_store.list_tags(ns="default") == []
+
+
+def test_list_tags_all_ns(populated_store):
+    """list_tags with ns=None spans all namespaces."""
+    store, docs, vecs = populated_store
+    mid = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    store.tag(mid, "global-tag")
+    tags_all = store.list_tags(ns=None)
+    assert any(t["tag"] == "global-tag" for t in tags_all)

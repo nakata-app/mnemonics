@@ -80,6 +80,22 @@ def main() -> None:
     ts.add_argument("--json", dest="json_out", action="store_true", help="Output results as JSON array")
     ts.add_argument("--path", default="~/.mnemonics")
 
+    # find-by-tag
+    fbt = sub.add_parser("find-by-tag", help="Find memories with a specific tag")
+    fbt.add_argument("tag", help="Tag to search for")
+    fbt.add_argument("--ns", default="default")
+    fbt.add_argument("--all-ns", action="store_true", help="Search all namespaces")
+    fbt.add_argument("--limit", type=int, default=20)
+    fbt.add_argument("--json", dest="json_out", action="store_true")
+    fbt.add_argument("--path", default="~/.mnemonics")
+
+    # list-tags
+    ltg = sub.add_parser("list-tags", help="List all distinct tags used in a namespace")
+    ltg.add_argument("--ns", default="default")
+    ltg.add_argument("--all-ns", action="store_true")
+    ltg.add_argument("--json", dest="json_out", action="store_true")
+    ltg.add_argument("--path", default="~/.mnemonics")
+
     # tag / untag
     tgp = sub.add_parser("tag", help="Add a tag to a memory's meta.tags list")
     tgp.add_argument("id", type=int, help="Memory ID")
@@ -552,6 +568,37 @@ def main() -> None:
                 print(line)
                 if r.get("summary"):
                     print(f"           summary: {r['summary']}")
+
+    elif args.cmd == "find-by-tag":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        ns_q = None if args.all_ns else args.ns
+        hits = store.find_by_tag(args.tag, ns=ns_q, limit=args.limit)
+        if args.json_out:
+            print(json.dumps(hits, default=str, ensure_ascii=False))
+        else:
+            tier_labels = {0: "pinned", 1: "default", 2: "ambient"}
+            print(f"Found {len(hits)} result(s) for tag {args.tag!r}:")
+            for h in hits:
+                tl = tier_labels.get(h["tier"], str(h["tier"]))
+                snippet = h["text"][:80].replace("\n", " ")
+                print(f"  [{tl}] id={h['id']} ns={h['ns']}  {snippet}")
+
+    elif args.cmd == "list-tags":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        ns_q = None if args.all_ns else args.ns
+        tags = store.list_tags(ns_q)
+        if args.json_out:
+            print(json.dumps(tags, default=str, ensure_ascii=False))
+        else:
+            ns_label = repr(ns_q) if ns_q is not None else "(all)"
+            if not tags:
+                print(f"No tags found in ns={ns_label}.")
+            else:
+                print(f"Tags in ns={ns_label}:")
+                for t in tags:
+                    print(f"  {t['tag']:30s} {t['count']}")
 
     elif args.cmd == "tag":
         from mnemonics.store import Store

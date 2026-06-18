@@ -634,6 +634,8 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_access_stats",
         "mnemonics_tag",
         "mnemonics_untag",
+        "mnemonics_find_by_tag",
+        "mnemonics_list_tags",
     }
 
 
@@ -3613,3 +3615,97 @@ def test_mcp_untag_missing_args(tmp_store):
         "params": {"name": "mnemonics_untag", "arguments": {"id": 1}},
     })[0]
     assert "error" in r
+
+
+# ── find-by-tag / list-tags REST + MCP ───────────────────────────────────────
+
+def test_http_find_by_tag_ok(populated_store):
+    """GET /find-by-tag?tag=x&ns=default returns matching memories."""
+    store, docs, vecs = populated_store
+    mid = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    store.tag(mid, "http-test-tag")
+    code, data = http_call(store, "GET", "/find-by-tag?tag=http-test-tag&ns=default", {})
+    assert code == 200
+    assert any(r["id"] == mid for r in data["results"])
+
+
+def test_http_find_by_tag_missing_tag_param(populated_store):
+    """GET /find-by-tag without tag returns 400."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/find-by-tag?ns=default", {})
+    assert code == 400
+
+
+def test_http_list_tags_ok(populated_store):
+    """GET /list-tags?ns=default returns tag list."""
+    store, docs, vecs = populated_store
+    mid = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    store.tag(mid, "listable")
+    code, data = http_call(store, "GET", "/list-tags?ns=default", {})
+    assert code == 200
+    assert any(t["tag"] == "listable" for t in data["tags"])
+
+
+def test_http_list_tags_all_ns(populated_store):
+    """GET /list-tags (no ns param) returns all-namespace tags."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/list-tags", {})
+    assert code == 200
+    assert data["ns"] is None
+
+
+def test_mcp_find_by_tag_ok(populated_store):
+    """MCP mnemonics_find_by_tag returns matches."""
+    store, docs, vecs = populated_store
+    mid = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    store.tag(mid, "mcp-find-tag")
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_find_by_tag",
+                   "arguments": {"tag": "mcp-find-tag", "ns": "default"}},
+    })[0]
+    assert "result" in r
+
+
+def test_mcp_find_by_tag_no_results(populated_store):
+    """MCP mnemonics_find_by_tag with no matches returns 'no memories' message."""
+    store, docs, vecs = populated_store
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_find_by_tag",
+                   "arguments": {"tag": "no-such-tag", "ns": "default"}},
+    })[0]
+    assert "result" in r
+    assert "No memories" in r["result"]["content"][0]["text"]
+
+
+def test_mcp_find_by_tag_missing_arg(tmp_store):
+    """MCP mnemonics_find_by_tag without tag returns error."""
+    r = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_find_by_tag", "arguments": {}},
+    })[0]
+    assert "error" in r
+
+
+def test_mcp_list_tags_ok(populated_store):
+    """MCP mnemonics_list_tags returns tag list."""
+    store, docs, vecs = populated_store
+    mid = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    store.tag(mid, "mcp-list-tag")
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_list_tags", "arguments": {"ns": "default"}},
+    })[0]
+    assert "result" in r
+    assert "mcp-list-tag" in r["result"]["content"][0]["text"]
+
+
+def test_mcp_list_tags_empty(tmp_store):
+    """MCP mnemonics_list_tags on empty store returns no-tags message."""
+    r = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_list_tags", "arguments": {"ns": "default"}},
+    })[0]
+    assert "result" in r
+    assert "No tags" in r["result"]["content"][0]["text"]

@@ -2962,3 +2962,90 @@ def test_cli_untag_not_found(tmp_path, capsys):
         with pytest.raises(SystemExit) as exc:
             main()
     assert exc.value.code == 1
+
+
+# ── find-by-tag / list-tags CLI ───────────────────────────────────────────────
+
+def test_cli_find_by_tag_ok(tmp_path, capsys):
+    """find-by-tag prints results."""
+    mock_store = MagicMock()
+    mock_store.find_by_tag.return_value = [
+        {"id": 1, "ns": "default", "text": "hello world", "summary": None, "tier": 1, "created": "2026-01-01"},
+    ]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "find-by-tag", "important",
+                           "--ns", "default", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "1 result" in out and "hello world" in out
+
+
+def test_cli_find_by_tag_json(tmp_path, capsys):
+    """find-by-tag --json outputs valid JSON."""
+    mock_store = MagicMock()
+    mock_store.find_by_tag.return_value = [
+        {"id": 2, "ns": "default", "text": "test", "summary": None, "tier": 1, "created": "2026-01-01"},
+    ]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "find-by-tag", "x", "--json",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    parsed = json.loads(capsys.readouterr().out)
+    assert parsed[0]["id"] == 2
+
+
+def test_cli_find_by_tag_all_ns(tmp_path, capsys):
+    """find-by-tag --all-ns passes ns=None."""
+    mock_store = MagicMock()
+    mock_store.find_by_tag.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "find-by-tag", "x", "--all-ns",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.find_by_tag.assert_called_once_with("x", ns=None, limit=20)
+
+
+def test_cli_list_tags_ok(tmp_path, capsys):
+    """list-tags prints tag counts."""
+    mock_store = MagicMock()
+    mock_store.list_tags.return_value = [{"tag": "alpha", "count": 3}, {"tag": "beta", "count": 1}]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "list-tags", "--ns", "default",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "alpha" in out and "3" in out
+
+
+def test_cli_list_tags_empty(tmp_path, capsys):
+    """list-tags with no tags prints 'No tags found'."""
+    mock_store = MagicMock()
+    mock_store.list_tags.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "list-tags", "--path", str(tmp_path)]),
+    ):
+        main()
+    assert "No tags" in capsys.readouterr().out
+
+
+def test_cli_list_tags_json(tmp_path, capsys):
+    """list-tags --json outputs valid JSON."""
+    mock_store = MagicMock()
+    mock_store.list_tags.return_value = [{"tag": "z", "count": 2}]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "list-tags", "--json",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    parsed = json.loads(capsys.readouterr().out)
+    assert parsed[0]["tag"] == "z"
