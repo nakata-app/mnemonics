@@ -178,6 +178,8 @@ def main() -> None:
     ej = sub.add_parser("export-jsonl", help="Dump all memories as JSONL (one JSON object per line)")
     ej.add_argument("--ns", default=None, help="Namespace to export (default: all namespaces)")
     ej.add_argument("--tier", type=int, choices=[0, 1, 2], default=None, help="Filter by tier")
+    ej.add_argument("--meta-filter", action="append", default=None, metavar="KEY=VALUE",
+                    help="Filter by metadata key=value (repeat for multiple filters, AND logic)")
     ej.add_argument("--out", default=None, help="Output file path (default: stdout)")
     ej.add_argument("--path", default="~/.mnemonics", help="Store directory")
 
@@ -616,6 +618,15 @@ def main() -> None:
         from mnemonics.store import Store
         import sys as _sys
         store = Store(args.path)
+        # Parse --meta-filter KEY=VALUE pairs
+        meta_filters: dict[str, str] = {}
+        if args.meta_filter:
+            for kv in args.meta_filter:
+                if "=" not in kv:
+                    print(f"Invalid --meta-filter '{kv}': must be KEY=VALUE", file=sys.stderr)
+                    sys.exit(2)
+                k, _, v = kv.partition("=")
+                meta_filters[k.strip()] = v.strip()
         where_parts = ["1=1"]
         params: list = []
         if args.ns is not None:
@@ -624,6 +635,9 @@ def main() -> None:
         if args.tier is not None:
             where_parts.append("tier = ?")
             params.append(args.tier)
+        for mkey, mval in meta_filters.items():
+            where_parts.append(f"json_extract(meta, '$.{mkey}') = ?")
+            params.append(mval)
         where = " AND ".join(where_parts)
         rows = store._db.execute(
             f"SELECT id, ns, text, summary, meta, created, tier, last_accessed, access_count "

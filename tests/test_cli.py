@@ -1470,3 +1470,42 @@ def test_cli_set_tier_many(tmp_path, capsys):
     assert "Updated 3 of 3" in out
     assert "pinned" in out
     mock_store.update_tier_many.assert_called_once_with([1, 2, 3], 0)
+
+
+# ── export-jsonl --meta-filter ────────────────────────────────────────────────
+
+def test_cli_export_jsonl_meta_filter(tmp_path, capsys):
+    """export-jsonl --meta-filter filters rows by metadata key=value."""
+    from mnemonics.store import Store
+    store = Store(tmp_path)
+    # Ingest two rows, only one with matching meta (no embedding column in schema)
+    store._db.execute(
+        "INSERT INTO memories (ns, text, meta, tier) VALUES (?,?,?,?)",
+        ("default", "match", '{"tag":"x"}', 1),
+    )
+    store._db.execute(
+        "INSERT INTO memories (ns, text, meta, tier) VALUES (?,?,?,?)",
+        ("default", "no match", '{"tag":"y"}', 1),
+    )
+    store._db.commit()
+    with patch("sys.argv", ["mnemonics", "export-jsonl",
+                             "--meta-filter", "tag=x",
+                             "--path", str(tmp_path)]):
+        main()
+    out = capsys.readouterr().out
+    lines = [l for l in out.strip().splitlines() if l]
+    assert len(lines) == 1
+    assert '"match"' in lines[0]
+
+
+def test_cli_export_jsonl_meta_filter_bad(tmp_path, capsys):
+    """export-jsonl --meta-filter with no '=' exits 2."""
+    with (
+        patch("mnemonics.store.Store"),
+        patch("sys.argv", ["mnemonics", "export-jsonl",
+                            "--meta-filter", "badfilter",
+                            "--path", str(tmp_path)]),
+    ):
+        with pytest.raises(SystemExit) as exc:
+            main()
+    assert exc.value.code == 2
