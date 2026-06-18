@@ -360,9 +360,31 @@ def test_mcp_tools_list(tmp_store):
     names = {t["name"] for t in resp[0]["result"]["tools"]}
     assert names == {
         "mnemonics_ingest", "mnemonics_retrieve", "mnemonics_forget",
-        "mnemonics_forget_ns", "mnemonics_pin", "mnemonics_tier",
-        "mnemonics_gc", "mnemonics_stats", "mnemonics_health", "mnemonics_repair",
+        "mnemonics_forget_ns", "mnemonics_rebuild_index", "mnemonics_pin",
+        "mnemonics_tier", "mnemonics_gc", "mnemonics_stats",
+        "mnemonics_health", "mnemonics_repair",
     }
+
+
+def test_mcp_rebuild_index(populated_store):
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 70,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_rebuild_index", "arguments": {"ns": "default"}},
+    })
+    text = resp[0]["result"]["content"][0]["text"]
+    assert "default" in text
+    assert "→" in text
+
+
+def test_mcp_rebuild_index_missing_ns(tmp_store):
+    resp = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 71,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_rebuild_index", "arguments": {}},
+    })
+    assert "error" in resp[0]
 
 
 def test_mcp_forget_ns_dry_run(populated_store):

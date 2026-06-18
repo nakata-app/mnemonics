@@ -16,8 +16,9 @@ Endpoints:
 MCP tools (JSON-RPC over stdio):
   mnemonics_ingest   — store memories
   mnemonics_retrieve — semantic search
-  mnemonics_forget    — delete a memory by id
-  mnemonics_forget_ns — bulk delete all memories in a namespace (dry-run by default)
+  mnemonics_forget       — delete a memory by id
+  mnemonics_forget_ns    — bulk delete all memories in a namespace (dry-run by default)
+  mnemonics_rebuild_index — rebuild hnswlib index for a namespace from SQL source of truth
   mnemonics_pin      — pin a memory (tier=0, never decays)
   mnemonics_tier     — set memory tier (0/1/2)
   mnemonics_gc       — garbage-collect old ambient/default memories
@@ -327,6 +328,17 @@ def _mcp_loop() -> None:
                     },
                 },
                 {
+                    "name": "mnemonics_rebuild_index",
+                    "description": "Rebuild the hnswlib vector index for a specific namespace from the SQL source of truth. Use when doctor reports 'orphan vectors' (idx > sql) for a namespace. Reads stored vectors by ID — no re-encoding needed. Returns old and new vector counts.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ns": {"type": "string", "description": "Namespace whose index to rebuild (required)"},
+                        },
+                        "required": ["ns"],
+                    },
+                },
+                {
                     "name": "mnemonics_health",
                     "description": "Store health check: DB integrity, WAL size, per-namespace SQL vs index count (orphan/missing vectors), and orphan index files. Returns a JSON report.",
                     "inputSchema": {"type": "object", "properties": {}},
@@ -465,6 +477,18 @@ def _mcp_loop() -> None:
                     n = store.gc(ns=ns, age_days=age_days, tier=tier)
                     text = f"Deleted {n} row(s) (tier={tier})."
                 ok({"content": [{"type": "text", "text": text}]})
+
+            elif name == "mnemonics_rebuild_index":
+                ns_val = args.get("ns", "").strip()
+                if not ns_val:
+                    err("mnemonics_rebuild_index: 'ns' is required")
+                    continue
+                try:
+                    old_n, new_n = _get_store().rebuild_ns_index(ns_val)
+                    removed = old_n - new_n
+                    ok({"content": [{"type": "text", "text": f"ns={ns_val}: {old_n} → {new_n} vectors ({removed} orphan(s) removed)"}]})
+                except RuntimeError as e:
+                    err(str(e))
 
             elif name == "mnemonics_health":
                 report = _get_store().health_check()
