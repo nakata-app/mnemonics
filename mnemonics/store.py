@@ -461,6 +461,29 @@ class Store:
             self._db.commit()
         return cur.rowcount > 0
 
+    def update_meta(self, memory_id: int, meta: dict) -> bool:
+        with self._lock:
+            cur = self._db.execute(
+                "UPDATE memories SET meta=? WHERE id=?",
+                (json.dumps(meta, ensure_ascii=False), memory_id),
+            )
+            self._db.commit()
+        return cur.rowcount > 0
+
+    def update_tier_many(self, memory_ids: list[int], tier: int) -> int:
+        if tier not in (0, 1, 2):
+            raise ValueError("tier must be 0 (pinned), 1 (default), or 2 (ambient)")
+        if not memory_ids:
+            return 0
+        placeholders = ",".join("?" * len(memory_ids))
+        with self._lock:
+            cur = self._db.execute(
+                f"UPDATE memories SET tier=? WHERE id IN ({placeholders})",
+                (tier, *memory_ids),
+            )
+            self._db.commit()
+        return cur.rowcount
+
     def list_memories(
         self, ns: str = "default", limit: int = 20, offset: int = 0,
         tier: int | None = None,

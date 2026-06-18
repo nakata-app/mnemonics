@@ -1180,3 +1180,51 @@ def test_delete_many_all_missing_ids_returns_zero(tmp_path):
     assert s.count() == 1
 
 
+
+
+def test_update_meta_changes_metadata(tmp_path):
+    """update_meta replaces the meta dict for an existing memory."""
+    s = Store(tmp_path)
+    ids = s.add(["hello"], make_vecs(1), meta={"key": "old"})
+    ok = s.update_meta(ids[0], {"key": "new", "extra": 42})
+    assert ok is True
+    row = s.get(ids[0])
+    assert row is None or True  # get doesn't return meta, check via search
+    # Verify via direct DB
+    row = s._db.execute("SELECT meta FROM memories WHERE id=?", (ids[0],)).fetchone()
+    import json
+    assert json.loads(row[0]) == {"key": "new", "extra": 42}
+
+
+def test_update_meta_missing_id_returns_false(tmp_path):
+    """update_meta on non-existent ID returns False."""
+    s = Store(tmp_path)
+    assert s.update_meta(99999, {"x": 1}) is False
+
+
+def test_update_tier_many_bulk_set(tmp_path):
+    """update_tier_many sets tier for multiple IDs in one call."""
+    s = Store(tmp_path)
+    ids = s.add(["a", "b", "c"], make_vecs(3))
+    updated = s.update_tier_many([ids[0], ids[2]], tier=2)
+    assert updated == 2
+    for mid in [ids[0], ids[2]]:
+        row = s._db.execute("SELECT tier FROM memories WHERE id=?", (mid,)).fetchone()
+        assert row[0] == 2
+    row = s._db.execute("SELECT tier FROM memories WHERE id=?", (ids[1],)).fetchone()
+    assert row[0] == 1  # unchanged
+
+
+def test_update_tier_many_invalid_tier_raises(tmp_path):
+    """update_tier_many with invalid tier raises ValueError."""
+    import pytest
+    s = Store(tmp_path)
+    ids = s.add(["x"], make_vecs(1))
+    with pytest.raises(ValueError, match="tier must be"):
+        s.update_tier_many(ids, tier=99)
+
+
+def test_update_tier_many_empty_list(tmp_path):
+    """update_tier_many([]) returns 0 without DB write."""
+    s = Store(tmp_path)
+    assert s.update_tier_many([], tier=0) == 0
