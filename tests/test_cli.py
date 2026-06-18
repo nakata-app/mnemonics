@@ -741,3 +741,39 @@ def test_cli_get_with_summary(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "memory content" in out
     assert "memory gist" in out
+
+
+# ── forget no candidates ──────────────────────────────────────────────────────
+
+def test_forget_no_candidates(tmp_path, capsys):
+    mock_store = MagicMock()
+    mock_store.forget_candidates.return_value = []
+    mock_store._db = MagicMock()
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "forget", "--ns", "myns", "--path", str(tmp_path)]),
+    ):
+        try:
+            main()
+        except SystemExit:
+            pass
+    out = capsys.readouterr().out
+    assert "Nothing to forget" in out
+    assert "ns=myns" in out
+
+
+def test_forget_no_candidates_with_before(tmp_path, capsys):
+    mock_store = MagicMock()
+    mock_store.forget_candidates.return_value = []
+    mock_store._db = MagicMock()
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "forget", "--ns", "myns",
+                           "--before", "2025-01-01", "--path", str(tmp_path)]),
+    ):
+        try:
+            main()
+        except SystemExit:
+            pass
+    out = capsys.readouterr().out
+    assert "before=2025-01-01" in out
