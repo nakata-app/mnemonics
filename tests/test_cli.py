@@ -1551,3 +1551,65 @@ def test_cli_ingest_meta_non_object(tmp_path, capsys):
         with pytest.raises(SystemExit) as exc:
             main()
     assert exc.value.code == 2
+
+
+# ── get --json ────────────────────────────────────────────────────────────────
+
+def test_cli_get_json_output(tmp_path, capsys):
+    """get --json prints a JSON object."""
+    import json as _json
+    fake_row = {"id": 7, "ns": "default", "text": "hello", "tier": 1,
+                "summary": None, "meta": {}, "created": "2026-01-01 00:00:00",
+                "last_accessed": None, "access_count": 0}
+    mock_store = MagicMock()
+    mock_store.get.return_value = fake_row
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "get", "7", "--json", "--path", str(tmp_path)]),
+    ):
+        try:
+            main()
+        except SystemExit:
+            pass
+    out = capsys.readouterr().out
+    data = _json.loads(out.strip())
+    assert data["id"] == 7
+    assert data["text"] == "hello"
+
+
+# ── list --json ───────────────────────────────────────────────────────────────
+
+def test_cli_list_json_output(tmp_path, capsys):
+    """list --json outputs one JSON object per line."""
+    import json as _json
+    fake_rows = [
+        {"id": 1, "ns": "default", "text": "a", "tier": 1, "summary": None,
+         "meta": {}, "created": "2026-01-01 00:00:00", "last_accessed": None, "access_count": 0},
+        {"id": 2, "ns": "default", "text": "b", "tier": 2, "summary": None,
+         "meta": {}, "created": "2026-01-02 00:00:00", "last_accessed": None, "access_count": 0},
+    ]
+    mock_store = MagicMock()
+    mock_store.list_memories.return_value = fake_rows
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "list", "--json", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    lines = [l for l in out.strip().splitlines() if l]
+    assert len(lines) == 2
+    assert _json.loads(lines[0])["id"] == 1
+    assert _json.loads(lines[1])["id"] == 2
+
+
+def test_cli_list_json_empty(tmp_path, capsys):
+    """list --json with no rows outputs '[]'."""
+    mock_store = MagicMock()
+    mock_store.list_memories.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "list", "--json", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out.strip()
+    assert out == "[]"

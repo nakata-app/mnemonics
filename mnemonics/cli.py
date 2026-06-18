@@ -116,6 +116,7 @@ def main() -> None:
     # get
     gt = sub.add_parser("get", help="Fetch a single memory by ID")
     gt.add_argument("memory_id", type=int)
+    gt.add_argument("--json", dest="json_out", action="store_true", help="Output as JSON")
     gt.add_argument("--path", default="~/.mnemonics")
 
     # get-many
@@ -153,6 +154,7 @@ def main() -> None:
     ls.add_argument("--limit", type=int, default=20, help="Max rows to show (default: 20)")
     ls.add_argument("--offset", type=int, default=0, help="Pagination offset (default: 0)")
     ls.add_argument("--tier", type=int, choices=[0, 1, 2], default=None, help="Filter to tier: 0=pinned, 1=default, 2=ambient")
+    ls.add_argument("--json", dest="json_out", action="store_true", help="Output as JSONL (one object per line)")
     ls.add_argument("--path", default="~/.mnemonics")
 
     # sync export / import (peer transport)
@@ -362,11 +364,14 @@ def main() -> None:
         if row is None:
             print(f"id={args.memory_id} not found")
             sys.exit(1)
-        tier_label = {0: "pinned", 1: "default", 2: "ambient"}.get(row["tier"], "?")
-        print(f"id={row['id']}  ns={row['ns']}  tier={tier_label}  created={row['created']}")
-        if row["summary"]:
-            print(f"summary: {row['summary']}")
-        print(f"text: {row['text']}")
+        if args.json_out:
+            print(json.dumps(row, default=str, ensure_ascii=False))
+        else:
+            tier_label = {0: "pinned", 1: "default", 2: "ambient"}.get(row["tier"], "?")
+            print(f"id={row['id']}  ns={row['ns']}  tier={tier_label}  created={row['created']}")
+            if row["summary"]:
+                print(f"summary: {row['summary']}")
+            print(f"text: {row['text']}")
 
     elif args.cmd == "get-many":
         from mnemonics.store import Store
@@ -435,15 +440,22 @@ def main() -> None:
         store = Store(args.path)
         rows = store.list_memories(ns=args.ns, limit=args.limit, offset=args.offset, tier=args.tier)
         if not rows:
-            print(f"No memories in ns={args.ns!r} (offset={args.offset}).")
+            if args.json_out:
+                print("[]")
+            else:
+                print(f"No memories in ns={args.ns!r} (offset={args.offset}).")
         else:
-            tier_label = {0: "pin", 1: "def", 2: "amb"}
-            print(f"ns={args.ns!r}  offset={args.offset}  showing {len(rows)} row(s)")
-            for r in rows:
-                snippet = (r["text"] or "")[:120].replace("\n", " ")
-                tl = tier_label.get(r["tier"], "?")
-                summary = f"  [{r['summary'][:60]}]" if r["summary"] else ""
-                print(f"  [{r['id']}] {tl} {r['created']}  {snippet}{summary}")
+            if args.json_out:
+                for r in rows:
+                    print(json.dumps(r, default=str, ensure_ascii=False))
+            else:
+                tier_label = {0: "pin", 1: "def", 2: "amb"}
+                print(f"ns={args.ns!r}  offset={args.offset}  showing {len(rows)} row(s)")
+                for r in rows:
+                    snippet = (r["text"] or "")[:120].replace("\n", " ")
+                    tl = tier_label.get(r["tier"], "?")
+                    summary = f"  [{r['summary'][:60]}]" if r["summary"] else ""
+                    print(f"  [{r['id']}] {tl} {r['created']}  {snippet}{summary}")
 
     elif args.cmd == "stats":
         from mnemonics.store import Store
