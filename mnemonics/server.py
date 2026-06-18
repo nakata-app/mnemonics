@@ -737,6 +737,27 @@ def _mcp_loop() -> None:
                     },
                 },
                 {
+                    "name": "mnemonics_count",
+                    "description": "Count memories in a namespace. Omit ns (or pass null) to count across all namespaces.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ns": {"type": "string", "description": "Namespace to count (default: 'default', null for all)"},
+                        },
+                    },
+                },
+                {
+                    "name": "mnemonics_get_many",
+                    "description": "Fetch multiple memories by ID in a single call. Returns a list of memory objects. Missing IDs are silently omitted.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ids": {"type": "array", "items": {"type": "integer"}, "description": "Memory IDs to fetch"},
+                        },
+                        "required": ["ids"],
+                    },
+                },
+                {
                     "name": "mnemonics_update_meta",
                     "description": "Replace the metadata dict of a single memory. Returns changed=true if the ID was found.",
                     "inputSchema": {
@@ -1113,6 +1134,25 @@ def _mcp_loop() -> None:
                     }, ensure_ascii=False))
                 result_text = "\n".join(lines) if lines else "(no memories matched)"
                 ok({"content": [{"type": "text", "text": result_text}]})
+
+            elif name == "mnemonics_count":
+                ns_arg = args.get("ns", "default")
+                ns_val = None if ns_arg is None or ns_arg == "null" else ns_arg
+                count = _get_store().count(ns=ns_val)
+                label = "all namespaces" if ns_val is None else f"ns={ns_val!r}"
+                ok({"content": [{"type": "text", "text": f"{count} memories ({label})"}]})
+
+            elif name == "mnemonics_get_many":
+                ids_arg = args.get("ids", [])
+                if not isinstance(ids_arg, list):
+                    err("mnemonics_get_many: 'ids' must be a list")
+                    continue
+                rows = _get_store().get_many([int(i) for i in ids_arg])
+                if rows:
+                    lines_gm = [json.dumps(r, default=str, ensure_ascii=False) for r in rows]
+                    ok({"content": [{"type": "text", "text": "\n".join(lines_gm)}]})
+                else:
+                    ok({"content": [{"type": "text", "text": "(no memories found)"}]})
 
             elif name == "mnemonics_namespaces":
                 ns_list = _get_store().list_namespaces()

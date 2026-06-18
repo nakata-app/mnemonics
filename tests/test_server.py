@@ -618,7 +618,7 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_pin", "mnemonics_tier", "mnemonics_gc", "mnemonics_stats",
         "mnemonics_health", "mnemonics_repair",
         "mnemonics_search_by_meta", "mnemonics_delete_many", "mnemonics_update_meta",
-        "mnemonics_export", "mnemonics_import", "mnemonics_text_search", "mnemonics_rename_ns", "mnemonics_namespaces",
+        "mnemonics_export", "mnemonics_import", "mnemonics_text_search", "mnemonics_rename_ns", "mnemonics_namespaces", "mnemonics_count", "mnemonics_get_many",
     }
 
 
@@ -2324,3 +2324,79 @@ def test_mcp_namespaces_in_tools_list(tmp_store):
     })[0]
     names = {t["name"] for t in resp["result"]["tools"]}
     assert "mnemonics_namespaces" in names
+
+
+# ── MCP mnemonics_count ───────────────────────────────────────────────────────
+
+def test_mcp_count_default_ns(populated_store):
+    """mnemonics_count returns count for default namespace."""
+    store, docs, vecs = populated_store
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_count", "arguments": {}},
+    })[0]
+    text = r["result"]["content"][0]["text"]
+    assert str(len(docs)) in text
+
+
+def test_mcp_count_all_ns(populated_store):
+    """mnemonics_count with ns=null counts all namespaces."""
+    import numpy as np
+    store, docs, vecs = populated_store
+    v = np.random.rand(384).astype("float32"); v /= np.linalg.norm(v)
+    store.add(["extra row"], v[None], ns="other")
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_count", "arguments": {"ns": None}},
+    })[0]
+    text = r["result"]["content"][0]["text"]
+    assert str(len(docs) + 1) in text
+
+
+def test_mcp_count_in_tools_list(tmp_store):
+    resp = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {},
+    })[0]
+    assert "mnemonics_count" in {t["name"] for t in resp["result"]["tools"]}
+
+
+# ── MCP mnemonics_get_many ────────────────────────────────────────────────────
+
+def test_mcp_get_many_basic(populated_store):
+    """mnemonics_get_many returns the requested memories."""
+    import json as _json
+    store, docs, vecs = populated_store
+    ids = [r[0] for r in store._db.execute("SELECT id FROM memories LIMIT 2").fetchall()]
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_get_many", "arguments": {"ids": ids}},
+    })[0]
+    text = r["result"]["content"][0]["text"]
+    objs = [_json.loads(l) for l in text.splitlines() if l.strip()]
+    assert len(objs) == 2
+    assert {o["id"] for o in objs} == set(ids)
+
+
+def test_mcp_get_many_empty(tmp_store):
+    """mnemonics_get_many with non-existing IDs returns placeholder."""
+    r = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_get_many", "arguments": {"ids": [9999]}},
+    })[0]
+    assert "no memories" in r["result"]["content"][0]["text"]
+
+
+def test_mcp_get_many_bad_ids(tmp_store):
+    """mnemonics_get_many with non-list ids returns error."""
+    r = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_get_many", "arguments": {"ids": "not-a-list"}},
+    })[0]
+    assert "error" in r
+
+
+def test_mcp_get_many_in_tools_list(tmp_store):
+    resp = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {},
+    })[0]
+    assert "mnemonics_get_many" in {t["name"] for t in resp["result"]["tools"]}
