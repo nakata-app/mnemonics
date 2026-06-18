@@ -137,7 +137,7 @@ def test_namespace_count_isolation(n1, n2, seed):
         s.add([f"b{i}" for i in range(n2)], v2, ns="beta")
         assert s.count("alpha") == n1
         assert s.count("beta") == n2
-        assert s.count("alpha") + s.count("beta") == n1 + n2
+        assert s.count(ns=None) == n1 + n2
 
 
 @given(

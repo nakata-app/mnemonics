@@ -1015,3 +1015,13 @@ def test_health_check_load_index_exception(tmp_path):
     ns = next(r for r in report["namespaces"] if r["ns"] == "default")
     assert ns["soft_deleted"] == 0
     assert ns["missing_vectors"] == 0
+
+
+def test_count_all_namespaces_with_none(tmp_store):
+    """count(ns=None) sums across all namespaces."""
+    vecs = make_vecs(3)
+    tmp_store.add(["a"], vecs[:1], ns="ns1")
+    tmp_store.add(["b", "c"], vecs[1:], ns="ns2")
+    assert tmp_store.count(ns=None) == 3
+    assert tmp_store.count("ns1") == 1
+    assert tmp_store.count("ns2") == 2

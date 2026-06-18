@@ -415,8 +415,11 @@ class Store:
         rows = self._db.execute("SELECT DISTINCT ns FROM memories ORDER BY ns").fetchall()
         return [r[0] for r in rows]
 
-    def count(self, ns: str = "default") -> int:
-        row = self._db.execute("SELECT COUNT(*) FROM memories WHERE ns=?", (ns,)).fetchone()
+    def count(self, ns: str | None = "default") -> int:
+        if ns is None:
+            row = self._db.execute("SELECT COUNT(*) FROM memories").fetchone()
+        else:
+            row = self._db.execute("SELECT COUNT(*) FROM memories WHERE ns=?", (ns,)).fetchone()
         return row[0] if row else 0
 
     def update_summary(self, memory_id: int, summary: str | None) -> bool:
