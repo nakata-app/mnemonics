@@ -5199,3 +5199,184 @@ def test_cli_import_ns_stdin(tmp_path, capsys):
         main()
     out = capsys.readouterr().out
     assert "1" in out
+
+
+# ─── Batch 9: deduplicate-by-text, merge-memories, search-by-date-range, get-access-stats ───
+
+def test_cli_deduplicate_by_text(tmp_path, capsys):
+    mock_store = MagicMock()
+    mock_store.deduplicate_by_text.return_value = 3
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "deduplicate-by-text", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "3" in out
+
+
+def test_cli_deduplicate_by_text_all_ns(tmp_path, capsys):
+    mock_store = MagicMock()
+    mock_store.deduplicate_by_text.return_value = 0
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "deduplicate-by-text", "--all-ns", "--path", str(tmp_path)]),
+    ):
+        main()
+    kw = mock_store.deduplicate_by_text.call_args[1]
+    assert kw["ns"] is None
+
+
+def test_cli_deduplicate_by_text_keep_newest(tmp_path, capsys):
+    mock_store = MagicMock()
+    mock_store.deduplicate_by_text.return_value = 1
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "deduplicate-by-text", "--keep", "newest",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    kw = mock_store.deduplicate_by_text.call_args[1]
+    assert kw["keep"] == "newest"
+
+
+def test_cli_merge_memories(tmp_path, capsys):
+    mock_store = MagicMock()
+    mock_store.merge_memories.return_value = 42
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "merge-memories", "1", "2", "3",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "42" in out
+
+
+def test_cli_merge_memories_not_found(tmp_path, capsys):
+    mock_store = MagicMock()
+    mock_store.merge_memories.return_value = None
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "merge-memories", "999",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "none" in out.lower() or "not found" in out.lower()
+
+
+def test_cli_merge_memories_keep_originals(tmp_path, capsys):
+    mock_store = MagicMock()
+    mock_store.merge_memories.return_value = 5
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "merge-memories", "1", "2",
+                           "--keep-originals", "--path", str(tmp_path)]),
+    ):
+        main()
+    kw = mock_store.merge_memories.call_args[1]
+    assert kw["delete_originals"] is False
+
+
+def test_cli_search_by_date_range_text(tmp_path, capsys):
+    mock_store = MagicMock()
+    mock_store.search_by_date_range.return_value = [
+        {"id": 1, "ns": "default", "text": "hello", "summary": None,
+         "tier": 1, "created": "2024-03-01T10:00:00"}
+    ]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "search-by-date-range", "2024-01-01", "2024-12-31",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "1" in out
+
+
+def test_cli_search_by_date_range_json(tmp_path, capsys):
+    mock_store = MagicMock()
+    mock_store.search_by_date_range.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "search-by-date-range", "2024-01-01", "2024-12-31",
+                           "--json", "--path", str(tmp_path)]),
+    ):
+        main()
+    import json
+    assert json.loads(capsys.readouterr().out) == []
+
+
+def test_cli_search_by_date_range_all_ns(tmp_path, capsys):
+    mock_store = MagicMock()
+    mock_store.search_by_date_range.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "search-by-date-range", "2024-01-01", "2024-12-31",
+                           "--all-ns", "--path", str(tmp_path)]),
+    ):
+        main()
+    kw = mock_store.search_by_date_range.call_args[1]
+    assert kw["ns"] is None
+
+
+def test_cli_get_access_stats_text(tmp_path, capsys):
+    mock_store = MagicMock()
+    mock_store.get_access_stats.return_value = {
+        "total_accesses": 5, "unique_accessed": 3,
+        "never_accessed": 7, "top": []
+    }
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "get-access-stats", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "5" in out
+
+
+def test_cli_get_access_stats_json(tmp_path, capsys):
+    mock_store = MagicMock()
+    mock_store.get_access_stats.return_value = {
+        "total_accesses": 0, "unique_accessed": 0, "never_accessed": 0, "top": []
+    }
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "get-access-stats", "--json",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    import json
+    data = json.loads(capsys.readouterr().out)
+    assert "total_accesses" in data
+
+
+def test_cli_get_access_stats_all_ns(tmp_path, capsys):
+    mock_store = MagicMock()
+    mock_store.get_access_stats.return_value = {
+        "total_accesses": 0, "unique_accessed": 0, "never_accessed": 0, "top": []
+    }
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "get-access-stats", "--all-ns",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    kw = mock_store.get_access_stats.call_args[1]
+    assert kw["ns"] is None
+
+
+def test_cli_get_access_stats_with_top(tmp_path, capsys):
+    mock_store = MagicMock()
+    mock_store.get_access_stats.return_value = {
+        "total_accesses": 10, "unique_accessed": 2, "never_accessed": 1,
+        "top": [{"id": 7, "text": "most accessed", "access_count": 10}]
+    }
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "get-access-stats", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "most accessed" in out

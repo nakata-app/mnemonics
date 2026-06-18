@@ -4661,3 +4661,144 @@ def test_text_search_ranked_hit_count_order(tmp_store):
     tmp_store.add(["alpha beta gamma delta", "alpha"], vecs, ns="rank_ns")
     hits = tmp_store.text_search_ranked("alpha beta gamma", ns="rank_ns")
     assert hits[0]["hits"] >= hits[-1]["hits"]
+
+
+# ─── Batch 9: deduplicate_by_text, merge_memories, search_by_date_range, get_access_stats ───
+
+def test_deduplicate_by_text_removes_dupes(tmp_store):
+    import numpy as np
+    vecs = np.zeros((3, 384), dtype=np.float32)
+    tmp_store.add(["same text", "same text", "different"], vecs, ns="default")
+    n = tmp_store.deduplicate_by_text(ns="default")
+    assert n == 1
+    remaining = tmp_store.list_memories(ns="default")
+    texts = [m["text"] for m in remaining]
+    assert texts.count("same text") == 1
+
+
+def test_deduplicate_by_text_keep_newest(tmp_store):
+    import numpy as np
+    vecs = np.zeros((2, 384), dtype=np.float32)
+    ids = tmp_store.add(["dup", "dup"], vecs, ns="default")
+    n = tmp_store.deduplicate_by_text(ns="default", keep="newest")
+    assert n == 1
+    remaining = tmp_store.list_memories(ns="default")
+    assert len(remaining) == 1
+    assert remaining[0]["id"] == ids[1]
+
+
+def test_deduplicate_by_text_no_dupes(tmp_store):
+    import numpy as np
+    vecs = np.zeros((2, 384), dtype=np.float32)
+    tmp_store.add(["a", "b"], vecs, ns="default")
+    n = tmp_store.deduplicate_by_text(ns="default")
+    assert n == 0
+
+
+def test_deduplicate_by_text_all_ns(tmp_store):
+    import numpy as np
+    tmp_store.add(["dup"], np.zeros((1, 384), dtype=np.float32), ns="ns1")
+    tmp_store.add(["dup"], np.zeros((1, 384), dtype=np.float32), ns="ns2")
+    n = tmp_store.deduplicate_by_text(ns=None)
+    assert n == 1
+
+
+def test_merge_memories_basic(tmp_store):
+    import numpy as np
+    vecs = np.zeros((2, 384), dtype=np.float32)
+    ids = tmp_store.add(["part one", "part two"], vecs, ns="default")
+    new_id = tmp_store.merge_memories(ids)
+    assert new_id is not None
+    m = tmp_store.get(new_id)
+    assert "part one" in m["text"] and "part two" in m["text"]
+    assert tmp_store.get(ids[0]) is None
+
+
+def test_merge_memories_keep_originals(tmp_store):
+    import numpy as np
+    vecs = np.zeros((2, 384), dtype=np.float32)
+    ids = tmp_store.add(["a", "b"], vecs, ns="default")
+    new_id = tmp_store.merge_memories(ids, delete_originals=False)
+    assert new_id is not None
+    assert tmp_store.get(ids[0]) is not None
+
+
+def test_merge_memories_custom_separator(tmp_store):
+    import numpy as np
+    vecs = np.zeros((2, 384), dtype=np.float32)
+    ids = tmp_store.add(["x", "y"], vecs, ns="default")
+    new_id = tmp_store.merge_memories(ids, separator=" | ", delete_originals=False)
+    m = tmp_store.get(new_id)
+    assert " | " in m["text"]
+
+
+def test_merge_memories_none_found(tmp_store):
+    result = tmp_store.merge_memories([999999, 888888])
+    assert result is None
+
+
+def test_merge_memories_custom_ns(tmp_store):
+    import numpy as np
+    vecs = np.zeros((2, 384), dtype=np.float32)
+    ids = tmp_store.add(["p", "q"], vecs, ns="src")
+    new_id = tmp_store.merge_memories(ids, ns="dst", delete_originals=False)
+    m = tmp_store.get(new_id)
+    assert m["ns"] == "dst"
+
+
+def test_search_by_date_range_basic(tmp_store):
+    import numpy as np
+    vecs = np.zeros((2, 384), dtype=np.float32)
+    tmp_store.add(["old memory", "new memory"], vecs, ns="default")
+    hits = tmp_store.search_by_date_range("2000-01-01", "2099-12-31", ns="default")
+    assert len(hits) == 2
+
+
+def test_search_by_date_range_future_only(tmp_store):
+    import numpy as np
+    vecs = np.zeros((1, 384), dtype=np.float32)
+    tmp_store.add(["now"], vecs, ns="default")
+    hits = tmp_store.search_by_date_range("2099-01-01", "2099-12-31", ns="default")
+    assert len(hits) == 0
+
+
+def test_search_by_date_range_all_ns(tmp_store):
+    import numpy as np
+    tmp_store.add(["a"], np.zeros((1, 384), dtype=np.float32), ns="ns1")
+    hits = tmp_store.search_by_date_range("2000-01-01", "2099-12-31", ns=None)
+    assert len(hits) >= 1
+
+
+def test_search_by_date_range_tier_filter(tmp_store):
+    import numpy as np
+    ids = tmp_store.add(["x"], np.zeros((1, 384), dtype=np.float32), ns="default")
+    tmp_store.set_tier(ids[0], 0)
+    hits = tmp_store.search_by_date_range("2000-01-01", "2099-12-31", ns="default", tier=0)
+    assert all(h["tier"] == 0 for h in hits)
+
+
+def test_get_access_stats_basic(tmp_store):
+    import numpy as np
+    vecs = np.zeros((3, 384), dtype=np.float32)
+    tmp_store.add(["a", "b", "c"], vecs, ns="default")
+    stats = tmp_store.get_access_stats(ns="default")
+    assert "total_accesses" in stats
+    assert "unique_accessed" in stats
+    assert "never_accessed" in stats
+    assert "top" in stats
+    assert stats["never_accessed"] == 3
+
+
+def test_get_access_stats_all_ns(tmp_store):
+    import numpy as np
+    tmp_store.add(["x"], np.zeros((1, 384), dtype=np.float32), ns="ns1")
+    stats = tmp_store.get_access_stats(ns=None)
+    assert stats["never_accessed"] >= 1
+
+
+def test_get_access_stats_top_n(tmp_store):
+    import numpy as np
+    vecs = np.zeros((5, 384), dtype=np.float32)
+    tmp_store.add(["a", "b", "c", "d", "e"], vecs, ns="default")
+    stats = tmp_store.get_access_stats(ns="default", top_n=2)
+    assert len(stats["top"]) <= 2

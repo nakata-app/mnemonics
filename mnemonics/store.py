@@ -1104,6 +1104,182 @@ class Store:
 
         return sorted(results, key=lambda x: x["score"], reverse=True)[:top_n]
 
+    def deduplicate_by_text(
+        self,
+        ns: str | None = "default",
+        *,
+        keep: str = "oldest",
+    ) -> int:
+        """Remove exact-text duplicates, keeping one representative per group.
+
+        *keep* controls which duplicate survives:
+        - ``"oldest"`` (default) — keeps the row with the smallest id
+        - ``"newest"`` — keeps the row with the largest id
+
+        Returns the number of rows deleted.
+        """
+        if ns is not None:
+            rows = self._db.execute(
+                "SELECT id, text FROM memories WHERE ns=? ORDER BY id ASC", (ns,)
+            ).fetchall()
+        else:
+            rows = self._db.execute(
+                "SELECT id, text FROM memories ORDER BY id ASC"
+            ).fetchall()
+        seen: dict[str, int] = {}
+        to_delete: list[int] = []
+        for mid, text in rows:
+            key = text.strip()
+            if key in seen:
+                if keep == "newest":
+                    to_delete.append(seen[key])
+                    seen[key] = mid
+                else:
+                    to_delete.append(mid)
+            else:
+                seen[key] = mid
+        # NB: delete() acquires self._lock itself, and threading.Lock is not
+        # reentrant — holding the lock here would deadlock. Each delete is
+        # individually synchronized, which is sufficient.
+        for mid in to_delete:
+            self.delete(mid)
+        return len(to_delete)
+
+    def merge_memories(
+        self,
+        ids: list[int],
+        *,
+        separator: str = "\n\n",
+        ns: str | None = None,
+        delete_originals: bool = True,
+    ) -> int | None:
+        """Merge several memories into a single new memory.
+
+        The merged text is the joined texts of each id (in the order given)
+        separated by *separator*.  The new memory is stored in *ns* (defaults
+        to the namespace of the first id).  Embedding is zero-filled.
+
+        If *delete_originals=True* (default) the source memories are deleted
+        after the merge.
+
+        Returns the new memory id, or ``None`` if no valid ids were found.
+        """
+        import numpy as np, json as _j_mm
+        parts: list[str] = []
+        combined_meta: dict = {}
+        target_ns: str | None = None
+        for mid in ids:
+            row = self._db.execute(
+                "SELECT text, summary, meta, ns FROM memories WHERE id=?", (mid,)
+            ).fetchone()
+            if row is None:
+                continue
+            parts.append(row[0])
+            if target_ns is None:
+                target_ns = row[3]
+            try:
+                m = _j_mm.loads(row[2]) if row[2] else {}
+                combined_meta.update(m)
+            except Exception:
+                pass
+        if not parts:
+            return None
+        if ns is not None:
+            target_ns = ns
+        merged_text = separator.join(parts)
+        vec = np.zeros((1, self.dim), dtype=np.float32)
+        new_ids = self.add([merged_text], vec, ns=target_ns or "default", meta=[combined_meta])
+        new_id = new_ids[0]
+        if delete_originals:
+            valid_ids = [
+                mid for mid in ids
+                if self._db.execute("SELECT 1 FROM memories WHERE id=?", (mid,)).fetchone()
+            ]
+            for mid in valid_ids:
+                self.delete(mid)
+        return new_id
+
+    def search_by_date_range(
+        self,
+        start: str,
+        end: str,
+        ns: str | None = "default",
+        limit: int = 100,
+        tier: int | None = None,
+    ) -> list[dict]:
+        """Return memories whose ``created`` timestamp falls in [start, end].
+
+        *start* and *end* are ISO-format strings (``"2024-01-01"`` or
+        ``"2024-01-01T00:00:00"``).  Comparison is lexicographic (works
+        because SQLite stores ISO-8601).
+
+        Each result dict has ``{"id", "ns", "text", "summary", "tier", "created"}``.
+        """
+        conds = ["created >= ?", "created <= ?"]
+        params: list = [start, end]
+        if ns is not None:
+            conds.append("ns=?")
+            params.append(ns)
+        if tier is not None:
+            conds.append("tier=?")
+            params.append(tier)
+        params.append(limit)
+        rows = self._db.execute(
+            f"SELECT id, ns, text, summary, tier, created FROM memories "
+            f"WHERE {' AND '.join(conds)} ORDER BY created ASC LIMIT ?",
+            params,
+        ).fetchall()
+        return [
+            {"id": r[0], "ns": r[1], "text": r[2], "summary": r[3],
+             "tier": r[4], "created": r[5]}
+            for r in rows
+        ]
+
+    def get_access_stats(
+        self,
+        ns: str | None = "default",
+        top_n: int = 10,
+    ) -> dict:
+        """Return access statistics for a namespace (or all).
+
+        Returns a dict:
+        ``{"total_accesses": int, "unique_accessed": int,
+           "never_accessed": int, "top": [{"id", "text", "access_count"}]}``.
+        """
+        cond = "WHERE ns=?" if ns is not None else ""
+        params_base: list = [ns] if ns is not None else []
+        total_row = self._db.execute(
+            f"SELECT COALESCE(SUM(access_count), 0) FROM memories {cond}",
+            params_base,
+        ).fetchone()
+        total = int(total_row[0])
+        unique_row = self._db.execute(
+            f"SELECT COUNT(*) FROM memories {cond} AND access_count > 0"
+            if ns is not None else
+            "SELECT COUNT(*) FROM memories WHERE access_count > 0",
+            params_base,
+        ).fetchone()
+        unique = int(unique_row[0])
+        never_row = self._db.execute(
+            f"SELECT COUNT(*) FROM memories {cond} AND access_count = 0"
+            if ns is not None else
+            "SELECT COUNT(*) FROM memories WHERE access_count = 0",
+            params_base,
+        ).fetchone()
+        never = int(never_row[0])
+        top_rows = self._db.execute(
+            f"SELECT id, text, access_count FROM memories {cond} "
+            f"ORDER BY access_count DESC LIMIT ?",
+            [*params_base, top_n],
+        ).fetchall()
+        return {
+            "total_accesses": total,
+            "unique_accessed": unique,
+            "never_accessed": never,
+            "top": [{"id": r[0], "text": r[1][:80], "access_count": r[2]}
+                    for r in top_rows],
+        }
+
     def import_ns(
         self,
         ns: str,

@@ -262,6 +262,32 @@ class _Handler(BaseHTTPRequestHandler):
             n_mtn = _get_store().move_to_ns([int(i) for i in mtn_ids], mtn_ns)
             self._json(200, {"moved": n_mtn, "target_ns": mtn_ns})
 
+        elif self.path == "/deduplicate-by-text":
+            dedup_ns_raw = body.get("ns")
+            dedup_ns = dedup_ns_raw if dedup_ns_raw is not None else "default"
+            dedup_keep = str(body.get("keep", "oldest"))
+            n_dedup = _get_store().deduplicate_by_text(
+                ns=None if body.get("all_ns") else dedup_ns, keep=dedup_keep
+            )
+            self._json(200, {"deleted": n_dedup})
+
+        elif self.path == "/merge-memories":
+            merge_ids_raw = body.get("ids")
+            if not isinstance(merge_ids_raw, list) or not merge_ids_raw:
+                self._json(400, {"error": "'ids' (non-empty list of ints) is required"})
+                return
+            merge_sep = str(body.get("separator", "\n\n"))
+            merge_ns = body.get("ns") or None
+            merge_del = bool(body.get("delete_originals", True))
+            new_id_m = _get_store().merge_memories(
+                [int(i) for i in merge_ids_raw],
+                separator=merge_sep, ns=merge_ns, delete_originals=merge_del,
+            )
+            if new_id_m is None:
+                self._json(404, {"error": "None of the provided ids were found"})
+                return
+            self._json(200, {"merged_id": new_id_m})
+
         elif self.path == "/import-ns":
             imp_ns = body.get("ns")
             imp_rows = body.get("rows")
@@ -838,6 +864,34 @@ class _Handler(BaseHTTPRequestHandler):
                 _uqp_cns(q_cns), ns_list_cns, limit=lim_cns
             )
             self._json(200, {"query": q_cns, "count": len(hits_cns), "results": hits_cns})
+
+        elif path.startswith("/search-by-date-range"):
+            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_sdr
+            qs_sdr = parse_qs(urlparse(self.path).query)
+            start_sdr = (qs_sdr.get("start") or [None])[0]
+            end_sdr = (qs_sdr.get("end") or [None])[0]
+            if not start_sdr or not end_sdr:
+                self._json(400, {"error": "'start' and 'end' params are required"})
+                return
+            ns_sdr_raw = (qs_sdr.get("ns") or [None])[0]
+            ns_sdr = _uqp_sdr(ns_sdr_raw) if ns_sdr_raw is not None else None
+            lim_sdr = int((qs_sdr.get("limit") or ["100"])[0])
+            tier_sdr_raw = (qs_sdr.get("tier") or [None])[0]
+            tier_sdr = int(tier_sdr_raw) if tier_sdr_raw is not None else None
+            hits_sdr = _get_store().search_by_date_range(
+                _uqp_sdr(start_sdr), _uqp_sdr(end_sdr),
+                ns=ns_sdr, limit=lim_sdr, tier=tier_sdr
+            )
+            self._json(200, {"count": len(hits_sdr), "results": hits_sdr})
+
+        elif path.startswith("/get-access-stats"):
+            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_gas
+            qs_gas = parse_qs(urlparse(self.path).query)
+            ns_gas_raw = (qs_gas.get("ns") or [None])[0]
+            ns_gas = _uqp_gas(ns_gas_raw) if ns_gas_raw is not None else None
+            top_n_gas = int((qs_gas.get("top_n") or ["10"])[0])
+            stats_gas = _get_store().get_access_stats(ns=ns_gas, top_n=top_n_gas)
+            self._json(200, stats_gas)
 
         elif path.startswith("/get-tier-distribution"):
             from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_gtd
@@ -1492,6 +1546,58 @@ def _mcp_loop() -> None:
                             "max_tier": {"type": "integer", "description": "Only return memories with tier <= this value"},
                         },
                         "required": ["query", "vector"],
+                    },
+                },
+                {
+                    "name": "mnemonics_deduplicate_by_text",
+                    "description": "Remove exact-text duplicates in a namespace. keep='oldest' (default) or 'newest'. Returns count of deleted rows.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ns": {"type": "string"},
+                            "keep": {"type": "string", "enum": ["oldest", "newest"], "default": "oldest"},
+                            "all_ns": {"type": "boolean", "default": False},
+                        },
+                    },
+                },
+                {
+                    "name": "mnemonics_merge_memories",
+                    "description": "Merge multiple memories into one. Texts are joined with separator. delete_originals=true (default) removes source memories.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ids": {"type": "array", "items": {"type": "integer"}},
+                            "separator": {"type": "string", "default": "\n\n"},
+                            "ns": {"type": "string"},
+                            "delete_originals": {"type": "boolean", "default": True},
+                        },
+                        "required": ["ids"],
+                    },
+                },
+                {
+                    "name": "mnemonics_search_by_date_range",
+                    "description": "Return memories whose created timestamp falls in [start, end]. ISO format dates (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS).",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "start": {"type": "string"},
+                            "end": {"type": "string"},
+                            "ns": {"type": "string"},
+                            "limit": {"type": "integer", "default": 100},
+                            "tier": {"type": "integer"},
+                        },
+                        "required": ["start", "end"],
+                    },
+                },
+                {
+                    "name": "mnemonics_get_access_stats",
+                    "description": "Return access statistics for a namespace: total accesses, unique accessed, never accessed, and top-N most accessed.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ns": {"type": "string"},
+                            "top_n": {"type": "integer", "default": 10},
+                        },
                     },
                 },
                 {
@@ -3832,6 +3938,72 @@ def _mcp_loop() -> None:
                     amb = tiers.get(2, 0)
                     lines.append(f"  {ns_name}: {total} chunks  (pin={pin} def={def_} amb={amb})")
                 ok({"content": [{"type": "text", "text": "\n".join(lines) or "(empty)"}]})
+
+            elif name == "mnemonics_deduplicate_by_text":
+                dbt_ns_m = args.get("ns")
+                dbt_keep_m = str(args.get("keep", "oldest"))
+                dbt_all_ns = bool(args.get("all_ns", False))
+                n_dbt = _get_store().deduplicate_by_text(
+                    ns=None if dbt_all_ns else (dbt_ns_m or "default"), keep=dbt_keep_m
+                )
+                ok({"content": [{"type": "text", "text":
+                    f"Deduplicated: {n_dbt} duplicate(s) removed."}]})
+
+            elif name == "mnemonics_merge_memories":
+                mm_ids_m = args.get("ids")
+                if not isinstance(mm_ids_m, list) or not mm_ids_m:
+                    err("mnemonics_merge_memories: 'ids' (non-empty list) is required")
+                    continue
+                mm_sep_m = str(args.get("separator", "\n\n"))
+                mm_ns_m = args.get("ns") or None
+                mm_del_m = bool(args.get("delete_originals", True))
+                new_id_mm = _get_store().merge_memories(
+                    [int(i) for i in mm_ids_m],
+                    separator=mm_sep_m, ns=mm_ns_m, delete_originals=mm_del_m,
+                )
+                if new_id_mm is None:
+                    err("mnemonics_merge_memories: none of the provided ids were found")
+                    continue
+                ok({"content": [{"type": "text", "text":
+                    f"Merged {len(mm_ids_m)} memories into new id={new_id_mm}."}]})
+
+            elif name == "mnemonics_search_by_date_range":
+                sdr_start = args.get("start", "").strip()
+                sdr_end = args.get("end", "").strip()
+                if not sdr_start or not sdr_end:
+                    err("mnemonics_search_by_date_range: 'start' and 'end' are required")
+                    continue
+                sdr_ns_m = args.get("ns")
+                sdr_lim_m = int(args.get("limit", 100))
+                sdr_tier_m = args.get("tier")
+                if sdr_tier_m is not None:
+                    sdr_tier_m = int(sdr_tier_m)
+                sdr_hits = _get_store().search_by_date_range(
+                    sdr_start, sdr_end, ns=sdr_ns_m, limit=sdr_lim_m, tier=sdr_tier_m
+                )
+                if not sdr_hits:
+                    ok({"content": [{"type": "text", "text": f"No memories in [{sdr_start}, {sdr_end}]."}]})
+                else:
+                    lines_sdr = [f"Found {len(sdr_hits)} memories in [{sdr_start}, {sdr_end}]:"]
+                    for h in sdr_hits[:20]:
+                        lines_sdr.append(f"  [{h['id']}] {h['created'][:10]} {h['text'][:60]}")
+                    ok({"content": [{"type": "text", "text": "\n".join(lines_sdr)}]})
+
+            elif name == "mnemonics_get_access_stats":
+                gas_ns_m = args.get("ns")
+                gas_top_n = int(args.get("top_n", 10))
+                stats_gas_m = _get_store().get_access_stats(ns=gas_ns_m, top_n=gas_top_n)
+                lines_gas = [
+                    f"Access stats for ns={gas_ns_m!r}:",
+                    f"  total accesses : {stats_gas_m['total_accesses']}",
+                    f"  unique accessed: {stats_gas_m['unique_accessed']}",
+                    f"  never accessed : {stats_gas_m['never_accessed']}",
+                ]
+                if stats_gas_m["top"]:
+                    lines_gas.append(f"  top {len(stats_gas_m['top'])} by access count:")
+                    for e in stats_gas_m["top"]:
+                        lines_gas.append(f"    id={e['id']} cnt={e['access_count']} {e['text'][:50]}")
+                ok({"content": [{"type": "text", "text": "\n".join(lines_gas)}]})
 
             elif name == "mnemonics_import_ns":
                 imp_ns_m = args.get("ns", "").strip()

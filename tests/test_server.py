@@ -693,6 +693,10 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_get_tier_distribution",
         "mnemonics_archive_by_tier",
         "mnemonics_text_search_ranked",
+        "mnemonics_deduplicate_by_text",
+        "mnemonics_merge_memories",
+        "mnemonics_search_by_date_range",
+        "mnemonics_get_access_stats",
     }
 
 
@@ -6380,3 +6384,160 @@ def test_mcp_text_search_ranked_no_results(populated_store):
     })[0]
     text = resp["result"]["content"][0]["text"]
     assert "No results" in text
+
+
+# ─── Batch 9: deduplicate_by_text, merge_memories, search_by_date_range, get_access_stats ───
+
+def test_rest_deduplicate_by_text(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/deduplicate-by-text", {"ns": "default"})
+    assert code == 200
+    assert "deleted" in data
+
+
+def test_rest_deduplicate_by_text_all_ns(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/deduplicate-by-text", {"all_ns": True})
+    assert code == 200
+
+
+def test_rest_merge_memories(populated_store):
+    store, docs, vecs = populated_store
+    ids = store.add(["alpha part", "beta part"], vecs[:2], ns="default")
+    code, data = http_call(store, "POST", "/merge-memories", {"ids": ids})
+    assert code == 200
+    assert "merged_id" in data
+
+
+def test_rest_merge_memories_missing_ids(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/merge-memories", {})
+    assert code == 400
+
+
+def test_rest_merge_memories_not_found(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/merge-memories", {"ids": [999999]})
+    assert code == 404
+
+
+def test_rest_search_by_date_range(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET",
+                           "/search-by-date-range?start=2000-01-01&end=2099-12-31&ns=default")
+    assert code == 200
+    assert "results" in data
+
+
+def test_rest_search_by_date_range_missing_params(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/search-by-date-range?start=2000-01-01")
+    assert code == 400
+
+
+def test_rest_get_access_stats(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/get-access-stats?ns=default")
+    assert code == 200
+    assert "total_accesses" in data
+
+
+def test_rest_get_access_stats_all_ns(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/get-access-stats")
+    assert code == 200
+
+
+def test_mcp_deduplicate_by_text(populated_store):
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 41,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_deduplicate_by_text", "arguments": {"ns": "default"}},
+    })[0]
+    assert "Deduplicated" in resp["result"]["content"][0]["text"]
+
+
+def test_mcp_merge_memories(populated_store):
+    store, docs, vecs = populated_store
+    ids = store.add(["x part", "y part"], vecs[:2], ns="default")
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 42,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_merge_memories", "arguments": {"ids": ids}},
+    })[0]
+    assert "Merged" in resp["result"]["content"][0]["text"]
+
+
+def test_mcp_merge_memories_missing_ids(populated_store):
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 43,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_merge_memories", "arguments": {}},
+    })[0]
+    assert "error" in resp
+
+
+def test_mcp_merge_memories_not_found(populated_store):
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 44,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_merge_memories", "arguments": {"ids": [999999]}},
+    })[0]
+    assert "error" in resp
+
+
+def test_mcp_search_by_date_range(populated_store):
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 45,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_search_by_date_range",
+                   "arguments": {"start": "2000-01-01", "end": "2099-12-31", "ns": "default"}},
+    })[0]
+    text = resp["result"]["content"][0]["text"]
+    assert "Found" in text or "No memories" in text
+
+
+def test_mcp_search_by_date_range_empty(populated_store):
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 46,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_search_by_date_range",
+                   "arguments": {"start": "2099-01-01", "end": "2099-12-31"}},
+    })[0]
+    assert "No memories" in resp["result"]["content"][0]["text"]
+
+
+def test_mcp_search_by_date_range_missing(populated_store):
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 47,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_search_by_date_range",
+                   "arguments": {"start": "2000-01-01"}},
+    })[0]
+    assert "error" in resp
+
+
+def test_mcp_get_access_stats(populated_store):
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 48,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_get_access_stats", "arguments": {"ns": "default"}},
+    })[0]
+    assert "total accesses" in resp["result"]["content"][0]["text"]
+
+
+def test_mcp_get_access_stats_all_ns(populated_store):
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 49,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_get_access_stats", "arguments": {}},
+    })[0]
+    assert "total accesses" in resp["result"]["content"][0]["text"]

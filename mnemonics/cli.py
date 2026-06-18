@@ -128,6 +128,40 @@ def main() -> None:
     trt_p.add_argument("--path", default="~/.mnemonics")
 
     # import-ns
+    # deduplicate-by-text
+    dbt_cli = sub.add_parser("deduplicate-by-text", help="Remove exact-text duplicates in a namespace")
+    dbt_cli.add_argument("--ns", default="default")
+    dbt_cli.add_argument("--all-ns", action="store_true")
+    dbt_cli.add_argument("--keep", choices=["oldest", "newest"], default="oldest")
+    dbt_cli.add_argument("--path", default="~/.mnemonics")
+
+    # merge-memories
+    mm_cli = sub.add_parser("merge-memories", help="Merge multiple memories into one")
+    mm_cli.add_argument("ids", nargs="+", type=int, metavar="ID")
+    mm_cli.add_argument("--separator", default="\n\n")
+    mm_cli.add_argument("--ns", default=None)
+    mm_cli.add_argument("--keep-originals", action="store_true", dest="keep_originals")
+    mm_cli.add_argument("--path", default="~/.mnemonics")
+
+    # search-by-date-range
+    sdr_cli = sub.add_parser("search-by-date-range", help="Find memories by creation date range")
+    sdr_cli.add_argument("start", help="Start date (YYYY-MM-DD or ISO datetime)")
+    sdr_cli.add_argument("end", help="End date (YYYY-MM-DD or ISO datetime)")
+    sdr_cli.add_argument("--ns", default="default")
+    sdr_cli.add_argument("--all-ns", action="store_true")
+    sdr_cli.add_argument("--tier", type=int, default=None)
+    sdr_cli.add_argument("--limit", type=int, default=100)
+    sdr_cli.add_argument("--json", action="store_true", dest="as_json")
+    sdr_cli.add_argument("--path", default="~/.mnemonics")
+
+    # get-access-stats
+    gas_cli = sub.add_parser("get-access-stats", help="Show access statistics for a namespace")
+    gas_cli.add_argument("--ns", default="default")
+    gas_cli.add_argument("--all-ns", action="store_true")
+    gas_cli.add_argument("--top-n", type=int, default=10, dest="top_n")
+    gas_cli.add_argument("--json", action="store_true", dest="as_json")
+    gas_cli.add_argument("--path", default="~/.mnemonics")
+
     imp_ns_cli = sub.add_parser("import-ns", help="Bulk-import JSON memory rows into a namespace")
     imp_ns_cli.add_argument("ns", help="Target namespace")
     imp_ns_cli.add_argument("file", help="JSON file with a list of memory dicts (or - for stdin)")
@@ -2243,6 +2277,57 @@ def main() -> None:
                     print(f"[eval] wrote {out_dir / f'{slug}.json'}")
         print()
         print(compare_table(results))
+
+    elif args.cmd == "deduplicate-by-text":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        ns_q = None if args.all_ns else args.ns
+        n = store.deduplicate_by_text(ns=ns_q, keep=args.keep)
+        print(f"Removed {n} duplicate(s) from ns={ns_q!r}.")
+
+    elif args.cmd == "merge-memories":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        new_id = store.merge_memories(
+            args.ids,
+            separator=args.separator,
+            ns=args.ns,
+            delete_originals=not args.keep_originals,
+        )
+        if new_id is None:
+            print("None of the provided ids were found.")
+        else:
+            print(f"Merged into new id={new_id}.")
+
+    elif args.cmd == "search-by-date-range":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        ns_q = None if args.all_ns else args.ns
+        hits = store.search_by_date_range(args.start, args.end, ns=ns_q,
+                                          limit=args.limit, tier=args.tier)
+        if args.as_json:
+            print(json.dumps(hits, default=str, ensure_ascii=False))
+        else:
+            print(f"Found {len(hits)} memories in [{args.start}, {args.end}]:")
+            for h in hits:
+                print(f"  [{h['id']}] {h['created'][:10]} {h['text'][:70]}")
+
+    elif args.cmd == "get-access-stats":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        ns_q = None if args.all_ns else args.ns
+        stats = store.get_access_stats(ns=ns_q, top_n=args.top_n)
+        if args.as_json:
+            print(json.dumps(stats, default=str, ensure_ascii=False))
+        else:
+            print(f"Access stats for ns={ns_q!r}:")
+            print(f"  total accesses : {stats['total_accesses']}")
+            print(f"  unique accessed: {stats['unique_accessed']}")
+            print(f"  never accessed : {stats['never_accessed']}")
+            if stats["top"]:
+                print(f"  top {len(stats['top'])}:")
+                for e in stats["top"]:
+                    print(f"    id={e['id']} cnt={e['access_count']} {e['text'][:50]}")
 
     elif args.cmd == "import-ns":
         import sys as _sys_imp, json as _json_imp
