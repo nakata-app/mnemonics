@@ -39,6 +39,16 @@ All notable changes to mnemonics. Format follows [Keep a Changelog](https://keep
 - **`POST /repair` REST endpoint** calls `Store.repair()` and returns a JSON
   summary of what was fixed (orphan vectors rebuilt, orphan .bin files
   removed, missing vectors reported). Matches `mnemonics_repair` MCP tool.
+- **`POST /gc` and `POST /forget` REST endpoints** enable programmatic
+  cleanup without the CLI. Both default to `dry_run: true`. `/gc` accepts
+  `ns`, `age_days`, `tier` (1 or 2). `/forget` accepts `ns` (required),
+  `before`, `tier`. Matches CLI and MCP tool behavior.
+
+### Fixed
+
+- **`rebuild_ns_index` on empty namespace** no longer creates a stray
+  empty `.bin` file (which `health_check()` would flag as an orphan). Added
+  an early return when the namespace has no SQL rows.
 
 ### Changed
 
