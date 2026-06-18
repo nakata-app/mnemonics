@@ -81,6 +81,49 @@ class _Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_POST(self) -> None:
+        # /import-jsonl reads raw NDJSON — skip the JSON-parse step for it
+        if self.path == "/import-jsonl":
+            length = int(self.headers.get("Content-Length", 0))
+            if length == 0:
+                self._json(400, {"error": "empty body"})
+                return
+            raw = self.rfile.read(length).decode("utf-8", errors="replace")
+            imported = skipped = 0
+            errors: list[str] = []
+            for lineno, line in enumerate(raw.splitlines(), start=1):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError as e:
+                    errors.append(f"line {lineno}: invalid JSON: {e}")
+                    skipped += 1
+                    continue
+                text = obj.get("text")
+                if not text or not isinstance(text, str):
+                    errors.append(f"line {lineno}: missing or invalid 'text' field")
+                    skipped += 1
+                    continue
+                ns = obj.get("ns", "default")
+                tier = obj.get("tier", 1)
+                if tier not in (0, 1, 2):
+                    tier = 1
+                meta = obj.get("meta") or {}
+                summary = obj.get("summary")
+                n = _ingest(
+                    texts=[text],
+                    store=_get_store(),
+                    ns=ns,
+                    meta=[meta] if meta else None,
+                    summaries=[summary],
+                    tier=int(tier),
+                )
+                imported += n
+            self._json(200, {"imported": imported, "skipped": skipped,
+                             "errors": errors[:10]})
+            return
+
         try:
             body = self._body()
         except Exception:

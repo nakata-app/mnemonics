@@ -1883,3 +1883,98 @@ def test_mcp_list_before_past(populated_store):
     })
     text = resp[0]["result"]["content"][0]["text"]
     assert "No memories" in text
+
+
+# ── POST /import-jsonl ────────────────────────────────────────────────────────
+
+def _import_call(store, ndjson_body: str, ingest_return: int = 1) -> tuple[int, dict]:
+    """POST /import-jsonl with raw NDJSON body. Mocks _ingest to avoid real embedding."""
+    body_bytes = ndjson_body.encode("utf-8")
+    import io as _io
+
+    captured = {"code": None, "data": None}
+
+    with (
+        patch("mnemonics.server._get_store", return_value=store),
+        patch("mnemonics.server._ingest", return_value=ingest_return),
+    ):
+        handler = srv._Handler.__new__(srv._Handler)
+        handler.rfile = _io.BufferedReader(_io.BytesIO(body_bytes))
+        handler.wfile = _io.BytesIO()
+        handler.server = MagicMock()
+        handler.client_address = ("127.0.0.1", 0)
+        handler.request_version = "HTTP/1.1"
+        handler.requestline = "POST /import-jsonl HTTP/1.1"
+        handler.command = "POST"
+        handler.path = "/import-jsonl"
+        handler.headers = {
+            "Content-Length": str(len(body_bytes)),
+            "Content-Type": "application/x-ndjson",
+        }
+        handler.responses = {}
+        handler._json = lambda code, data: captured.update({"code": code, "data": data})
+        handler.do_POST()
+
+    return captured["code"], captured["data"]
+
+
+def test_http_import_jsonl_basic(tmp_store):
+    """POST /import-jsonl inserts rows."""
+    line = json.dumps({"text": "imported memory", "ns": "default", "tier": 1})
+    code, data = _import_call(tmp_store, line + "\n")
+    assert code == 200
+    assert data["imported"] >= 1
+    assert data["skipped"] == 0
+
+
+def test_http_import_jsonl_empty_body(tmp_store):
+    """POST /import-jsonl with empty body returns 400."""
+    body_bytes = b""
+    import io as _io
+    with patch("mnemonics.server._get_store", return_value=tmp_store):
+        handler = srv._Handler.__new__(srv._Handler)
+        handler.rfile = _io.BufferedReader(_io.BytesIO(b""))
+        handler.wfile = _io.BytesIO()
+        handler.server = MagicMock()
+        handler.client_address = ("127.0.0.1", 0)
+        handler.path = "/import-jsonl"
+        handler.headers = {"Content-Length": "0"}
+        handler.responses = {}
+        captured = {"code": None, "data": None}
+        handler._json = lambda code, data: captured.update({"code": code, "data": data})
+        handler.do_POST()
+    assert captured["code"] == 400
+
+
+def test_http_import_jsonl_invalid_json_line(tmp_store):
+    """POST /import-jsonl skips invalid JSON lines and reports them."""
+    body = "not valid json\n" + json.dumps({"text": "valid one"}) + "\n"
+    code, data = _import_call(tmp_store, body)
+    assert code == 200
+    assert data["skipped"] == 1
+    assert len(data["errors"]) == 1
+
+
+def test_http_import_jsonl_missing_text(tmp_store):
+    """POST /import-jsonl skips rows without text field."""
+    body = json.dumps({"ns": "default", "meta": {"tag": "x"}}) + "\n"
+    code, data = _import_call(tmp_store, body)
+    assert code == 200
+    assert data["skipped"] == 1
+
+
+def test_http_import_jsonl_tier_clamped(tmp_store):
+    """POST /import-jsonl clamps invalid tier to 1."""
+    body = json.dumps({"text": "tier clamped", "tier": 9}) + "\n"
+    code, data = _import_call(tmp_store, body)
+    assert code == 200
+    assert data["imported"] >= 1
+
+
+def test_http_import_jsonl_blank_lines_skipped(tmp_store):
+    """POST /import-jsonl ignores blank lines."""
+    body = "\n\n" + json.dumps({"text": "valid"}) + "\n\n"
+    code, data = _import_call(tmp_store, body)
+    assert code == 200
+    assert data["imported"] == 1
+    assert data["skipped"] == 0
