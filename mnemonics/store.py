@@ -434,6 +434,55 @@ class Store:
             })
         return results
 
+    def hybrid_search(
+        self,
+        vector: np.ndarray,
+        query: str,
+        ns: str = "default",
+        top_k: int = 5,
+        rrf_k: int = 60,
+        min_tier: int | None = None,
+        max_tier: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Combine vector search and BM25 with Reciprocal Rank Fusion (RRF).
+
+        RRF score = sum(1 / (rrf_k + rank)) across result lists, where rank
+        is 1-based. Top *top_k* results by combined RRF score are returned.
+        Each result dict carries the original vector *score*, plus
+        *rrf_score*, *vector_rank*, and *bm25_rank* for transparency.
+        """
+        fetch_n = max(top_k * 4, 20)
+        vec_results = self.search(vector, ns=ns, top_k=fetch_n,
+                                  min_tier=min_tier, max_tier=max_tier)
+        bm25_results = self.search_bm25(query, ns=ns, top_k=fetch_n,
+                                        min_tier=min_tier, max_tier=max_tier)
+
+        rrf: dict[int, float] = {}
+        by_id: dict[int, dict] = {}
+
+        for rank, item in enumerate(vec_results, start=1):
+            iid = item["id"]
+            rrf[iid] = rrf.get(iid, 0.0) + 1.0 / (rrf_k + rank)
+            by_id[iid] = item
+            by_id[iid]["vector_rank"] = rank
+            by_id[iid].setdefault("bm25_rank", None)
+
+        for rank, item in enumerate(bm25_results, start=1):
+            iid = item["id"]
+            rrf[iid] = rrf.get(iid, 0.0) + 1.0 / (rrf_k + rank)
+            if iid not in by_id:
+                by_id[iid] = item
+                by_id[iid].setdefault("vector_rank", None)
+            by_id[iid]["bm25_rank"] = rank
+
+        ranked = sorted(rrf.items(), key=lambda x: x[1], reverse=True)[:top_k]
+        results = []
+        for iid, rrf_score in ranked:
+            item = dict(by_id[iid])
+            item["rrf_score"] = round(rrf_score, 6)
+            results.append(item)
+        return results
+
     def set_tier(self, memory_id: int, tier: int) -> bool:
         if tier not in (0, 1, 2):
             raise ValueError("tier must be 0 (pinned), 1 (default), or 2 (ambient)")

@@ -80,6 +80,15 @@ def main() -> None:
     ts.add_argument("--json", dest="json_out", action="store_true", help="Output results as JSON array")
     ts.add_argument("--path", default="~/.mnemonics")
 
+    # hybrid-search
+    hs = sub.add_parser("hybrid-search", help="Combine vector + BM25 search with Reciprocal Rank Fusion")
+    hs.add_argument("query", help="Text query (used for BM25 and as embedding source)")
+    hs.add_argument("--ns", default="default", help="Namespace to search")
+    hs.add_argument("--top-k", type=int, default=5, help="Max results (default: 5)")
+    hs.add_argument("--rrf-k", type=int, default=60, help="RRF constant (default: 60)")
+    hs.add_argument("--json", dest="json_out", action="store_true", help="Output results as JSON array")
+    hs.add_argument("--path", default="~/.mnemonics")
+
     # stats
     st = sub.add_parser("stats", help="Show memory stats")
     st.add_argument("--path", default="~/.mnemonics")
@@ -451,6 +460,27 @@ def main() -> None:
                 print(line)
                 if r.get("summary"):
                     print(f"           summary: {r['summary']}")
+
+    elif args.cmd == "hybrid-search":
+        from mnemonics.store import Store
+        from mnemonics.ingest import _get_encoder
+        import numpy as _np_cli
+        store = Store(args.path)
+        enc = _get_encoder()
+        vec = _np_cli.array(enc.encode([args.query], normalize_embeddings=True, convert_to_numpy=True)[0], dtype="float32")
+        hits = store.hybrid_search(vec, args.query, ns=args.ns, top_k=args.top_k, rrf_k=args.rrf_k)
+        if args.json_out:
+            print(json.dumps(hits, default=str, ensure_ascii=False))
+        elif not hits:
+            print(f"No hybrid results for {args.query!r} in ns={args.ns!r}")
+        else:
+            tier_label = {0: "pin", 1: "def", 2: "amb"}
+            for r in hits:
+                tl = tier_label.get(r["tier"], "?")
+                snippet = r["text"][:120].replace("\n", " ")
+                vr = r.get("vector_rank") or "-"
+                br = r.get("bm25_rank") or "-"
+                print(f"  [rrf={r['rrf_score']:.4f}] [{tl}] id={r['id']} v={vr} b={br}  {snippet}")
 
     elif args.cmd == "text-search":
         from mnemonics.store import Store

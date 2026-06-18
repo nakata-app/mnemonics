@@ -249,6 +249,26 @@ class _Handler(BaseHTTPRequestHandler):
             )
             self._json(200, {"query": query, "ns": ns_val, "results": hits})
 
+        elif self.path == "/hybrid-search":
+            query_hs = body.get("query", "").strip()
+            vector_hs = body.get("vector")
+            if not query_hs or not isinstance(vector_hs, list):
+                self._json(400, {"error": "'query' (str) and 'vector' (list of floats) are required"})
+                return
+            import numpy as _np_hs
+            ns_hs = body.get("ns", "default")
+            top_k_hs = int(body.get("top_k", 5))
+            rrf_k_hs = int(body.get("rrf_k", 60))
+            hs_min_tier = body.get("min_tier")
+            hs_max_tier = body.get("max_tier")
+            vec_arr = _np_hs.array(vector_hs, dtype="float32")
+            hits_hs = _get_store().hybrid_search(
+                vec_arr, query_hs, ns=ns_hs, top_k=top_k_hs, rrf_k=rrf_k_hs,
+                min_tier=int(hs_min_tier) if hs_min_tier is not None else None,
+                max_tier=int(hs_max_tier) if hs_max_tier is not None else None,
+            )
+            self._json(200, {"query": query_hs, "ns": ns_hs, "results": hits_hs})
+
         elif self.path == "/forget-ns":
             ns = body.get("ns", "").strip()
             if not ns:
@@ -671,6 +691,23 @@ def _mcp_loop() -> None:
                             "max_tier": {"type": "integer", "description": "Only return memories with tier <= this value"},
                         },
                         "required": ["query"],
+                    },
+                },
+                {
+                    "name": "mnemonics_hybrid_search",
+                    "description": "Hybrid search: combine vector (semantic) and BM25 (keyword) results with Reciprocal Rank Fusion (RRF). Returns the best of both worlds — semantically similar AND keyword-matching results. Each result includes rrf_score, vector_rank, and bm25_rank.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string", "description": "Text query for BM25 matching"},
+                            "vector": {"type": "array", "items": {"type": "number"}, "description": "Query vector (same dimension as stored embeddings)"},
+                            "ns": {"type": "string", "description": "Namespace to search (default: 'default')"},
+                            "top_k": {"type": "integer", "description": "Max results (default: 5)"},
+                            "rrf_k": {"type": "integer", "description": "RRF constant — larger values down-weight rank differences (default: 60)"},
+                            "min_tier": {"type": "integer", "description": "Only return memories with tier >= this value"},
+                            "max_tier": {"type": "integer", "description": "Only return memories with tier <= this value"},
+                        },
+                        "required": ["query", "vector"],
                     },
                 },
                 {
@@ -1117,6 +1154,39 @@ def _mcp_loop() -> None:
                         if r.get("summary"):
                             lines.append(f"           summary: {r['summary'][:120]}")
                     ok({"content": [{"type": "text", "text": "\n".join(lines)}]})
+
+            elif name == "mnemonics_hybrid_search":
+                import numpy as _np_mcp
+                hs_query = args.get("query", "").strip()
+                hs_vector = args.get("vector")
+                if not hs_query or not isinstance(hs_vector, list):
+                    err("mnemonics_hybrid_search: 'query' (str) and 'vector' (list) are required")
+                    continue
+                hs_ns = args.get("ns", "default")
+                hs_top_k = int(args.get("top_k", 5))
+                hs_rrf_k = int(args.get("rrf_k", 60))
+                hs_min_tier = args.get("min_tier")
+                hs_max_tier = args.get("max_tier")
+                hs_vec_arr = _np_mcp.array(hs_vector, dtype="float32")
+                hs_hits = _get_store().hybrid_search(
+                    hs_vec_arr, hs_query, ns=hs_ns, top_k=hs_top_k, rrf_k=hs_rrf_k,
+                    min_tier=int(hs_min_tier) if hs_min_tier is not None else None,
+                    max_tier=int(hs_max_tier) if hs_max_tier is not None else None,
+                )
+                if not hs_hits:
+                    ok({"content": [{"type": "text", "text": f"No hybrid results for {hs_query!r} in ns={hs_ns!r}."}]})
+                else:
+                    tier_label_hs = {0: "pin", 1: "def", 2: "amb"}
+                    lines_hs = []
+                    for r in hs_hits:
+                        snippet = (r["text"] or "")[:200].replace("\n", " ")
+                        tl = tier_label_hs.get(r["tier"], "?")
+                        vr = r.get("vector_rank") or "-"
+                        br = r.get("bm25_rank") or "-"
+                        lines_hs.append(f"[rrf={r['rrf_score']:.4f}] [{tl}] id={r['id']} v={vr} b={br}  {snippet}")
+                        if r.get("summary"):
+                            lines_hs.append(f"           summary: {r['summary'][:120]}")
+                    ok({"content": [{"type": "text", "text": "\n".join(lines_hs)}]})
 
             elif name == "mnemonics_update_summary":
                 mid = args.get("id")

@@ -1845,3 +1845,98 @@ def test_update_meta_not_found(populated_store):
     """update_meta returns False for non-existent ID."""
     store, docs, vecs = populated_store
     assert store.update_meta(99999, {"x": 1}) is False
+
+
+# ── hybrid_search ─────────────────────────────────────────────────────────────
+
+def test_hybrid_search_returns_results(populated_store):
+    """hybrid_search combines vector + BM25, returning at most top_k results."""
+    store, docs, vecs = populated_store
+    # Use the first doc's vector as query; "Python" matches BM25 in docs[1]
+    results = store.hybrid_search(vecs[0], "Python programming language",
+                                  ns="default", top_k=3)
+    assert isinstance(results, list)
+    assert len(results) <= 3
+    for r in results:
+        assert "id" in r
+        assert "rrf_score" in r
+        assert r["rrf_score"] > 0
+
+
+def test_hybrid_search_rrf_score_fields(populated_store):
+    """Each result from hybrid_search has rrf_score, vector_rank, bm25_rank fields."""
+    store, docs, vecs = populated_store
+    results = store.hybrid_search(vecs[1], "Paris Eiffel Tower",
+                                  ns="default", top_k=5)
+    for r in results:
+        assert "rrf_score" in r
+        assert "vector_rank" in r
+        assert "bm25_rank" in r
+
+
+def test_hybrid_search_empty_ns(tmp_store):
+    """hybrid_search on empty namespace returns []."""
+    import numpy as np
+    from mnemonics.store import DIM
+    rng = np.random.default_rng(0)
+    v = rng.random((DIM,)).astype("float32")
+    v /= np.linalg.norm(v)
+    results = tmp_store.hybrid_search(v, "something", ns="nonexistent")
+    assert results == []
+
+
+def test_hybrid_search_top_k_limit(populated_store):
+    """hybrid_search respects top_k even with many candidates."""
+    store, docs, vecs = populated_store
+    results = store.hybrid_search(vecs[0], "the", ns="default", top_k=2)
+    assert len(results) <= 2
+
+
+def test_hybrid_search_tier_filter(populated_store):
+    """hybrid_search min_tier/max_tier filters are respected."""
+    store, docs, vecs = populated_store
+    mid = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    store.set_tier(mid, 2)  # mark one as ambient
+    results = store.hybrid_search(vecs[0], "learning AI",
+                                  ns="default", top_k=10, max_tier=1)
+    ids_returned = {r["id"] for r in results}
+    assert mid not in ids_returned  # ambient memory excluded
+
+
+def test_hybrid_search_bm25_only_hit(tmp_store):
+    """hybrid_search covers BM25-only path (result in BM25 but not vector top results).
+
+    Strategy: add 25 random docs plus one special doc whose vector is the NEGATIVE
+    of the query vector. With fetch_n=20 (25 docs total), the negative-vector doc
+    will rank last in vector search and be excluded from the top-20 vector results.
+    Its unique BM25 keyword ("xyloquantum") lets BM25 find it; store.hybrid_search
+    must then add it via the BM25-only branch (lines 474-475).
+    """
+    import numpy as np
+    from mnemonics.store import DIM
+    rng = np.random.default_rng(42)
+    n = 25
+    texts = [f"random document number {i}" for i in range(n)]
+    texts[0] = "xyloquantum unique keyword for bm25 only path"
+    vecs = rng.random((n, DIM)).astype("float32")
+    vecs /= np.linalg.norm(vecs, axis=1, keepdims=True)
+    # Build a query vector: positive direction aligned with docs 1-24 average
+    # but OPPOSITE to doc 0 — guaranteeing doc 0 is last in vector ranking.
+    query_v = np.mean(vecs[1:], axis=0).astype("float32")
+    query_v /= np.linalg.norm(query_v)
+    # Point doc 0's vector opposite to query so it ranks last
+    vecs[0] = -query_v
+    vecs[0] /= np.linalg.norm(vecs[0])
+    tmp_store.add(texts, vecs)
+    # With 25 docs, fetch_n=max(5*4,20)=20, so doc 0 (last in vector rank) is excluded.
+    # BM25 "xyloquantum" will find doc 0 → triggers BM25-only branch.
+    results = tmp_store.hybrid_search(query_v, "xyloquantum unique keyword",
+                                      ns="default", top_k=5)
+    assert isinstance(results, list)
+    for r in results:
+        assert "rrf_score" in r
+    ids = {r["id"] for r in results}
+    doc0_row = tmp_store._db.execute(
+        "SELECT id FROM memories WHERE text LIKE '%xyloquantum%'"
+    ).fetchone()
+    assert doc0_row is not None and doc0_row[0] in ids

@@ -618,7 +618,8 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_pin", "mnemonics_tier", "mnemonics_gc", "mnemonics_stats",
         "mnemonics_health", "mnemonics_repair",
         "mnemonics_search_by_meta", "mnemonics_delete_many", "mnemonics_update_meta",
-        "mnemonics_export", "mnemonics_import", "mnemonics_text_search", "mnemonics_rename_ns", "mnemonics_namespaces", "mnemonics_bulk_tier", "mnemonics_copy_ns", "mnemonics_touch_many", "mnemonics_update_meta", "mnemonics_count", "mnemonics_merge_ns", "mnemonics_stats_by_ns", "mnemonics_recent", "mnemonics_top_accessed", "mnemonics_get_many",
+        "mnemonics_export", "mnemonics_import", "mnemonics_text_search", "mnemonics_rename_ns", "mnemonics_namespaces", "mnemonics_bulk_tier", "mnemonics_copy_ns", "mnemonics_touch_many", "mnemonics_count", "mnemonics_merge_ns", "mnemonics_stats_by_ns", "mnemonics_recent", "mnemonics_top_accessed", "mnemonics_get_many",
+        "mnemonics_hybrid_search",
     }
 
 
@@ -2850,3 +2851,99 @@ def test_mcp_update_meta_in_tools_list(tmp_store):
         "jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {},
     })[0]
     assert "mnemonics_update_meta" in {t["name"] for t in resp["result"]["tools"]}
+
+
+# ── hybrid-search REST + MCP ──────────────────────────────────────────────────
+
+def test_http_hybrid_search_ok(populated_store):
+    """POST /hybrid-search returns combined results."""
+    import numpy as np
+    from mnemonics.store import DIM
+    store, docs, vecs = populated_store
+    rng = np.random.default_rng(7)
+    qv = rng.random((DIM,)).astype("float32").tolist()
+    code, data = http_call(store, "POST", "/hybrid-search",
+                           {"query": "Paris Eiffel", "vector": qv, "top_k": 3})
+    assert code == 200
+    assert "results" in data
+    assert isinstance(data["results"], list)
+
+
+def test_http_hybrid_search_missing_params(populated_store):
+    """POST /hybrid-search without query returns 400."""
+    import numpy as np
+    from mnemonics.store import DIM
+    store, docs, vecs = populated_store
+    rng = np.random.default_rng(8)
+    qv = rng.random((DIM,)).astype("float32").tolist()
+    code, data = http_call(store, "POST", "/hybrid-search", {"vector": qv})
+    assert code == 400
+
+
+def test_http_hybrid_search_missing_vector(populated_store):
+    """POST /hybrid-search without vector returns 400."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/hybrid-search", {"query": "Eiffel"})
+    assert code == 400
+
+
+def test_mcp_hybrid_search_ok(populated_store):
+    """MCP mnemonics_hybrid_search returns formatted results."""
+    import numpy as np
+    from mnemonics.store import DIM
+    store, docs, vecs = populated_store
+    rng = np.random.default_rng(9)
+    qv = rng.random((DIM,)).astype("float32").tolist()
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_hybrid_search",
+                   "arguments": {"query": "Python programming", "vector": qv, "top_k": 3}},
+    })[0]
+    assert "result" in r
+    text = r["result"]["content"][0]["text"]
+    assert "rrf=" in text or "No hybrid results" in text
+
+
+def test_mcp_hybrid_search_missing_args(populated_store):
+    """MCP mnemonics_hybrid_search without required args returns error."""
+    store, docs, vecs = populated_store
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_hybrid_search",
+                   "arguments": {"query": "Python"}},
+    })[0]
+    assert "error" in r
+
+
+def test_mcp_hybrid_search_no_results(tmp_store):
+    """MCP mnemonics_hybrid_search returns text when no hits (covers line 1177)."""
+    import numpy as np
+    from mnemonics.store import DIM
+    rng = np.random.default_rng(0)
+    qv = rng.random((DIM,)).astype("float32").tolist()
+    r = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_hybrid_search",
+                   "arguments": {"query": "nothing", "vector": qv}},
+    })[0]
+    assert "result" in r
+    assert "No hybrid results" in r["result"]["content"][0]["text"]
+
+
+def test_mcp_hybrid_search_with_summary(populated_store):
+    """MCP mnemonics_hybrid_search shows summary line when present (covers line 1188)."""
+    import numpy as np
+    from mnemonics.store import DIM
+    store, docs, vecs = populated_store
+    mid = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    store.update_summary(mid, "Summary of the first memory")
+    rng = np.random.default_rng(1)
+    qv = rng.random((DIM,)).astype("float32").tolist()
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_hybrid_search",
+                   "arguments": {"query": "Eiffel Paris", "vector": qv, "top_k": 5}},
+    })[0]
+    assert "result" in r
+    text = r["result"]["content"][0]["text"]
+    assert "rrf=" in text or "No hybrid results" in text

@@ -2387,3 +2387,64 @@ def test_cli_update_meta_merge_flag(tmp_path, capsys):
             main()
     assert exc.value.code == 0
     mock_store.update_meta.assert_called_once_with(5, {"tag": "x"}, merge=True)
+
+
+# ── hybrid-search CLI ─────────────────────────────────────────────────────────
+
+def test_cli_hybrid_search_ok(tmp_path, capsys):
+    """hybrid-search prints results."""
+    mock_store = MagicMock()
+    mock_store.hybrid_search.return_value = [
+        {"id": 1, "text": "Paris is great", "tier": 1, "rrf_score": 0.03,
+         "vector_rank": 1, "bm25_rank": 2, "summary": None}
+    ]
+    mock_enc = MagicMock()
+    mock_enc.encode.return_value = [[0.1] * 384]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("mnemonics.ingest._get_encoder", return_value=mock_enc),
+        patch("sys.argv", ["mnemonics", "hybrid-search", "Paris",
+                           "--ns", "default", "--top-k", "5", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "rrf=" in out or "Paris" in out
+
+
+def test_cli_hybrid_search_no_results(tmp_path, capsys):
+    """hybrid-search prints message when no results."""
+    mock_store = MagicMock()
+    mock_store.hybrid_search.return_value = []
+    mock_enc = MagicMock()
+    mock_enc.encode.return_value = [[0.0] * 384]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("mnemonics.ingest._get_encoder", return_value=mock_enc),
+        patch("sys.argv", ["mnemonics", "hybrid-search", "xyz",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "No hybrid results" in out
+
+
+def test_cli_hybrid_search_json(tmp_path, capsys):
+    """hybrid-search --json outputs JSON array."""
+    import json as _j
+    mock_store = MagicMock()
+    mock_store.hybrid_search.return_value = [
+        {"id": 2, "text": "Python", "tier": 1, "rrf_score": 0.02,
+         "vector_rank": 2, "bm25_rank": 1, "summary": None}
+    ]
+    mock_enc = MagicMock()
+    mock_enc.encode.return_value = [[0.1] * 384]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("mnemonics.ingest._get_encoder", return_value=mock_enc),
+        patch("sys.argv", ["mnemonics", "hybrid-search", "Python",
+                           "--json", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    data = _j.loads(out.strip())
+    assert data[0]["id"] == 2
