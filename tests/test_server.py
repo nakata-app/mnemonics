@@ -618,7 +618,7 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_pin", "mnemonics_tier", "mnemonics_gc", "mnemonics_stats",
         "mnemonics_health", "mnemonics_repair",
         "mnemonics_search_by_meta", "mnemonics_delete_many", "mnemonics_update_meta",
-        "mnemonics_export", "mnemonics_import", "mnemonics_text_search", "mnemonics_rename_ns", "mnemonics_namespaces", "mnemonics_bulk_tier", "mnemonics_copy_ns", "mnemonics_count", "mnemonics_recent", "mnemonics_top_accessed", "mnemonics_get_many",
+        "mnemonics_export", "mnemonics_import", "mnemonics_text_search", "mnemonics_rename_ns", "mnemonics_namespaces", "mnemonics_bulk_tier", "mnemonics_copy_ns", "mnemonics_count", "mnemonics_stats_by_ns", "mnemonics_recent", "mnemonics_top_accessed", "mnemonics_get_many",
     }
 
 
@@ -2632,3 +2632,48 @@ def test_mcp_copy_ns_in_tools_list(tmp_store):
         "jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {},
     })[0]
     assert "mnemonics_copy_ns" in {t["name"] for t in resp["result"]["tools"]}
+
+
+# ── GET /stats-by-ns ──────────────────────────────────────────────────────────
+
+def test_http_stats_by_ns_basic(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/stats-by-ns")
+    assert code == 200
+    assert len(data["namespaces"]) == 1
+    s = data["namespaces"][0]
+    assert s["ns"] == "default"
+    assert s["total"] == len(docs)
+
+
+def test_http_stats_by_ns_empty(tmp_store):
+    code, data = http_call(tmp_store, "GET", "/stats-by-ns")
+    assert code == 200
+    assert data["namespaces"] == []
+
+
+# ── MCP mnemonics_stats_by_ns ─────────────────────────────────────────────────
+
+def test_mcp_stats_by_ns_basic(populated_store):
+    store, docs, vecs = populated_store
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_stats_by_ns", "arguments": {}},
+    })[0]
+    assert "result" in r
+    assert "total=" in r["result"]["content"][0]["text"]
+
+
+def test_mcp_stats_by_ns_empty(tmp_store):
+    r = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_stats_by_ns", "arguments": {}},
+    })[0]
+    assert "no namespaces" in r["result"]["content"][0]["text"]
+
+
+def test_mcp_stats_by_ns_in_tools_list(tmp_store):
+    resp = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {},
+    })[0]
+    assert "mnemonics_stats_by_ns" in {t["name"] for t in resp["result"]["tools"]}

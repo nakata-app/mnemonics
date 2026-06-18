@@ -455,6 +455,9 @@ class _Handler(BaseHTTPRequestHandler):
                 tier=int(tier_raw) if tier_raw is not None else None,
             )
             self._json(200, {"count": len(hits), "results": hits})
+        elif path == "/stats-by-ns":
+            result = _get_store().stats_by_ns()
+            self._json(200, {"namespaces": result})
         elif path == "/text-search":
             from urllib.parse import urlparse, parse_qs, unquote_plus
             qs_parsed = parse_qs(urlparse(self.path).query)
@@ -868,6 +871,11 @@ def _mcp_loop() -> None:
                             "limit": {"type": "integer", "description": "Max rows to export (default: 500)"},
                         },
                     },
+                },
+                {
+                    "name": "mnemonics_stats_by_ns",
+                    "description": "Return a lightweight per-namespace stats summary: total memory count, count per tier (pinned/default/ambient), and oldest/newest creation timestamps. Faster than health_check — SQL only, no index I/O.",
+                    "inputSchema": {"type": "object", "properties": {}},
                 },
                 {
                     "name": "mnemonics_namespaces",
@@ -1302,6 +1310,18 @@ def _mcp_loop() -> None:
                     ok({"content": [{"type": "text", "text": "\n".join(lines_gm)}]})
                 else:
                     ok({"content": [{"type": "text", "text": "(no memories found)"}]})
+
+            elif name == "mnemonics_stats_by_ns":
+                stats = _get_store().stats_by_ns()
+                if stats:
+                    lines_s = [
+                        f"ns={s['ns']} total={s['total']} pin={s['pinned']} def={s['default']} amb={s['ambient']} "
+                        f"oldest={s['oldest']} newest={s['newest']}"
+                        for s in stats
+                    ]
+                    ok({"content": [{"type": "text", "text": "\n".join(lines_s)}]})
+                else:
+                    ok({"content": [{"type": "text", "text": "(no namespaces)"}]})
 
             elif name == "mnemonics_namespaces":
                 ns_list = _get_store().list_namespaces()

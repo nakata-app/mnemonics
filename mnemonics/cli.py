@@ -227,6 +227,11 @@ def main() -> None:
     ij.add_argument("--dry-run", action="store_true", help="Parse and validate without writing to store")
     ij.add_argument("--path", default="~/.mnemonics", help="Store directory")
 
+    # stats-by-ns
+    sbn = sub.add_parser("stats-by-ns", help="Show per-namespace stats: total/tier breakdown/date range")
+    sbn.add_argument("--json", dest="json_out", action="store_true", help="Output as JSON")
+    sbn.add_argument("--path", default="~/.mnemonics", help="Store directory")
+
     # namespaces
     nsc = sub.add_parser("namespaces", help="List all namespaces in the store")
     nsc.add_argument("--path", default="~/.mnemonics", help="Store directory")
@@ -865,6 +870,23 @@ def main() -> None:
             print(f"  warning: {err}", file=sys.stderr)
         label = "(dry-run) would import" if args.dry_run else "Imported"
         print(f"{label} {imported} chunk(s), skipped {skipped} invalid row(s).")
+
+    elif args.cmd == "stats-by-ns":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        stats = store.stats_by_ns()
+        if args.json_out:
+            print(json.dumps(stats, default=str, ensure_ascii=False))
+        elif not stats:
+            print("(no namespaces)")
+        else:
+            print(f"{'NAMESPACE':<20} {'TOTAL':>6} {'PIN':>5} {'DEF':>5} {'AMB':>5}  OLDEST → NEWEST")
+            print("-" * 70)
+            for s in stats:
+                print(
+                    f"  {s['ns']:<18} {s['total']:>6} {s['pinned']:>5} {s['default']:>5} {s['ambient']:>5}"
+                    f"  {s['oldest'] or '—'} → {s['newest'] or '—'}"
+                )
 
     elif args.cmd == "namespaces":
         from mnemonics.store import Store

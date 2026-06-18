@@ -2292,3 +2292,46 @@ def test_cli_copy_ns_conflict(tmp_path, capsys):
         with pytest.raises(SystemExit) as exc:
             main()
     assert exc.value.code == 1
+
+
+# ── stats-by-ns ────────────────────────────────────────────────────────────────
+
+def test_cli_stats_by_ns_basic(tmp_path, capsys):
+    stats = [{"ns": "default", "total": 5, "pinned": 1, "default": 3, "ambient": 1,
+               "oldest": "2026-01-01", "newest": "2026-06-18"}]
+    mock_store = MagicMock()
+    mock_store.stats_by_ns.return_value = stats
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "stats-by-ns", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "default" in out
+    assert "5" in out
+
+
+def test_cli_stats_by_ns_json(tmp_path, capsys):
+    stats = [{"ns": "default", "total": 3, "pinned": 0, "default": 3, "ambient": 0,
+               "oldest": "2026-01-01", "newest": "2026-06-01"}]
+    mock_store = MagicMock()
+    mock_store.stats_by_ns.return_value = stats
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "stats-by-ns", "--json", "--path", str(tmp_path)]),
+    ):
+        main()
+    import json as _j
+    parsed = _j.loads(capsys.readouterr().out)
+    assert parsed[0]["ns"] == "default"
+
+
+def test_cli_stats_by_ns_empty(tmp_path, capsys):
+    mock_store = MagicMock()
+    mock_store.stats_by_ns.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "stats-by-ns", "--path", str(tmp_path)]),
+    ):
+        main()
+    assert "no namespaces" in capsys.readouterr().out

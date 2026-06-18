@@ -1632,3 +1632,100 @@ def test_copy_ns_access_count_reset(populated_store):
     store.copy_ns("default", "backup4")
     counts = [r["access_count"] for r in store.top_accessed(ns="backup4")]
     assert all(c == 0 for c in counts)
+
+
+# ── stats_by_ns ───────────────────────────────────────────────────────────────
+
+def test_stats_by_ns_basic(populated_store):
+    """stats_by_ns returns one entry per ns with correct totals."""
+    store, docs, vecs = populated_store
+    stats = store.stats_by_ns()
+    assert len(stats) == 1
+    s = stats[0]
+    assert s["ns"] == "default"
+    assert s["total"] == len(docs)
+    assert s["pinned"] + s["default"] + s["ambient"] == len(docs)
+
+
+def test_stats_by_ns_tier_breakdown(populated_store):
+    """stats_by_ns reflects tier changes."""
+    import numpy as np
+    store, docs, vecs = populated_store
+    ids = [r[0] for r in store._db.execute("SELECT id FROM memories").fetchall()]
+    store.pin(ids[0])
+    store.set_tier(ids[1], 2)
+    stats = {s["ns"]: s for s in store.stats_by_ns()}
+    assert stats["default"]["pinned"] == 1
+    assert stats["default"]["ambient"] == 1
+
+
+def test_stats_by_ns_multiple_namespaces(populated_store):
+    """stats_by_ns returns one entry per distinct namespace."""
+    import numpy as np
+    store, docs, vecs = populated_store
+    v = np.random.rand(384).astype("float32"); v /= np.linalg.norm(v)
+    store.add(["other"], v[None], ns="other")
+    stats = store.stats_by_ns()
+    ns_set = {s["ns"] for s in stats}
+    assert "default" in ns_set
+    assert "other" in ns_set
+
+
+def test_stats_by_ns_empty(tmp_store):
+    """stats_by_ns on empty store returns empty list."""
+    assert tmp_store.stats_by_ns() == []
+
+
+def test_health_check_tier_breakdown(populated_store):
+    """health_check namespaces include tier_breakdown after the patch."""
+    store, docs, vecs = populated_store
+    report = store.health_check()
+    ns_entry = next(n for n in report["namespaces"] if n["ns"] == "default")
+    assert "tier_breakdown" in ns_entry
+
+
+def test_stats_by_ns_oldest_newest_update(tmp_store):
+    """stats_by_ns correctly updates oldest/newest when multiple tiers differ in creation time."""
+    import numpy as np
+    rng = np.random.default_rng(99)
+    v1 = rng.random((1, 384)).astype("float32"); v1 /= np.linalg.norm(v1, axis=1, keepdims=True)
+    v2 = rng.random((1, 384)).astype("float32"); v2 /= np.linalg.norm(v2, axis=1, keepdims=True)
+    tmp_store.add(["early memory"], v1, tier=0)
+    id1 = tmp_store._db.execute("SELECT id FROM memories").fetchone()[0]
+    tmp_store.add(["late memory"], v2, tier=2)
+    id2 = tmp_store._db.execute("SELECT id FROM memories ORDER BY id DESC LIMIT 1").fetchone()[0]
+    # Force different created timestamps
+    tmp_store._db.execute(
+        "UPDATE memories SET created=? WHERE id=?", ("2025-01-01 00:00:00", id1)
+    )
+    tmp_store._db.execute(
+        "UPDATE memories SET created=? WHERE id=?", ("2026-12-31 00:00:00", id2)
+    )
+    tmp_store._db.commit()
+    stats = tmp_store.stats_by_ns()
+    assert len(stats) == 1
+    s = stats[0]
+    assert s["oldest"] == "2025-01-01 00:00:00"
+    assert s["newest"] == "2026-12-31 00:00:00"
+
+
+def test_stats_by_ns_oldest_update_trigger(tmp_store):
+    """Trigger the oldest-update branch: tier=0 (first in GROUP BY) has a later date;
+    tier=2 (second in GROUP BY) has an earlier date → oldest update fires."""
+    import numpy as np
+    rng = np.random.default_rng(77)
+    v0 = rng.random((1, 384)).astype("float32"); v0 /= np.linalg.norm(v0, axis=1, keepdims=True)
+    v2 = rng.random((1, 384)).astype("float32"); v2 /= np.linalg.norm(v2, axis=1, keepdims=True)
+    # tier=0 will come first in GROUP BY (tier ASC); give it the LATER date
+    tmp_store.add(["pinned late"], v0, tier=0)
+    id0 = tmp_store._db.execute("SELECT id FROM memories").fetchone()[0]
+    # tier=2 comes second; give it the EARLIER date → triggers oldest update branch
+    tmp_store.add(["ambient early"], v2, tier=2)
+    id2 = tmp_store._db.execute("SELECT id FROM memories ORDER BY id DESC LIMIT 1").fetchone()[0]
+    tmp_store._db.execute("UPDATE memories SET created=? WHERE id=?", ("2026-12-01 00:00:00", id0))
+    tmp_store._db.execute("UPDATE memories SET created=? WHERE id=?", ("2024-01-01 00:00:00", id2))
+    tmp_store._db.commit()
+    stats = tmp_store.stats_by_ns()
+    s = stats[0]
+    assert s["oldest"] == "2024-01-01 00:00:00"
+    assert s["newest"] == "2026-12-01 00:00:00"

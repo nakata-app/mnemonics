@@ -990,6 +990,35 @@ class Store:
             self._db.commit()
         return count
 
+    def stats_by_ns(self) -> list[dict]:
+        """Return a lightweight per-namespace stats summary (SQL only, no index I/O).
+
+        Each entry: {ns, total, pinned, default, ambient, oldest, newest}
+        where pinned/default/ambient are counts per tier.
+        """
+        rows = self._db.execute(
+            "SELECT ns, tier, COUNT(*), MIN(created), MAX(created) "
+            "FROM memories GROUP BY ns, tier ORDER BY ns"
+        ).fetchall()
+        result: dict[str, dict] = {}
+        for ns, tier, cnt, oldest, newest in rows:
+            if ns not in result:
+                result[ns] = {"ns": ns, "total": 0, "pinned": 0, "default": 0, "ambient": 0,
+                               "oldest": oldest, "newest": newest}
+            entry = result[ns]
+            entry["total"] += cnt
+            if tier == 0:
+                entry["pinned"] = cnt
+            elif tier == 1:
+                entry["default"] = cnt
+            elif tier == 2:
+                entry["ambient"] = cnt
+            if oldest and (entry["oldest"] is None or oldest < entry["oldest"]):
+                entry["oldest"] = oldest
+            if newest and (entry["newest"] is None or newest > entry["newest"]):
+                entry["newest"] = newest
+        return list(result.values())
+
     def health_check(self) -> dict[str, Any]:
         """Return a health report: DB integrity, WAL size, per-ns index counts, orphan indexes."""
         report: dict[str, Any] = {}
@@ -1035,6 +1064,16 @@ class Store:
                 "capacity_warning": usage_pct is not None and usage_pct >= 85.0,
             })
         report["namespaces"] = ns_reports
+
+        # Tier breakdown per namespace
+        tier_rows = self._db.execute(
+            "SELECT ns, tier, COUNT(*) FROM memories GROUP BY ns, tier"
+        ).fetchall()
+        tier_map: dict[str, dict[int, int]] = {}
+        for ns, tier, cnt in tier_rows:
+            tier_map.setdefault(ns, {})[tier] = cnt
+        for ns_report in ns_reports:
+            ns_report["tier_breakdown"] = tier_map.get(ns_report["ns"], {})
 
         # Orphan indexes (index file exists but 0 SQL rows)
         orphans = []
