@@ -1144,3 +1144,29 @@ def test_main_as_module(tmp_path, monkeypatch):
     Store(tmp_path)  # create empty DB so stats doesn't fail
     with patch("builtins.print"):
         runpy.run_module("mnemonics.cli", run_name="__main__", alter_sys=True)
+
+
+def test_sync_no_subcommand_shows_help(capsys):
+    """cli.py lines 499-500: sync with no subcommand → print_help + exit 1."""
+    with patch("sys.argv", ["mnemonics", "sync"]):
+        with pytest.raises(SystemExit) as exc:
+            main()
+    assert exc.value.code == 1
+
+
+def test_ingest_interactive_cancelled(tmp_path, capsys, monkeypatch):
+    """cli.py lines 220-221, 227-228: --dedup + interactive prompt → cancel."""
+    fake_match = [{"id": 1, "text": "identical text", "similarity": 0.99}]
+    with (
+        patch("sys.argv", ["mnemonics", "ingest", "identical text",
+                           "--path", str(tmp_path), "--dedup"]),
+        patch("sys.stdin.isatty", return_value=True),
+        patch("builtins.input", return_value=""),   # empty → not y → decision = "c"
+        patch("mnemonics.dedup.find_similar", return_value=fake_match),
+        patch("mnemonics.store.Store"),
+    ):
+        with pytest.raises(SystemExit) as exc:
+            main()
+    assert exc.value.code == 0
+    out = capsys.readouterr().out
+    assert "Cancelled" in out

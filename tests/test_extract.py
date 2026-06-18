@@ -263,3 +263,19 @@ def test_retry_exhausted_raises():
     ex = FactExtractor(client=client, retries=1)
     with pytest.raises(OSError):
         ex.extract_session(TURNS)
+
+
+def test_client_property_lazy_init(monkeypatch):
+    """extract.py line 101: client property calls _default_client() when None."""
+    import sys
+    from unittest.mock import MagicMock as _MM
+    mock_openai_mod = _MM()
+    mock_client = _MM()
+    mock_openai_mod.OpenAI = _MM(return_value=mock_client)
+    monkeypatch.setitem(sys.modules, "openai", mock_openai_mod)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    ex = FactExtractor()   # no client passed → _client = None
+    assert ex._client is None
+    c = ex.client          # triggers lazy init
+    assert c is not None
+    assert ex._client is not None
