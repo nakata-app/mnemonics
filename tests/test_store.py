@@ -707,3 +707,15 @@ def test_bm25_score_is_positive(tmp_store):
     tmp_store.add(["keyword match here"], make_vecs(1))
     hits = tmp_store.search_bm25("keyword", top_k=5)
     assert hits and hits[0]["score"] > 0
+
+
+# ── gc_candidates tier=0 guard ────────────────────────────────────────────────
+
+def test_gc_candidates_rejects_tier0(tmp_store):
+    with pytest.raises(ValueError, match="tier must be 1 or 2"):
+        tmp_store.gc_candidates(tier=0)
+
+
+def test_gc_candidates_rejects_invalid_tier(tmp_store):
+    with pytest.raises(ValueError):
+        tmp_store.gc_candidates(tier=3)
