@@ -80,6 +80,34 @@ def main() -> None:
     ts.add_argument("--json", dest="json_out", action="store_true", help="Output results as JSON array")
     ts.add_argument("--path", default="~/.mnemonics")
 
+    # age-by-ns
+    abn_p = sub.add_parser("age-by-ns", help="Memory count by age bracket for a namespace")
+    abn_p.add_argument("ns", help="Namespace to analyze")
+    abn_p.add_argument("--json", action="store_true", dest="as_json")
+    abn_p.add_argument("--path", default="~/.mnemonics")
+
+    # delete-by-tier
+    dbt_p = sub.add_parser("delete-by-tier", help="Delete all memories of a tier from ns (irreversible)")
+    dbt_p.add_argument("ns", help="Target namespace")
+    dbt_p.add_argument("tier", type=int, help="Tier to delete (0/1/2)")
+    dbt_p.add_argument("--path", default="~/.mnemonics")
+
+    # untagged-memories
+    utm_p = sub.add_parser("untagged-memories", help="Show memories with no tags")
+    utm_p.add_argument("--ns", default="default")
+    utm_p.add_argument("--all-ns", action="store_true")
+    utm_p.add_argument("--limit", type=int, default=20)
+    utm_p.add_argument("--json", action="store_true", dest="as_json")
+    utm_p.add_argument("--path", default="~/.mnemonics")
+
+    # set-meta-for-untagged
+    smfu_p = sub.add_parser("set-meta-for-untagged", help="Set a meta key on untagged memories")
+    smfu_p.add_argument("key", help="Meta key to set")
+    smfu_p.add_argument("value", help="Meta value to set")
+    smfu_p.add_argument("--ns", default="default")
+    smfu_p.add_argument("--limit", type=int, default=100)
+    smfu_p.add_argument("--path", default="~/.mnemonics")
+
     # toggle-tier
     tt_p = sub.add_parser("toggle-tier", help="Cycle memory tier: pinned→ambient→default→pinned")
     tt_p.add_argument("id", type=int, help="Memory ID")
@@ -817,6 +845,49 @@ def main() -> None:
                 print(line)
                 if r.get("summary"):
                     print(f"           summary: {r['summary']}")
+
+    elif args.cmd == "age-by-ns":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        result = store.age_by_ns(args.ns)
+        if args.as_json:
+            print(json.dumps(result, ensure_ascii=False))
+        else:
+            print(f"Age breakdown for ns={args.ns!r} (total={result['total']}):")
+            print(f"  today       : {result['today']}")
+            print(f"  this week   : {result['this_week']}")
+            print(f"  this month  : {result['this_month']}")
+            print(f"  this quarter: {result['this_quarter']}")
+            print(f"  older       : {result['older']}")
+
+    elif args.cmd == "delete-by-tier":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        try:
+            n = store.delete_by_tier(args.ns, args.tier)
+        except ValueError as e:
+            print(f"Error: {e}")
+            return
+        print(f"Deleted {n} memories from ns={args.ns!r} with tier={args.tier}.")
+
+    elif args.cmd == "untagged-memories":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        ns_q = None if args.all_ns else args.ns
+        hits = store.untagged_memories(ns=ns_q, limit=args.limit)
+        if args.as_json:
+            print(json.dumps(hits, default=str, ensure_ascii=False))
+        else:
+            ns_label = repr(ns_q) if ns_q is not None else "(all)"
+            print(f"Found {len(hits)} untagged memories (ns={ns_label}):")
+            for r in hits:
+                print(f"  [{r['id']}] {r['text'][:70]!r}")
+
+    elif args.cmd == "set-meta-for-untagged":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        n = store.set_meta_for_untagged(args.ns, args.key, args.value, limit=args.limit)
+        print(f"Set meta.{args.key}={args.value!r} on {n} untagged memories in ns={args.ns!r}.")
 
     elif args.cmd == "toggle-tier":
         from mnemonics.store import Store

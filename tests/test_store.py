@@ -3948,3 +3948,142 @@ def test_search_by_access_count_limit(tmp_store):
     tmp_store.add(["a", "b", "c", "d", "e"], vecs, ns="default")
     hits = tmp_store.search_by_access_count(min_count=0, ns="default", limit=2)
     assert len(hits) == 2
+
+
+# ── age_by_ns ─────────────────────────────────────────────────────────────────
+
+def test_age_by_ns_returns_buckets(tmp_store):
+    """age_by_ns returns count breakdowns for a populated ns."""
+    import numpy as np
+    vecs = np.random.rand(3, 384).astype(np.float32)
+    tmp_store.add(["a", "b", "c"], vecs, ns="myns")
+    result = tmp_store.age_by_ns("myns")
+    assert result["ns"] == "myns"
+    assert result["total"] == 3
+    # All were just created, so should be in "today"
+    assert result["today"] == 3
+
+
+def test_age_by_ns_empty_ns(tmp_store):
+    """age_by_ns returns zeroed dict for empty namespace."""
+    result = tmp_store.age_by_ns("nonexistent")
+    assert result["total"] == 0
+    assert result["today"] == 0
+
+
+# ── delete_by_tier ────────────────────────────────────────────────────────────
+
+def test_delete_by_tier_removes_matching(tmp_store):
+    """delete_by_tier removes only memories of the target tier."""
+    import numpy as np
+    vecs = np.random.rand(4, 384).astype(np.float32)
+    ids = tmp_store.add(["a", "b", "c", "d"], vecs, ns="myns")
+    # Set two to tier=2
+    tmp_store._db.execute(
+        "UPDATE memories SET tier=2 WHERE id IN (?,?)", ids[:2]
+    )
+    tmp_store._db.commit()
+    n = tmp_store.delete_by_tier("myns", 2)
+    assert n == 2
+    remaining = tmp_store._db.execute(
+        "SELECT COUNT(*) FROM memories WHERE ns='myns'"
+    ).fetchone()[0]
+    assert remaining == 2
+
+
+def test_delete_by_tier_invalid(tmp_store):
+    """delete_by_tier raises ValueError for invalid tier."""
+    import pytest
+    with pytest.raises(ValueError):
+        tmp_store.delete_by_tier("myns", 5)
+
+
+def test_delete_by_tier_returns_zero_for_no_match(tmp_store):
+    """delete_by_tier returns 0 when no memories match."""
+    n = tmp_store.delete_by_tier("nonexistent_ns", 1)
+    assert n == 0
+
+
+# ── untagged_memories ─────────────────────────────────────────────────────────
+
+def test_untagged_memories_returns_untagged(tmp_store):
+    """untagged_memories returns memories without tags."""
+    import numpy as np
+    vecs = np.random.rand(3, 384).astype(np.float32)
+    ids = tmp_store.add(["a", "b", "c"], vecs, ns="default",
+                        meta=[{"tags": ["t1"]}, {}, {}])
+    hits = tmp_store.untagged_memories(ns="default")
+    assert len(hits) == 2
+    tagged_ids = {h["id"] for h in hits}
+    assert ids[0] not in tagged_ids
+
+
+def test_untagged_memories_empty_tags_list(tmp_store):
+    """untagged_memories includes memories with empty tags list."""
+    import numpy as np
+    vecs = np.random.rand(1, 384).astype(np.float32)
+    tmp_store.add(["x"], vecs, ns="default", meta=[{"tags": []}])
+    hits = tmp_store.untagged_memories(ns="default")
+    assert len(hits) == 1
+
+
+def test_untagged_memories_all_ns(tmp_store):
+    """untagged_memories ns=None spans all namespaces."""
+    import numpy as np
+    v1 = np.random.rand(1, 384).astype(np.float32)
+    v2 = np.random.rand(1, 384).astype(np.float32)
+    tmp_store.add(["a"], v1, ns="ns1")
+    tmp_store.add(["b"], v2, ns="ns2")
+    hits = tmp_store.untagged_memories(ns=None)
+    assert len(hits) == 2
+
+
+def test_untagged_memories_limit(tmp_store):
+    """untagged_memories respects limit."""
+    import numpy as np
+    vecs = np.random.rand(5, 384).astype(np.float32)
+    tmp_store.add(["a", "b", "c", "d", "e"], vecs, ns="default")
+    hits = tmp_store.untagged_memories(ns="default", limit=2)
+    assert len(hits) == 2
+
+
+# ── set_meta_for_untagged ─────────────────────────────────────────────────────
+
+def test_set_meta_for_untagged_updates(tmp_store):
+    """set_meta_for_untagged sets key on untagged memories."""
+    import numpy as np, json
+    vecs = np.random.rand(3, 384).astype(np.float32)
+    tmp_store.add(["a", "b", "c"], vecs, ns="default",
+                  meta=[{"tags": ["t"]}, {}, {}])
+    n = tmp_store.set_meta_for_untagged("default", "source", "batch")
+    assert n == 2
+    row = tmp_store._db.execute(
+        "SELECT meta FROM memories WHERE ns='default' AND meta NOT LIKE '%\"tags\"%'"
+        " LIMIT 1"
+    ).fetchone()
+    meta = json.loads(row[0])
+    assert meta.get("source") == "batch"
+
+
+def test_set_meta_for_untagged_returns_zero_for_empty(tmp_store):
+    """set_meta_for_untagged returns 0 when no untagged memories."""
+    import numpy as np
+    vecs = np.random.rand(2, 384).astype(np.float32)
+    tmp_store.add(["a", "b"], vecs, ns="default",
+                  meta=[{"tags": ["t"]}, {"tags": ["s"]}])
+    n = tmp_store.set_meta_for_untagged("default", "k", "v")
+    assert n == 0
+
+
+def test_set_meta_for_untagged_with_broken_meta(tmp_store):
+    """set_meta_for_untagged handles memories with broken JSON meta."""
+    import numpy as np
+    vecs = np.random.rand(1, 384).astype(np.float32)
+    ids = tmp_store.add(["x"], vecs, ns="default")
+    # Force broken JSON (not containing "tags" so untagged_memories picks it up)
+    tmp_store._db.execute(
+        "UPDATE memories SET meta=? WHERE id=?", ("{broken json", ids[0])
+    )
+    tmp_store._db.commit()
+    n = tmp_store.set_meta_for_untagged("default", "k", "v")
+    assert n == 1

@@ -262,6 +262,32 @@ class _Handler(BaseHTTPRequestHandler):
             n_mtn = _get_store().move_to_ns([int(i) for i in mtn_ids], mtn_ns)
             self._json(200, {"moved": n_mtn, "target_ns": mtn_ns})
 
+        elif self.path == "/delete-by-tier":
+            dbt_ns = body.get("ns")
+            dbt_tier = body.get("tier")
+            if not dbt_ns or dbt_tier is None:
+                self._json(400, {"error": "'ns' (str) and 'tier' (int) are required"})
+                return
+            try:
+                n_dbt = _get_store().delete_by_tier(str(dbt_ns), int(dbt_tier))
+            except ValueError as e_dbt:
+                self._json(400, {"error": str(e_dbt)})
+                return
+            self._json(200, {"ns": dbt_ns, "tier": int(dbt_tier), "deleted": n_dbt})
+
+        elif self.path == "/set-meta-for-untagged":
+            smfu_ns = body.get("ns", "default")
+            smfu_key = body.get("key")
+            smfu_val = body.get("value")
+            smfu_limit = int(body.get("limit", 100))
+            if not smfu_key or smfu_val is None:
+                self._json(400, {"error": "'key' and 'value' are required"})
+                return
+            n_smfu = _get_store().set_meta_for_untagged(
+                str(smfu_ns), str(smfu_key), smfu_val, limit=smfu_limit
+            )
+            self._json(200, {"ns": smfu_ns, "key": smfu_key, "updated": n_smfu})
+
         elif self.path == "/toggle-tier":
             tt_id = body.get("id")
             if tt_id is None:
@@ -683,6 +709,22 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(200, _get_store().health_check())
         elif path == "/namespaces":
             self._json(200, {"namespaces": _get_store().list_namespaces()})
+        elif path.startswith("/age-by-ns"):
+            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_abn
+            qs_abn = parse_qs(urlparse(self.path).query)
+            ns_abn_raw = (qs_abn.get("ns") or [None])[0]
+            if not ns_abn_raw:
+                self._json(400, {"error": "'ns' query param is required"})
+                return
+            self._json(200, _get_store().age_by_ns(_uqp_abn(ns_abn_raw)))
+        elif path.startswith("/untagged-memories"):
+            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_utm
+            qs_utm = parse_qs(urlparse(self.path).query)
+            ns_utm_raw = qs_utm.get("ns", [None])[0]
+            ns_utm = _uqp_utm(ns_utm_raw) if ns_utm_raw is not None else None
+            limit_utm = int((qs_utm.get("limit") or ["20"])[0])
+            hits_utm = _get_store().untagged_memories(ns=ns_utm, limit=limit_utm)
+            self._json(200, {"count": len(hits_utm), "results": hits_utm})
         elif path.startswith("/search-by-access-count"):
             from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_sbac
             qs_sbac = parse_qs(urlparse(self.path).query)
@@ -1246,6 +1288,52 @@ def _mcp_loop() -> None:
                             "max_tier": {"type": "integer", "description": "Only return memories with tier <= this value"},
                         },
                         "required": ["query", "vector"],
+                    },
+                },
+                {
+                    "name": "mnemonics_age_by_ns",
+                    "description": "Return memory count by age bracket for a namespace: today, this_week, this_month, this_quarter, older.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {"ns": {"type": "string"}},
+                        "required": ["ns"],
+                    },
+                },
+                {
+                    "name": "mnemonics_delete_by_tier",
+                    "description": "Delete all memories of a given tier from ns. IRREVERSIBLE. Returns count deleted.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ns": {"type": "string"},
+                            "tier": {"type": "integer"},
+                        },
+                        "required": ["ns", "tier"],
+                    },
+                },
+                {
+                    "name": "mnemonics_untagged_memories",
+                    "description": "Return memories with no tags (absent or empty meta.tags). Useful for curation. Omit ns for all namespaces.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ns": {"type": "string"},
+                            "limit": {"type": "integer", "default": 20},
+                        },
+                    },
+                },
+                {
+                    "name": "mnemonics_set_meta_for_untagged",
+                    "description": "Set a meta key/value on untagged memories in ns. Useful for bulk-labelling memories without tags.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ns": {"type": "string", "default": "default"},
+                            "key": {"type": "string"},
+                            "value": {},
+                            "limit": {"type": "integer", "default": 100},
+                        },
+                        "required": ["key", "value"],
                     },
                 },
                 {
@@ -2307,6 +2395,54 @@ def _mcp_loop() -> None:
                         if r.get("summary"):
                             lines_hs.append(f"           summary: {r['summary'][:120]}")
                     ok({"content": [{"type": "text", "text": "\n".join(lines_hs)}]})
+
+            elif name == "mnemonics_age_by_ns":
+                abn_ns = args.get("ns", "").strip()
+                if not abn_ns:
+                    err("mnemonics_age_by_ns: 'ns' is required")
+                    continue
+                import json as _j_abn
+                abn_result = _get_store().age_by_ns(abn_ns)
+                ok({"content": [{"type": "text", "text":
+                    f"Age breakdown for ns={abn_ns!r}:\n" +
+                    _j_abn.dumps(abn_result, ensure_ascii=False, indent=2)}]})
+
+            elif name == "mnemonics_delete_by_tier":
+                dbt_ns_m = args.get("ns", "").strip()
+                dbt_tier_m = args.get("tier")
+                if not dbt_ns_m or dbt_tier_m is None:
+                    err("mnemonics_delete_by_tier: 'ns' and 'tier' are required")
+                    continue
+                try:
+                    n_dbt_m = _get_store().delete_by_tier(dbt_ns_m, int(dbt_tier_m))
+                except ValueError as e_dbt_m:
+                    err(str(e_dbt_m))
+                    continue
+                ok({"content": [{"type": "text", "text":
+                    f"Deleted {n_dbt_m} memories from ns={dbt_ns_m!r} with tier={dbt_tier_m}."}]})
+
+            elif name == "mnemonics_untagged_memories":
+                utm_ns_m = args.get("ns")
+                utm_limit_m = int(args.get("limit", 20))
+                utm_hits = _get_store().untagged_memories(ns=utm_ns_m, limit=utm_limit_m)
+                import json as _j_utm
+                ok({"content": [{"type": "text", "text":
+                    f"Found {len(utm_hits)} untagged memories:\n" +
+                    _j_utm.dumps(utm_hits, default=str, ensure_ascii=False)}]})
+
+            elif name == "mnemonics_set_meta_for_untagged":
+                smfu_ns_m = args.get("ns", "default") or "default"
+                smfu_key_m = args.get("key", "").strip()
+                smfu_val_m = args.get("value")
+                smfu_lim_m = int(args.get("limit", 100))
+                if not smfu_key_m or smfu_val_m is None:
+                    err("mnemonics_set_meta_for_untagged: 'key' and 'value' are required")
+                    continue
+                n_smfu_m = _get_store().set_meta_for_untagged(
+                    smfu_ns_m, smfu_key_m, smfu_val_m, limit=smfu_lim_m
+                )
+                ok({"content": [{"type": "text", "text":
+                    f"Set meta.{smfu_key_m}={smfu_val_m!r} on {n_smfu_m} untagged memories in ns={smfu_ns_m!r}."}]})
 
             elif name == "mnemonics_toggle_tier":
                 tt_id_m = args.get("id")

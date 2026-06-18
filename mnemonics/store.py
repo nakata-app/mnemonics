@@ -956,6 +956,135 @@ class Store:
             for r in rows
         ]
 
+    def age_by_ns(self, ns: str) -> dict:
+        """Return memory count broken down by age bracket for *ns*.
+
+        Brackets: today (<1 day), this_week (1-7 days), this_month (7-30
+        days), this_quarter (30-90 days), older (>90 days).  Useful for
+        dashboards that show how fresh a namespace's contents are.
+        """
+        row = self._db.execute(
+            """
+            SELECT
+                SUM(CASE WHEN julianday('now') - julianday(created) < 1 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN julianday('now') - julianday(created) BETWEEN 1 AND 6.999 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN julianday('now') - julianday(created) BETWEEN 7 AND 29.999 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN julianday('now') - julianday(created) BETWEEN 30 AND 89.999 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN julianday('now') - julianday(created) >= 90 THEN 1 ELSE 0 END),
+                COUNT(*)
+            FROM memories WHERE ns=?
+            """,
+            (ns,),
+        ).fetchone()
+        total = row[5] or 0
+        if not total:
+            return {"ns": ns, "today": 0, "this_week": 0, "this_month": 0,
+                    "this_quarter": 0, "older": 0, "total": 0}
+        return {
+            "ns": ns,
+            "today": row[0] or 0,
+            "this_week": row[1] or 0,
+            "this_month": row[2] or 0,
+            "this_quarter": row[3] or 0,
+            "older": row[4] or 0,
+            "total": row[5] or 0,
+        }
+
+    def delete_by_tier(self, ns: str, tier: int) -> int:
+        """Delete all memories of a given *tier* from *ns*.
+
+        Returns the number of rows deleted.  Pinned memories (tier=0) can
+        be deleted this way, unlike the GC which protects them.  Irreversible.
+        """
+        if tier not in (0, 1, 2):
+            raise ValueError("tier must be 0 (pinned), 1 (default), or 2 (ambient)")
+        with self._lock:
+            cur = self._db.execute(
+                "DELETE FROM memories WHERE ns=? AND tier=?", (ns, tier)
+            )
+            n = cur.rowcount
+            self._db.commit()
+        return n
+
+    def untagged_memories(
+        self,
+        ns: str | None = "default",
+        limit: int = 20,
+    ) -> list[dict]:
+        """Return memories that have no tags (empty or absent meta.tags array).
+
+        Useful for identifying memories that need curation.  *ns=None* spans
+        all namespaces.  Ordered by created DESC.
+        """
+        # Avoid json_extract on potentially-malformed meta; use LIKE to identify
+        # rows that definitely have no tags ("tags" key absent) or possibly have
+        # empty tags (post-filtered in Python).
+        if ns is not None:
+            candidates = self._db.execute(
+                "SELECT id, ns, text, summary, tier, created, meta FROM memories "
+                "WHERE ns=? ORDER BY created DESC",
+                (ns,),
+            ).fetchall()
+        else:
+            candidates = self._db.execute(
+                "SELECT id, ns, text, summary, tier, created, meta FROM memories "
+                "ORDER BY created DESC",
+            ).fetchall()
+
+        import json as _j_utm_filter
+        rows = []
+        for c in candidates:
+            meta_str = c[6]
+            try:
+                meta_obj = _j_utm_filter.loads(meta_str) if meta_str else {}
+                tags = meta_obj.get("tags")
+                if tags is None or (isinstance(tags, list) and len(tags) == 0):
+                    rows.append(c)
+            except Exception:
+                rows.append(c)
+        rows = rows[:limit]
+        return [
+            {"id": r[0], "ns": r[1], "text": r[2], "summary": r[3],
+             "tier": r[4], "created": r[5]}
+            for r in rows
+        ]
+
+    def set_meta_for_untagged(
+        self,
+        ns: str,
+        key: str,
+        value: object,
+        limit: int = 100,
+    ) -> int:
+        """Set a meta key on memories that currently have no tags in *ns*.
+
+        Useful for bulk-labelling untagged memories with a default category,
+        owner, or source marker.  Returns the number of memories updated.
+        """
+        import json as _j_smfu
+        untagged = self.untagged_memories(ns=ns, limit=limit)
+        if not untagged:
+            return 0
+        updated = 0
+        with self._lock:
+            for row in untagged:
+                cur_meta_row = self._db.execute(
+                    "SELECT meta FROM memories WHERE id=?", (row["id"],)
+                ).fetchone()
+                try:
+                    meta = _j_smfu.loads(cur_meta_row[0]) if cur_meta_row else {}
+                except Exception:
+                    meta = {}
+                meta[key] = value
+                self._db.execute(
+                    "UPDATE memories SET meta=? WHERE id=?",
+                    (_j_smfu.dumps(meta, ensure_ascii=False), row["id"]),
+                )
+                updated += 1
+            if updated:
+                self._db.commit()
+        return updated
+
     def rename_tag(
         self,
         old_tag: str,

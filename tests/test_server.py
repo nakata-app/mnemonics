@@ -673,6 +673,10 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_merge_texts",
         "mnemonics_truncate_text",
         "mnemonics_search_by_access_count",
+        "mnemonics_age_by_ns",
+        "mnemonics_delete_by_tier",
+        "mnemonics_untagged_memories",
+        "mnemonics_set_meta_for_untagged",
     }
 
 
@@ -5453,3 +5457,188 @@ def test_mcp_search_by_access_count(tmp_path):
                                     "arguments": {"min": 0, "ns": "default"}}})[0]
     text = resp["result"]["content"][0]["text"]
     assert "2" in text
+
+
+# ── age-by-ns REST ─────────────────────────────────────────────────────────────
+
+def test_http_age_by_ns(tmp_path):
+    """GET /age-by-ns returns age breakdown."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(2, DIM).astype(np.float32)
+    store.add(["a", "b"], vecs, ns="myns")
+    code, data = http_call(store, "GET", "/age-by-ns?ns=myns")
+    assert code == 200
+    assert data["total"] == 2
+
+
+def test_http_age_by_ns_missing_ns(tmp_path):
+    """GET /age-by-ns returns 400 when ns missing."""
+    store = Store(tmp_path)
+    code, data = http_call(store, "GET", "/age-by-ns")
+    assert code == 400
+
+
+# ── delete-by-tier REST ────────────────────────────────────────────────────────
+
+def test_http_delete_by_tier(tmp_path):
+    """POST /delete-by-tier deletes matching memories."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(2, DIM).astype(np.float32)
+    store.add(["a", "b"], vecs, ns="myns")
+    code, data = http_call(store, "POST", "/delete-by-tier",
+                           {"ns": "myns", "tier": 1})
+    assert code == 200
+    assert data["deleted"] == 2
+
+
+def test_http_delete_by_tier_missing_params(tmp_path):
+    """POST /delete-by-tier returns 400 when params missing."""
+    store = Store(tmp_path)
+    code, data = http_call(store, "POST", "/delete-by-tier", {"ns": "x"})
+    assert code == 400
+
+
+def test_http_delete_by_tier_invalid_tier(tmp_path):
+    """POST /delete-by-tier returns 400 for invalid tier."""
+    store = Store(tmp_path)
+    code, data = http_call(store, "POST", "/delete-by-tier",
+                           {"ns": "myns", "tier": 9})
+    assert code == 400
+
+
+# ── untagged-memories REST ─────────────────────────────────────────────────────
+
+def test_http_untagged_memories(tmp_path):
+    """GET /untagged-memories returns untagged memories."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(2, DIM).astype(np.float32)
+    store.add(["a", "b"], vecs, ns="default")
+    code, data = http_call(store, "GET", "/untagged-memories?ns=default")
+    assert code == 200
+    assert data["count"] == 2
+
+
+def test_http_untagged_memories_all_ns(tmp_path):
+    """GET /untagged-memories without ns spans all namespaces."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(1, DIM).astype(np.float32)
+    store.add(["x"], vecs, ns="ns1")
+    code, data = http_call(store, "GET", "/untagged-memories")
+    assert code == 200
+    assert data["count"] >= 1
+
+
+# ── set-meta-for-untagged REST ─────────────────────────────────────────────────
+
+def test_http_set_meta_for_untagged(tmp_path):
+    """POST /set-meta-for-untagged sets meta on untagged memories."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(2, DIM).astype(np.float32)
+    store.add(["a", "b"], vecs, ns="default")
+    code, data = http_call(store, "POST", "/set-meta-for-untagged",
+                           {"ns": "default", "key": "source", "value": "auto"})
+    assert code == 200
+    assert data["updated"] == 2
+
+
+def test_http_set_meta_for_untagged_missing_params(tmp_path):
+    """POST /set-meta-for-untagged returns 400 when key missing."""
+    store = Store(tmp_path)
+    code, data = http_call(store, "POST", "/set-meta-for-untagged",
+                           {"ns": "default"})
+    assert code == 400
+
+
+# ── MCP: age_by_ns, delete_by_tier, untagged_memories, set_meta_for_untagged ──
+
+def test_mcp_age_by_ns(tmp_path):
+    """MCP mnemonics_age_by_ns returns age breakdown."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(2, DIM).astype(np.float32)
+    store.add(["a", "b"], vecs, ns="myns")
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_age_by_ns",
+                                    "arguments": {"ns": "myns"}}})[0]
+    text = resp["result"]["content"][0]["text"]
+    assert "myns" in text
+
+
+def test_mcp_age_by_ns_missing(tmp_path):
+    """MCP mnemonics_age_by_ns returns error when ns missing."""
+    store = Store(tmp_path)
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_age_by_ns",
+                                    "arguments": {}}})[0]
+    assert "error" in resp
+
+
+def test_mcp_delete_by_tier(tmp_path):
+    """MCP mnemonics_delete_by_tier deletes memories."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(2, DIM).astype(np.float32)
+    store.add(["a", "b"], vecs, ns="myns")
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_delete_by_tier",
+                                    "arguments": {"ns": "myns", "tier": 1}}})[0]
+    text = resp["result"]["content"][0]["text"]
+    assert "2" in text
+
+
+def test_mcp_delete_by_tier_missing(tmp_path):
+    """MCP mnemonics_delete_by_tier returns error when params missing."""
+    store = Store(tmp_path)
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_delete_by_tier",
+                                    "arguments": {"ns": "x"}}})[0]
+    assert "error" in resp
+
+
+def test_mcp_delete_by_tier_invalid(tmp_path):
+    """MCP mnemonics_delete_by_tier returns error for invalid tier."""
+    store = Store(tmp_path)
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_delete_by_tier",
+                                    "arguments": {"ns": "myns", "tier": 9}}})[0]
+    assert "error" in resp
+
+
+def test_mcp_untagged_memories(tmp_path):
+    """MCP mnemonics_untagged_memories returns untagged memories."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(2, DIM).astype(np.float32)
+    store.add(["a", "b"], vecs, ns="default")
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_untagged_memories",
+                                    "arguments": {"ns": "default"}}})[0]
+    text = resp["result"]["content"][0]["text"]
+    assert "2" in text
+
+
+def test_mcp_set_meta_for_untagged(tmp_path):
+    """MCP mnemonics_set_meta_for_untagged sets meta on untagged."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(2, DIM).astype(np.float32)
+    store.add(["a", "b"], vecs, ns="default")
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_set_meta_for_untagged",
+                                    "arguments": {"ns": "default", "key": "src", "value": "auto"}}})[0]
+    text = resp["result"]["content"][0]["text"]
+    assert "2" in text
+
+
+def test_mcp_set_meta_for_untagged_missing(tmp_path):
+    """MCP mnemonics_set_meta_for_untagged returns error when key missing."""
+    store = Store(tmp_path)
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_set_meta_for_untagged",
+                                    "arguments": {"ns": "default"}}})[0]
+    assert "error" in resp

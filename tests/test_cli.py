@@ -4394,3 +4394,134 @@ def test_cli_search_by_access_count_all_ns(tmp_path):
         main()
     call_kwargs = mock_store.search_by_access_count.call_args
     assert call_kwargs.kwargs.get("ns") is None or call_kwargs[1].get("ns") is None
+
+
+# ── age-by-ns CLI ──────────────────────────────────────────────────────────────
+
+def test_cli_age_by_ns_text(tmp_path, capsys):
+    """age-by-ns prints age breakdown."""
+    mock_store = MagicMock()
+    mock_store.age_by_ns.return_value = {
+        "ns": "myns", "today": 3, "this_week": 1,
+        "this_month": 0, "this_quarter": 0, "older": 0, "total": 4
+    }
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "age-by-ns", "myns",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "myns" in out
+    assert "4" in out
+
+
+def test_cli_age_by_ns_json(tmp_path, capsys):
+    """age-by-ns --json outputs JSON."""
+    mock_store = MagicMock()
+    mock_store.age_by_ns.return_value = {"ns": "x", "total": 2, "today": 2,
+                                         "this_week": 0, "this_month": 0,
+                                         "this_quarter": 0, "older": 0}
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "age-by-ns", "x", "--json",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert json.loads(out)["total"] == 2
+
+
+# ── delete-by-tier CLI ─────────────────────────────────────────────────────────
+
+def test_cli_delete_by_tier(tmp_path, capsys):
+    """delete-by-tier prints deleted count."""
+    mock_store = MagicMock()
+    mock_store.delete_by_tier.return_value = 5
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "delete-by-tier", "myns", "2",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.delete_by_tier.assert_called_once_with("myns", 2)
+    out = capsys.readouterr().out
+    assert "5" in out
+
+
+def test_cli_delete_by_tier_error(tmp_path, capsys):
+    """delete-by-tier prints error when ValueError raised."""
+    mock_store = MagicMock()
+    mock_store.delete_by_tier.side_effect = ValueError("tier must be 0, 1, or 2")
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "delete-by-tier", "myns", "9",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "Error" in out
+
+
+# ── untagged-memories CLI ──────────────────────────────────────────────────────
+
+def test_cli_untagged_memories_text(tmp_path, capsys):
+    """untagged-memories prints matching memories."""
+    mock_store = MagicMock()
+    mock_store.untagged_memories.return_value = [
+        {"id": 3, "text": "no tag here", "tier": 1, "ns": "default", "summary": None, "created": "t"}
+    ]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "untagged-memories",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "[3]" in out
+
+
+def test_cli_untagged_memories_json(tmp_path, capsys):
+    """untagged-memories --json outputs JSON."""
+    mock_store = MagicMock()
+    mock_store.untagged_memories.return_value = [{"id": 3}]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "untagged-memories", "--json",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert json.loads(out)[0]["id"] == 3
+
+
+def test_cli_untagged_memories_all_ns(tmp_path):
+    """untagged-memories --all-ns passes ns=None."""
+    mock_store = MagicMock()
+    mock_store.untagged_memories.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "untagged-memories", "--all-ns",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.untagged_memories.assert_called_once_with(ns=None, limit=20)
+
+
+# ── set-meta-for-untagged CLI ──────────────────────────────────────────────────
+
+def test_cli_set_meta_for_untagged(tmp_path, capsys):
+    """set-meta-for-untagged prints updated count."""
+    mock_store = MagicMock()
+    mock_store.set_meta_for_untagged.return_value = 4
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "set-meta-for-untagged",
+                           "source", "auto", "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.set_meta_for_untagged.assert_called_once_with(
+        "default", "source", "auto", limit=100
+    )
+    out = capsys.readouterr().out
+    assert "4" in out
