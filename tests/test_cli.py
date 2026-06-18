@@ -1118,3 +1118,29 @@ def test_eval_with_out_dir(tmp_path, capsys):
     ):
         main()
     assert "table" in capsys.readouterr().out
+
+
+# ── encrypt-db error path ─────────────────────────────────────────────────────
+
+def test_encrypt_db_runtime_error(tmp_path, capsys):
+    with (
+        patch("mnemonics.migrate.encrypt_db", side_effect=RuntimeError("mcp is running")),
+        patch("sys.argv", ["mnemonics", "encrypt-db", "--key", "a" * 64, "--path", str(tmp_path)]),
+    ):
+        with pytest.raises(SystemExit) as exc:
+            main()
+    assert exc.value.code == 2
+    assert "mcp is running" in capsys.readouterr().err
+
+
+# ── if __name__ == "__main__" ─────────────────────────────────────────────────
+
+def test_main_as_module(tmp_path, monkeypatch):
+    """Running cli.py as __main__ should call main()."""
+    import runpy
+    monkeypatch.setattr("sys.argv", ["mnemonics", "stats", "--path", str(tmp_path)])
+    import numpy as np
+    from mnemonics.store import Store, DIM
+    Store(tmp_path)  # create empty DB so stats doesn't fail
+    with patch("builtins.print"):
+        runpy.run_module("mnemonics.cli", run_name="__main__", alter_sys=True)
