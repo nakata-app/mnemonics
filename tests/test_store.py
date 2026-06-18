@@ -1228,3 +1228,55 @@ def test_update_tier_many_empty_list(tmp_path):
     """update_tier_many([]) returns 0 without DB write."""
     s = Store(tmp_path)
     assert s.update_tier_many([], tier=0) == 0
+
+
+def test_search_by_meta_single_filter(tmp_path):
+    """search_by_meta returns memories matching a single meta key=value."""
+    s = Store(tmp_path)
+    ids = s.add(
+        ["match text", "no-match text"],
+        make_vecs(2),
+        meta=[{"source": "book"}, {"source": "web"}],
+    )
+    results = s.search_by_meta({"source": "book"})
+    assert len(results) == 1
+    assert results[0]["id"] == ids[0]
+
+
+def test_search_by_meta_multi_filter(tmp_path):
+    """search_by_meta applies AND logic across multiple keys."""
+    s = Store(tmp_path)
+    s.add(
+        ["a", "b", "c"],
+        make_vecs(3),
+        meta=[
+            {"source": "book", "page": 1},
+            {"source": "book", "page": 2},
+            {"source": "web", "page": 1},
+        ],
+    )
+    results = s.search_by_meta({"source": "book", "page": 1})
+    assert len(results) == 1
+    assert results[0]["text"] == "a"
+
+
+def test_search_by_meta_empty_filters_returns_empty(tmp_path):
+    """search_by_meta({}) returns [] immediately without querying."""
+    s = Store(tmp_path)
+    s.add(["x"], make_vecs(1), meta=[{"k": "v"}])
+    assert s.search_by_meta({}) == []
+
+
+def test_search_by_meta_no_match_returns_empty(tmp_path):
+    """search_by_meta returns [] when nothing matches."""
+    s = Store(tmp_path)
+    s.add(["x"], make_vecs(1), meta=[{"k": "v"}])
+    assert s.search_by_meta({"k": "nonexistent"}) == []
+
+
+def test_search_by_meta_limit(tmp_path):
+    """search_by_meta limit parameter caps result count."""
+    s = Store(tmp_path)
+    s.add(["a", "b", "c"], make_vecs(3), meta=[{"t": "x"}] * 3)
+    results = s.search_by_meta({"t": "x"}, limit=2)
+    assert len(results) == 2

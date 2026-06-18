@@ -461,6 +461,42 @@ class Store:
             self._db.commit()
         return cur.rowcount > 0
 
+    def search_by_meta(
+        self,
+        filters: dict,
+        ns: str = "default",
+        limit: int = 100,
+    ) -> list[dict]:
+        """Return memories where meta matches all key=value pairs (AND logic).
+
+        Uses SQLite json_extract for scalar values (str, int, float, bool, None).
+        Nested keys are supported via dot notation: filters={"a.b": 1} maps to
+        json_extract(meta, '$.a.b') — standard JSONPath.
+        """
+        if not filters:
+            return []
+        where_parts = ["ns = ?"]
+        params: list[Any] = [ns]
+        for key, value in filters.items():
+            where_parts.append("json_extract(meta, ?) = ?")
+            params.extend([f"$.{key}", value])
+        where = " AND ".join(where_parts)
+        params.append(limit)
+        with self._lock:
+            rows = self._db.execute(
+                f"SELECT id, ns, text, summary, meta, created, tier, last_accessed, access_count "
+                f"FROM memories WHERE {where} LIMIT ?",
+                params,
+            ).fetchall()
+        return [
+            {
+                "id": r[0], "ns": r[1], "text": r[2], "summary": r[3],
+                "meta": json.loads(r[4]), "created": r[5],
+                "tier": r[6], "last_accessed": r[7], "access_count": r[8],
+            }
+            for r in rows
+        ]
+
     def update_meta(self, memory_id: int, meta: dict) -> bool:
         with self._lock:
             cur = self._db.execute(
