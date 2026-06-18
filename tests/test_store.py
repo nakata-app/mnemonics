@@ -119,6 +119,42 @@ def test_delete_does_not_affect_others(tmp_store):
     assert tmp_store.count() == 1
 
 
+def test_delete_removes_from_vector_index(tmp_path):
+    vecs = make_vecs(1)
+    s = Store(tmp_path)
+    ids = s.add(["ghost-doc"], vecs)
+    deleted_id = ids[0]
+
+    # Search before delete — must find it
+    assert any(r["id"] == deleted_id for r in s.search(vecs[0], top_k=5))
+
+    s.delete(deleted_id)
+
+    # After delete: not in search results
+    assert all(r["id"] != deleted_id for r in s.search(vecs[0], top_k=5))
+
+    # After reload from disk: still not in results (index was saved correctly)
+    s2 = Store(tmp_path)
+    assert all(r["id"] != deleted_id for r in s2.search(vecs[0], top_k=5))
+
+
+def test_gc_removes_from_vector_index(tmp_path):
+    vecs = make_vecs(1)
+    s = Store(tmp_path)
+    ids = s.add(["ambient-doc"], vecs)
+    s.set_tier(ids[0], 2)  # make gc-eligible
+    deleted_id = ids[0]
+
+    count = s.gc(age_days=0)
+    assert count == 1
+
+    assert all(r["id"] != deleted_id for r in s.search(vecs[0], top_k=5))
+
+    # Persist check
+    s2 = Store(tmp_path)
+    assert all(r["id"] != deleted_id for r in s2.search(vecs[0], top_k=5))
+
+
 # ── namespaces ───────────────────────────────────────────────────────────────
 
 def test_list_namespaces_empty(tmp_store):

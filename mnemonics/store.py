@@ -304,7 +304,11 @@ class Store:
             n = min(top_k, idx.get_current_count())
             if n == 0:
                 return []
-            labels, distances = idx.knn_query(vector, k=n)
+            try:
+                labels, distances = idx.knn_query(vector, k=n)
+            except RuntimeError:
+                # All elements in this index are mark_deleted; nothing to return.
+                return []
             row_ids = [int(x) for x in labels[0]]
             placeholders = ",".join("?" * len(row_ids))
             rows = self._db.execute(
@@ -414,8 +418,22 @@ class Store:
 
     def delete(self, memory_id: int) -> bool:
         with self._lock:
+            row = self._db.execute("SELECT ns FROM memories WHERE id=?", (memory_id,)).fetchone()
+            if row is None:
+                return False
+            ns = row[0]
             cur = self._db.execute("DELETE FROM memories WHERE id=?", (memory_id,))
             self._db.commit()
+        if cur.rowcount > 0:
+            with self._ns_file_lock(ns, exclusive=True), self._lock:
+                try:
+                    idx = self._index_for(ns)
+                    idx.mark_deleted(memory_id)
+                    idx_path = self.root / f"index_{ns}.bin"
+                    idx.save_index(str(idx_path))
+                    self._index_mtime[ns] = idx_path.stat().st_mtime
+                except Exception:
+                    pass  # label absent from index (e.g. index rebuilt without this entry)
         return cur.rowcount > 0
 
     def gc_candidates(self, ns: str | None = None, age_days: int = 30) -> list[dict[str, Any]]:
@@ -448,4 +466,21 @@ class Store:
                 ids,
             )
             self._db.commit()
+        ns_to_ids: dict[str, list[int]] = {}
+        for c in candidates:
+            ns_to_ids.setdefault(c["ns"], []).append(c["id"])
+        for cand_ns, cand_ids in ns_to_ids.items():
+            with self._ns_file_lock(cand_ns, exclusive=True), self._lock:
+                try:
+                    idx = self._index_for(cand_ns)
+                    for cid in cand_ids:
+                        try:
+                            idx.mark_deleted(cid)
+                        except Exception:
+                            pass
+                    idx_path = self.root / f"index_{cand_ns}.bin"
+                    idx.save_index(str(idx_path))
+                    self._index_mtime[cand_ns] = idx_path.stat().st_mtime
+                except Exception:
+                    pass
         return len(ids)
