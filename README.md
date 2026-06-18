@@ -61,6 +61,30 @@ mnem tier <id> 2          # tier=2, ambient (fast decay)
 mnem retrieve "..." --no-decay   # show raw cosine scores
 ```
 
+## Maintenance
+
+```bash
+# Garbage-collect tier-2 rows not accessed in 30+ days (dry-run by default)
+mnem gc --ns default --age-days 30
+mnem gc --ns default --age-days 30 --apply   # actually delete
+
+# Sweep tier-1 rows older than 60 days
+mnem gc --ns sessions --age-days 60 --tier 1 --apply
+
+# Bulk-delete an entire namespace (dry-run by default)
+mnem forget --ns old-project
+mnem forget --ns old-project --apply         # actually delete
+mnem forget --ns archive --before 2026-01-01 # date-filtered
+
+# Store health check (DB integrity, index vs SQL counts, orphan files)
+mnem doctor
+mnem doctor --json                           # JSON output for scripting
+
+# Repair orphan vectors without re-encoding
+# (Use when doctor shows "orphan vector(s)", loads vectors from old index by ID)
+mnem rebuild-index --ns <ns>
+```
+
 ## Raw + summary
 
 You can attach an optional one-line summary alongside the raw text. The embedding is still computed from the raw chunk, so vector recall is unchanged, but the BM25 mirror indexes both columns, so a keyword can land a hit via the gist even when the raw transcript reads differently.
@@ -133,11 +157,12 @@ mnem mcp
 Tools exposed:
 - `mnemonics_ingest`
 - `mnemonics_retrieve` (decay-aware, supports `decay: false` for raw cosine)
-- `mnemonics_forget`
+- `mnemonics_forget` (delete by id)
 - `mnemonics_pin`
 - `mnemonics_tier`
-- `mnemonics_gc`
+- `mnemonics_gc` (supports `tier: 1` for default-tier rows)
 - `mnemonics_stats`
+- `mnemonics_health` (DB integrity + index health report as JSON)
 
 ## Namespaces
 
