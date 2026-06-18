@@ -42,6 +42,10 @@ All notable changes to mnemonics. Format follows [Keep a Changelog](https://keep
 - **`mnemonics_forget_ns` MCP tool** bulk-deletes a namespace from AI agents.
   Accepts `ns` (required), `before`, `tier`, `dry_run` (default true).
   Complements `mnemonics_forget` (single-id) and `mnemonics_gc` (age-based).
+- **`mnemonics_rebuild_index` MCP tool.** Rebuild the hnswlib index for a
+  specific namespace from the SQL source of truth without re-encoding.
+  Completes MCP parity with `mnem rebuild-index` (CLI) and
+  `POST /rebuild-index` (REST).
 - **`mnemonics_stats` tier breakdown.** Output now includes per-namespace
   tier counts: `default: 37 chunks  (pin=0 def=37 amb=0)`. Agents can see
   tier distribution without raw SQL queries.
