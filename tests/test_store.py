@@ -2881,3 +2881,81 @@ def test_bulk_tag_skips_missing_ids(populated_store):
     store, docs, vecs = populated_store
     n = store.bulk_tag([999998, 999999], ["x"])
     assert n == 0
+
+
+# ── touch ─────────────────────────────────────────────────────────────────────
+
+def test_touch_updates_last_accessed(populated_store):
+    """touch updates last_accessed without changing access_count."""
+    store, docs, vecs = populated_store
+    mid = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    before_row = store._db.execute(
+        "SELECT access_count FROM memories WHERE id=?", (mid,)
+    ).fetchone()
+    before_count = before_row[0]
+    result = store.touch(mid)
+    assert result is True
+    after_row = store._db.execute(
+        "SELECT last_accessed, access_count FROM memories WHERE id=?", (mid,)
+    ).fetchone()
+    assert after_row[0] is not None
+    assert after_row[1] == before_count
+
+
+def test_touch_missing_id(tmp_store):
+    """touch returns False for a non-existent ID."""
+    assert tmp_store.touch(999999) is False
+
+
+# ── bulk_untag ────────────────────────────────────────────────────────────────
+
+def test_bulk_untag_removes_tags(populated_store):
+    """bulk_untag removes specified tags from all memories in ids."""
+    store, docs, vecs = populated_store
+    ids = [r[0] for r in store._db.execute("SELECT id FROM memories LIMIT 2").fetchall()]
+    store.bulk_tag(ids, ["remove-me", "keep"])
+    n = store.bulk_untag(ids, ["remove-me"])
+    assert n == 2
+    import json as _j
+    for mid in ids:
+        row = store._db.execute("SELECT meta FROM memories WHERE id=?", (mid,)).fetchone()
+        tags = _j.loads(row[0])["tags"]
+        assert "remove-me" not in tags
+        assert "keep" in tags
+
+
+def test_bulk_untag_skips_missing(populated_store):
+    """bulk_untag skips IDs that don't exist."""
+    store, docs, vecs = populated_store
+    n = store.bulk_untag([999998, 999999], ["x"])
+    assert n == 0
+
+
+def test_bulk_untag_absent_tag_ok(populated_store):
+    """bulk_untag is safe when tag is not present on the memory."""
+    store, docs, vecs = populated_store
+    mid = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    n = store.bulk_untag([mid], ["nonexistent-tag"])
+    assert n == 1
+
+
+# ── count_by_tier ─────────────────────────────────────────────────────────────
+
+def test_count_by_tier_default_ns(populated_store):
+    """count_by_tier returns tier counts for the given namespace."""
+    store, docs, vecs = populated_store
+    counts = store.count_by_tier("default")
+    assert isinstance(counts, dict)
+    assert sum(counts.values()) == len(docs)
+
+
+def test_count_by_tier_all_ns(populated_store):
+    """count_by_tier spans all namespaces when ns=None."""
+    store, docs, vecs = populated_store
+    counts = store.count_by_tier(None)
+    assert sum(counts.values()) >= len(docs)
+
+
+def test_count_by_tier_empty_ns(tmp_store):
+    """count_by_tier returns empty dict for namespace with no memories."""
+    assert tmp_store.count_by_tier("ghost") == {}

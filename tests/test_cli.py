@@ -3233,3 +3233,87 @@ def test_cli_bulk_tag_ok(tmp_path, capsys):
         main()
     mock_store.bulk_tag.assert_called_once_with([1, 2, 3], ["alpha", "beta"])
     assert "3" in capsys.readouterr().out
+
+
+# ── touch CLI ─────────────────────────────────────────────────────────────────
+
+def test_cli_touch_ok(tmp_path, capsys):
+    """touch prints success when ID exists."""
+    mock_store = MagicMock()
+    mock_store.touch.return_value = True
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "touch", "42", "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.touch.assert_called_once_with(42)
+    assert "42" in capsys.readouterr().out
+
+
+def test_cli_touch_not_found(tmp_path, capsys):
+    """touch exits 1 when ID not found."""
+    mock_store = MagicMock()
+    mock_store.touch.return_value = False
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "touch", "999", "--path", str(tmp_path)]),
+    ):
+        with pytest.raises(SystemExit) as exc:
+            main()
+    assert exc.value.code == 1
+
+
+# ── bulk-untag CLI ────────────────────────────────────────────────────────────
+
+def test_cli_bulk_untag_ok(tmp_path, capsys):
+    """bulk-untag prints count of updated memories."""
+    mock_store = MagicMock()
+    mock_store.bulk_untag.return_value = 2
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "bulk-untag", "1", "2",
+                           "--tags", "x", "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.bulk_untag.assert_called_once_with([1, 2], ["x"])
+    assert "2" in capsys.readouterr().out
+
+
+# ── count-by-tier CLI ─────────────────────────────────────────────────────────
+
+def test_cli_count_by_tier_ok(tmp_path, capsys):
+    """count-by-tier prints tier counts."""
+    mock_store = MagicMock()
+    mock_store.count_by_tier.return_value = {1: 5, 2: 3}
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "count-by-tier", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "default" in out or "5" in out
+
+
+def test_cli_count_by_tier_json(tmp_path, capsys):
+    """count-by-tier --json outputs raw JSON."""
+    mock_store = MagicMock()
+    mock_store.count_by_tier.return_value = {1: 4}
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "count-by-tier", "--json", "--path", str(tmp_path)]),
+    ):
+        main()
+    parsed = json.loads(capsys.readouterr().out)
+    assert "1" in parsed or 1 in parsed
+
+
+def test_cli_count_by_tier_all_ns(tmp_path, capsys):
+    """count-by-tier --all-ns passes ns=None to store."""
+    mock_store = MagicMock()
+    mock_store.count_by_tier.return_value = {}
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "count-by-tier", "--all-ns", "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.count_by_tier.assert_called_once_with(None)

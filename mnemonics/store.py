@@ -769,6 +769,66 @@ class Store:
             self._db.commit()
         return cur.rowcount
 
+    def touch(self, memory_id: int) -> bool:
+        """Update ``last_accessed`` to the current UTC time without changing ``access_count``.
+
+        Useful for "mark as viewed" semantics where the caller does not want
+        to count an algorithmic access.  Returns ``True`` on success,
+        ``False`` if *memory_id* does not exist.
+        """
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        with self._lock:
+            cur = self._db.execute(
+                "UPDATE memories SET last_accessed=? WHERE id=?", (now, memory_id)
+            )
+            self._db.commit()
+        return cur.rowcount > 0
+
+    def bulk_untag(self, memory_ids: list[int], tags: list[str]) -> int:
+        """Remove one or more *tags* from multiple memories at once.
+
+        Each tag is removed from every memory in *memory_ids*.  IDs or tags
+        that are absent are silently skipped.  Returns the count of memories
+        that were actually updated.
+        """
+        import json as _j_butag
+        updated = 0
+        for mid in memory_ids:
+            row = self._db.execute(
+                "SELECT meta FROM memories WHERE id=?", (mid,)
+            ).fetchone()
+            if row is None:
+                continue
+            meta = _j_butag.loads(row[0]) if row[0] else {}
+            existing: list = meta.get("tags", [])
+            new_list = [t for t in existing if t not in tags]
+            if new_list != existing:
+                meta["tags"] = new_list
+                with self._lock:
+                    self._db.execute(
+                        "UPDATE memories SET meta=? WHERE id=?",
+                        (_j_butag.dumps(meta, ensure_ascii=False), mid),
+                    )
+                    self._db.commit()
+            updated += 1
+        return updated
+
+    def count_by_tier(self, ns: str | None = "default") -> dict[int, int]:
+        """Return a ``{tier: count}`` dict for *ns* (or all namespaces when *ns* is ``None``).
+
+        Tiers not present in the namespace are omitted from the result.
+        """
+        if ns is not None:
+            rows = self._db.execute(
+                "SELECT tier, COUNT(*) FROM memories WHERE ns=? GROUP BY tier", (ns,)
+            ).fetchall()
+        else:
+            rows = self._db.execute(
+                "SELECT tier, COUNT(*) FROM memories GROUP BY tier"
+            ).fetchall()
+        return {int(r[0]): int(r[1]) for r in rows}
+
     def export_ns(self, ns: str) -> list[dict]:
         """Export all memories in *ns* as a list of dicts (no vectors).
 

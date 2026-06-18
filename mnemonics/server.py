@@ -262,6 +262,26 @@ class _Handler(BaseHTTPRequestHandler):
             n_mtn = _get_store().move_to_ns([int(i) for i in mtn_ids], mtn_ns)
             self._json(200, {"moved": n_mtn, "target_ns": mtn_ns})
 
+        elif self.path == "/touch":
+            tc_id = body.get("id")
+            if tc_id is None:
+                self._json(400, {"error": "'id' (int) is required"})
+                return
+            ok_tc = _get_store().touch(int(tc_id))
+            if not ok_tc:
+                self._json(404, {"error": f"memory id={tc_id!r} not found"})
+            else:
+                self._json(200, {"id": int(tc_id), "touched": True})
+
+        elif self.path == "/bulk-untag":
+            but_ids = body.get("ids")
+            but_tags = body.get("tags")
+            if not isinstance(but_ids, list) or not isinstance(but_tags, list) or not but_tags:
+                self._json(400, {"error": "'ids' (list) and 'tags' (non-empty list) are required"})
+                return
+            n_but = _get_store().bulk_untag([int(i) for i in but_ids], [str(t) for t in but_tags])
+            self._json(200, {"updated": n_but, "tags_removed": but_tags})
+
         elif self.path == "/bulk-tag":
             bt_ids = body.get("ids")
             bt_tags = body.get("tags")
@@ -540,6 +560,12 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(200, _get_store().health_check())
         elif path == "/namespaces":
             self._json(200, {"namespaces": _get_store().list_namespaces()})
+        elif path.startswith("/count-by-tier"):
+            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_cbt
+            qs_cbt = parse_qs(urlparse(self.path).query)
+            ns_cbt_raw = qs_cbt.get("ns", [None])[0]
+            ns_cbt = _uqp_cbt(ns_cbt_raw) if ns_cbt_raw is not None else None
+            self._json(200, {"ns": ns_cbt, "by_tier": _get_store().count_by_tier(ns_cbt)})
         elif path.startswith("/export-ns/"):
             from urllib.parse import unquote_plus as _uqp_exp
             raw_ns_exp = path[len("/export-ns/"):]
@@ -942,6 +968,39 @@ def _mcp_loop() -> None:
                             "max_tier": {"type": "integer", "description": "Only return memories with tier <= this value"},
                         },
                         "required": ["query", "vector"],
+                    },
+                },
+                {
+                    "name": "mnemonics_touch",
+                    "description": "Update a memory's last_accessed timestamp to now without incrementing access_count. Use for 'mark as viewed' semantics that should not bias access statistics.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer", "description": "Memory ID to touch"},
+                        },
+                        "required": ["id"],
+                    },
+                },
+                {
+                    "name": "mnemonics_bulk_untag",
+                    "description": "Remove one or more tags from multiple memories at once. IDs or tags that are absent are silently skipped. Returns count of memories updated.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ids": {"type": "array", "items": {"type": "integer"}},
+                            "tags": {"type": "array", "items": {"type": "string"}},
+                        },
+                        "required": ["ids", "tags"],
+                    },
+                },
+                {
+                    "name": "mnemonics_count_by_tier",
+                    "description": "Return a {tier: count} breakdown for a namespace (or all namespaces when ns is omitted). Tiers not present are omitted. 0=pinned, 1=default, 2=ambient.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ns": {"type": "string", "description": "Namespace (omit for all)"},
+                        },
                     },
                 },
                 {
@@ -1654,6 +1713,38 @@ def _mcp_loop() -> None:
                         if r.get("summary"):
                             lines_hs.append(f"           summary: {r['summary'][:120]}")
                     ok({"content": [{"type": "text", "text": "\n".join(lines_hs)}]})
+
+            elif name == "mnemonics_touch":
+                tc_id_m = args.get("id")
+                if tc_id_m is None:
+                    err("mnemonics_touch: 'id' is required")
+                    continue
+                ok_tc_m = _get_store().touch(int(tc_id_m))
+                if not ok_tc_m:
+                    err(f"mnemonics_touch: id={tc_id_m!r} not found")
+                    continue
+                ok({"content": [{"type": "text", "text": f"Touched id={tc_id_m} (last_accessed updated)."}]})
+
+            elif name == "mnemonics_bulk_untag":
+                but_ids_m = args.get("ids")
+                but_tags_m = args.get("tags")
+                if not isinstance(but_ids_m, list) or not isinstance(but_tags_m, list) or not but_tags_m:
+                    err("mnemonics_bulk_untag: 'ids' (list) and 'tags' (non-empty list) are required")
+                    continue
+                n_but_m = _get_store().bulk_untag([int(i) for i in but_ids_m], [str(t) for t in but_tags_m])
+                ok({"content": [{"type": "text", "text": f"Removed tags {but_tags_m} from {n_but_m} memories."}]})
+
+            elif name == "mnemonics_count_by_tier":
+                cbt_ns = args.get("ns")
+                cbt_counts = _get_store().count_by_tier(cbt_ns)
+                tier_labels = {0: "pinned", 1: "default", 2: "ambient"}
+                cbt_ns_label = repr(cbt_ns) if cbt_ns is not None else "(all)"
+                lines_cbt = [f"Tier counts in ns={cbt_ns_label}:"]
+                for t, c in sorted(cbt_counts.items()):
+                    lines_cbt.append(f"  {tier_labels.get(t, str(t)):<10}: {c}")
+                if not cbt_counts:
+                    lines_cbt.append("  (empty)")
+                ok({"content": [{"type": "text", "text": "\n".join(lines_cbt)}]})
 
             elif name == "mnemonics_export_ns":
                 exp_ns = args.get("ns", "").strip()

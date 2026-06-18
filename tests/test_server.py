@@ -641,6 +641,9 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_search_date_range",
         "mnemonics_export_ns",
         "mnemonics_bulk_tag",
+        "mnemonics_touch",
+        "mnemonics_bulk_untag",
+        "mnemonics_count_by_tier",
     }
 
 
@@ -3937,3 +3940,141 @@ def test_mcp_bulk_tag_missing_args(tmp_store):
         "params": {"name": "mnemonics_bulk_tag", "arguments": {"ids": [1]}},
     })[0]
     assert "error" in r
+
+
+# ── touch / bulk-untag / count-by-tier REST + MCP ────────────────────────────
+
+def test_http_touch_ok(populated_store):
+    """POST /touch updates last_accessed."""
+    store, docs, vecs = populated_store
+    mid = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    code, data = http_call(store, "POST", "/touch", {"id": mid})
+    assert code == 200
+    assert data["touched"] is True
+
+
+def test_http_touch_not_found(tmp_store):
+    """POST /touch with unknown id returns 404."""
+    code, data = http_call(tmp_store, "POST", "/touch", {"id": 999999})
+    assert code == 404
+
+
+def test_http_touch_missing_param(tmp_store):
+    """POST /touch without id returns 400."""
+    code, data = http_call(tmp_store, "POST", "/touch", {})
+    assert code == 400
+
+
+def test_http_bulk_untag_ok(populated_store):
+    """POST /bulk-untag removes tags from memories."""
+    store, docs, vecs = populated_store
+    ids = [r[0] for r in store._db.execute("SELECT id FROM memories LIMIT 2").fetchall()]
+    store.bulk_tag(ids, ["bye"])
+    code, data = http_call(store, "POST", "/bulk-untag", {"ids": ids, "tags": ["bye"]})
+    assert code == 200
+    assert data["updated"] == 2
+
+
+def test_http_bulk_untag_missing_params(tmp_store):
+    """POST /bulk-untag without required params returns 400."""
+    code, data = http_call(tmp_store, "POST", "/bulk-untag", {"ids": [1]})
+    assert code == 400
+
+
+def test_http_count_by_tier_default(populated_store):
+    """GET /count-by-tier?ns=default returns tier counts."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/count-by-tier?ns=default", {})
+    assert code == 200
+    assert sum(data["by_tier"].values()) == len(docs)
+
+
+def test_http_count_by_tier_all_ns(populated_store):
+    """GET /count-by-tier without ns spans all namespaces."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/count-by-tier", {})
+    assert code == 200
+    assert sum(data["by_tier"].values()) >= len(docs)
+
+
+def test_mcp_touch_ok(populated_store):
+    """MCP mnemonics_touch returns success message."""
+    store, docs, vecs = populated_store
+    mid = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_touch", "arguments": {"id": mid}},
+    })[0]
+    assert "result" in r
+    assert "Touched" in r["result"]["content"][0]["text"]
+
+
+def test_mcp_touch_missing_arg(tmp_store):
+    """MCP mnemonics_touch without id returns error."""
+    r = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_touch", "arguments": {}},
+    })[0]
+    assert "error" in r
+
+
+def test_mcp_touch_not_found(tmp_store):
+    """MCP mnemonics_touch with unknown id returns error."""
+    r = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_touch", "arguments": {"id": 999999}},
+    })[0]
+    assert "error" in r
+
+
+def test_mcp_bulk_untag_ok(populated_store):
+    """MCP mnemonics_bulk_untag removes tags."""
+    store, docs, vecs = populated_store
+    ids = [r[0] for r in store._db.execute("SELECT id FROM memories LIMIT 2").fetchall()]
+    store.bulk_tag(ids, ["mcp-remove"])
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_bulk_untag",
+                   "arguments": {"ids": ids, "tags": ["mcp-remove"]}},
+    })[0]
+    assert "result" in r
+
+
+def test_mcp_bulk_untag_missing_args(tmp_store):
+    """MCP mnemonics_bulk_untag without tags returns error."""
+    r = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_bulk_untag", "arguments": {"ids": [1]}},
+    })[0]
+    assert "error" in r
+
+
+def test_mcp_count_by_tier_ok(populated_store):
+    """MCP mnemonics_count_by_tier returns tier breakdown."""
+    store, docs, vecs = populated_store
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_count_by_tier", "arguments": {"ns": "default"}},
+    })[0]
+    assert "result" in r
+    assert "Tier counts" in r["result"]["content"][0]["text"]
+
+
+def test_mcp_count_by_tier_all_ns(populated_store):
+    """MCP mnemonics_count_by_tier without ns spans all namespaces."""
+    store, docs, vecs = populated_store
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_count_by_tier", "arguments": {}},
+    })[0]
+    assert "result" in r
+
+
+def test_mcp_count_by_tier_empty(tmp_store):
+    """MCP mnemonics_count_by_tier on empty store shows (empty)."""
+    r = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_count_by_tier", "arguments": {"ns": "ghost"}},
+    })[0]
+    assert "result" in r
+    assert "(empty)" in r["result"]["content"][0]["text"]

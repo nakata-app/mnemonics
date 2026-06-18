@@ -80,6 +80,24 @@ def main() -> None:
     ts.add_argument("--json", dest="json_out", action="store_true", help="Output results as JSON array")
     ts.add_argument("--path", default="~/.mnemonics")
 
+    # touch
+    tc = sub.add_parser("touch", help="Update last_accessed without incrementing access_count")
+    tc.add_argument("id", type=int, help="Memory ID")
+    tc.add_argument("--path", default="~/.mnemonics")
+
+    # bulk-untag
+    butag = sub.add_parser("bulk-untag", help="Remove tags from multiple memories at once")
+    butag.add_argument("ids", nargs="+", type=int, help="Memory IDs")
+    butag.add_argument("--tags", nargs="+", required=True, help="Tags to remove")
+    butag.add_argument("--path", default="~/.mnemonics")
+
+    # count-by-tier
+    cbt = sub.add_parser("count-by-tier", help="Show memory count per tier in a namespace")
+    cbt.add_argument("--ns", default="default")
+    cbt.add_argument("--all-ns", action="store_true")
+    cbt.add_argument("--json", action="store_true", dest="as_json")
+    cbt.add_argument("--path", default="~/.mnemonics")
+
     # export-ns
     exp = sub.add_parser("export-ns", help="Export all memories in a namespace as JSON")
     exp.add_argument("ns", help="Namespace to export")
@@ -603,6 +621,36 @@ def main() -> None:
                 print(line)
                 if r.get("summary"):
                     print(f"           summary: {r['summary']}")
+
+    elif args.cmd == "touch":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        ok_tc = store.touch(args.id)
+        if ok_tc:
+            print(f"Touched id={args.id}.")
+        else:
+            print(f"Memory id={args.id} not found.", file=sys.stderr)
+            sys.exit(1)
+
+    elif args.cmd == "bulk-untag":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        n = store.bulk_untag(args.ids, args.tags)
+        print(f"Removed tags {args.tags} from {n} memories.")
+
+    elif args.cmd == "count-by-tier":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        ns_q = None if args.all_ns else args.ns
+        counts = store.count_by_tier(ns_q)
+        if args.as_json:
+            print(json.dumps(counts))
+        else:
+            tier_labels = {0: "pinned", 1: "default", 2: "ambient"}
+            ns_label = repr(ns_q) if ns_q is not None else "(all)"
+            print(f"Tier counts in ns={ns_label}:")
+            for t, c in sorted(counts.items()):
+                print(f"  {tier_labels.get(t, str(t)):<12}: {c}")
 
     elif args.cmd == "export-ns":
         from mnemonics.store import Store
