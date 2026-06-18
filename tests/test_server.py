@@ -1176,3 +1176,144 @@ def test_http_patch_unknown_path(tmp_store):
 def test_http_delete_unknown_path(tmp_store):
     code, data = http_call(tmp_store, "DELETE", "/unknown")
     assert code == 404
+
+
+# ── PATCH invalid JSON body → 400 ────────────────────────────────────────────
+
+def test_http_patch_invalid_json_body(tmp_store):
+    with patch("mnemonics.server._get_store", return_value=tmp_store):
+        handler = srv._Handler.__new__(srv._Handler)
+        captured = {"code": None, "data": None}
+        def fake_json(code, data):
+            captured["code"] = code
+            captured["data"] = data
+        handler._json = fake_json
+        handler._body = lambda: (_ for _ in ()).throw(ValueError("bad json"))
+        handler.path = "/memory/1"
+        handler.do_PATCH()
+    assert captured["code"] == 400
+    assert "invalid JSON" in captured["data"].get("error", "")
+
+
+# ── MCP loop invalid JSON line → continue (no crash) ─────────────────────────
+
+def test_mcp_invalid_json_line_skipped(tmp_store):
+    # Send one malformed line then a valid request — server must skip the bad one.
+    valid = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+    lines = "THIS IS NOT JSON\n" + valid + "\n"
+    output = []
+
+    def fake_print(s, **_):
+        output.append(json.loads(s))
+
+    with (
+        patch("mnemonics.server._get_store", return_value=tmp_store),
+        patch("builtins.print", side_effect=fake_print),
+        patch("sys.stdin", io.StringIO(lines)),
+    ):
+        srv._mcp_loop()
+
+    # Only the valid response should appear
+    assert len(output) == 1
+    assert output[0]["result"]["protocolVersion"] == "2024-11-05"
+
+
+# ── MCP mnemonics_bm25 summary line ──────────────────────────────────────────
+
+def test_mcp_bm25_shows_summary(tmp_store):
+    import numpy as np
+    from mnemonics.store import DIM
+    rng = np.random.default_rng(0)
+    vecs = rng.random((1, DIM)).astype("float32")
+    vecs /= np.linalg.norm(vecs, axis=1, keepdims=True)
+    ids = tmp_store.add(["unique_kwxyz_token"], vecs)
+    tmp_store.update_summary(ids[0], "the gist")
+    resp = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_bm25",
+                   "arguments": {"query": "unique_kwxyz_token", "top_k": 5}},
+    })
+    txt = _mcp_msg(resp[0])
+    assert "the gist" in txt
+
+
+# ── serve() mcp=True path ─────────────────────────────────────────────────────
+
+def test_serve_mcp_true(tmp_store):
+    with (
+        patch("mnemonics.server._mcp_loop") as mock_loop,
+        patch("mnemonics.server._get_store", return_value=tmp_store),
+    ):
+        srv.serve(mcp=True)
+    mock_loop.assert_called_once()
+
+
+# ── do_POST() invalid JSON body → 400 ────────────────────────────────────────
+
+def test_http_post_invalid_json_body(tmp_store):
+    with patch("mnemonics.server._get_store", return_value=tmp_store):
+        handler = srv._Handler.__new__(srv._Handler)
+        captured = {"code": None, "data": None}
+        def fake_json(code, data):
+            captured["code"] = code
+            captured["data"] = data
+        handler._json = fake_json
+        handler._body = lambda: (_ for _ in ()).throw(ValueError("bad json"))
+        handler.path = "/ingest"
+        handler.do_POST()
+    assert captured["code"] == 400
+    assert "invalid JSON" in captured["data"].get("error", "")
+
+
+# ── do_POST() /repair ─────────────────────────────────────────────────────────
+
+def test_http_post_repair(tmp_store):
+    code, data = http_call(tmp_store, "POST", "/repair", {})
+    assert code == 200
+    assert "orphan_vectors_fixed" in data
+
+
+# ── do_POST() /rebuild-index RuntimeError → 409 ──────────────────────────────
+
+def test_http_post_rebuild_index_runtime_error(tmp_store):
+    with patch("mnemonics.server._get_store", return_value=tmp_store):
+        handler = srv._Handler.__new__(srv._Handler)
+        captured = {"code": None, "data": None}
+        def fake_json(code, data):
+            captured["code"] = code
+            captured["data"] = data
+        handler._json = fake_json
+        handler._body = lambda: {"ns": "default"}
+        handler.path = "/rebuild-index"
+        with patch.object(tmp_store, "rebuild_ns_index", side_effect=RuntimeError("collision")):
+            handler.do_POST()
+    assert captured["code"] == 409
+    assert "collision" in captured["data"].get("error", "")
+
+
+# ── _get_store() singleton creation ──────────────────────────────────────────
+
+def test_get_store_creates_store(tmp_path, monkeypatch):
+    monkeypatch.setattr(srv, "_store", None)
+    monkeypatch.setattr(srv, "MNEMONICS_PATH", str(tmp_path))
+    store = srv._get_store()
+    assert store is not None
+    monkeypatch.setattr(srv, "_store", None)  # cleanup
+
+
+# ── serve() HTTP path ─────────────────────────────────────────────────────────
+
+def test_serve_http_path(monkeypatch, tmp_path):
+    monkeypatch.setattr(srv, "_store", None)
+    monkeypatch.setattr(srv, "MNEMONICS_PATH", str(tmp_path))
+    with (
+        patch("mnemonics.server.HTTPServer") as mock_httpserver,
+        patch("builtins.print"),
+    ):
+        mock_instance = MagicMock()
+        mock_httpserver.return_value = mock_instance
+        mock_instance.serve_forever.side_effect = KeyboardInterrupt
+        import sys as _sys
+        with pytest.raises(SystemExit):
+            srv.serve(port=9999, mcp=False)
+    monkeypatch.setattr(srv, "_store", None)
