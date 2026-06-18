@@ -3384,3 +3384,109 @@ def test_compact_meta_no_change_when_keys_match(tmp_store):
     tmp_store.add(["doc"], vecs, ns="default", meta=[{"a": 1}])
     n = tmp_store.compact_meta(ns="default", keep_keys=["a"])
     assert n == 0
+
+
+# ── list_by_tier ──────────────────────────────────────────────────────────────
+
+def test_list_by_tier_returns_correct_tier(populated_store):
+    """list_by_tier returns only memories with the specified tier."""
+    store, docs, vecs = populated_store
+    mid = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    store.pin(mid)
+    hits = store.list_by_tier(0, ns="default")
+    assert all(h["tier"] == 0 for h in hits)
+    assert any(h["id"] == mid for h in hits)
+
+
+def test_list_by_tier_all_ns(populated_store):
+    """list_by_tier ns=None spans all namespaces."""
+    store, docs, vecs = populated_store
+    mid = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    store.pin(mid)
+    hits = store.list_by_tier(0, ns=None)
+    assert len(hits) >= 1
+
+
+def test_list_by_tier_limit(populated_store):
+    """list_by_tier respects limit parameter."""
+    store, docs, vecs = populated_store
+    hits = store.list_by_tier(1, ns="default", limit=2)
+    assert len(hits) <= 2
+
+
+def test_list_by_tier_empty(tmp_store):
+    """list_by_tier returns empty list when no memories at that tier."""
+    hits = tmp_store.list_by_tier(2, ns="default")
+    assert hits == []
+
+
+# ── recent ────────────────────────────────────────────────────────────────────
+
+def test_recent_returns_newest_first(tmp_store):
+    """recent returns all memories in the namespace."""
+    import numpy as np
+    v1 = np.random.rand(1, 384).astype(np.float32)
+    v2 = np.random.rand(1, 384).astype(np.float32)
+    v3 = np.random.rand(1, 384).astype(np.float32)
+    tmp_store.add(["first"], v1, ns="default")
+    tmp_store.add(["second"], v2, ns="default")
+    tmp_store.add(["third"], v3, ns="default")
+    hits = tmp_store.recent(ns="default", n=3)
+    assert len(hits) == 3
+    assert {h["text"] for h in hits} == {"first", "second", "third"}
+
+
+def test_recent_respects_n(populated_store):
+    """recent returns at most n rows."""
+    store, docs, vecs = populated_store
+    hits = store.recent(ns="default", n=2)
+    assert len(hits) == 2
+
+
+def test_recent_all_ns(populated_store):
+    """recent ns=None spans all namespaces."""
+    store, docs, vecs = populated_store
+    hits = store.recent(ns=None, n=100)
+    assert len(hits) >= len(docs)
+
+
+# ── oldest ────────────────────────────────────────────────────────────────────
+
+def test_oldest_returns_oldest_first(tmp_store):
+    """oldest returns memories ordered by created ASC."""
+    import numpy as np
+    vecs = np.random.rand(3, 384).astype(np.float32)
+    tmp_store.add(["first", "second", "third"], vecs, ns="default")
+    hits = tmp_store.oldest(ns="default", n=3)
+    assert hits[0]["text"] == "first"
+
+
+def test_oldest_respects_n(populated_store):
+    """oldest returns at most n rows."""
+    store, docs, vecs = populated_store
+    hits = store.oldest(ns="default", n=2)
+    assert len(hits) == 2
+
+
+def test_oldest_all_ns(populated_store):
+    """oldest ns=None spans all namespaces."""
+    store, docs, vecs = populated_store
+    hits = store.oldest(ns=None, n=100)
+    assert len(hits) >= len(docs)
+
+
+# ── replace_text ──────────────────────────────────────────────────────────────
+
+def test_replace_text_updates_field(populated_store):
+    """replace_text changes the text column."""
+    store, docs, vecs = populated_store
+    mid = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    result = store.replace_text(mid, "new content here")
+    assert result is True
+    row = store._db.execute("SELECT text FROM memories WHERE id=?", (mid,)).fetchone()
+    assert row[0] == "new content here"
+
+
+def test_replace_text_missing_id(tmp_store):
+    """replace_text returns False for non-existent memory."""
+    assert tmp_store.replace_text(999999, "x") is False

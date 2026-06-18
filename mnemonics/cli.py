@@ -80,6 +80,37 @@ def main() -> None:
     ts.add_argument("--json", dest="json_out", action="store_true", help="Output results as JSON array")
     ts.add_argument("--path", default="~/.mnemonics")
 
+    # list-by-tier
+    lbt = sub.add_parser("list-by-tier", help="List memories with a given tier")
+    lbt.add_argument("tier", type=int, help="Tier: 0=pinned, 1=default, 2=ambient")
+    lbt.add_argument("--ns", default="default")
+    lbt.add_argument("--all-ns", action="store_true")
+    lbt.add_argument("--limit", type=int, default=100)
+    lbt.add_argument("--json", action="store_true", dest="as_json")
+    lbt.add_argument("--path", default="~/.mnemonics")
+
+    # newest
+    rec = sub.add_parser("newest", help="Show the N most recently created memories (by created date)")
+    rec.add_argument("--ns", default="default")
+    rec.add_argument("--all-ns", action="store_true")
+    rec.add_argument("--n", type=int, default=10)
+    rec.add_argument("--json", action="store_true", dest="as_json")
+    rec.add_argument("--path", default="~/.mnemonics")
+
+    # oldest
+    old = sub.add_parser("oldest", help="Show the N oldest memories")
+    old.add_argument("--ns", default="default")
+    old.add_argument("--all-ns", action="store_true")
+    old.add_argument("--n", type=int, default=10)
+    old.add_argument("--json", action="store_true", dest="as_json")
+    old.add_argument("--path", default="~/.mnemonics")
+
+    # replace-text
+    rt = sub.add_parser("replace-text", help="Replace the text of a memory in-place (no re-embed)")
+    rt.add_argument("id", type=int, help="Memory ID")
+    rt.add_argument("text", help="New text content")
+    rt.add_argument("--path", default="~/.mnemonics")
+
     # set-tier-by-tag
     stbt = sub.add_parser("set-tier-by-tag", help="Set tier on all memories with a given tag")
     stbt.add_argument("tag", help="Tag to match in meta.tags")
@@ -703,6 +734,55 @@ def main() -> None:
                 print(line)
                 if r.get("summary"):
                     print(f"           summary: {r['summary']}")
+
+    elif args.cmd == "list-by-tier":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        ns_q = None if args.all_ns else args.ns
+        hits = store.list_by_tier(args.tier, ns=ns_q, limit=args.limit)
+        if args.as_json:
+            print(json.dumps(hits, default=str, ensure_ascii=False))
+        else:
+            ns_label = repr(ns_q) if ns_q is not None else "(all)"
+            print(f"Tier={args.tier} memories in ns={ns_label}: {len(hits)}")
+            for r in hits:
+                print(f"  [{r['id']}] {r['text'][:80]}")
+
+    elif args.cmd == "newest":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        ns_q = None if args.all_ns else args.ns
+        hits = store.recent(ns=ns_q, n=args.n)
+        if args.as_json:
+            print(json.dumps(hits, default=str, ensure_ascii=False))
+        else:
+            ns_label = repr(ns_q) if ns_q is not None else "(all)"
+            print(f"Most recent {len(hits)} memories (ns={ns_label}):")
+            for r in hits:
+                print(f"  [{r['id']}] {r['text'][:80]}")
+
+    elif args.cmd == "oldest":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        ns_q = None if args.all_ns else args.ns
+        hits = store.oldest(ns=ns_q, n=args.n)
+        if args.as_json:
+            print(json.dumps(hits, default=str, ensure_ascii=False))
+        else:
+            ns_label = repr(ns_q) if ns_q is not None else "(all)"
+            print(f"Oldest {len(hits)} memories (ns={ns_label}):")
+            for r in hits:
+                print(f"  [{r['id']}] {r['text'][:80]}")
+
+    elif args.cmd == "replace-text":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        ok_rt = store.replace_text(args.id, args.text)
+        if ok_rt:
+            print(f"Text updated for id={args.id}.")
+        else:
+            print(f"Memory id={args.id} not found.", file=sys.stderr)
+            sys.exit(1)
 
     elif args.cmd == "set-tier-by-tag":
         from mnemonics.store import Store

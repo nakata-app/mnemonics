@@ -3810,3 +3810,186 @@ def test_cli_compact_meta_all_ns(tmp_path, capsys):
     ):
         main()
     mock_store.compact_meta.assert_called_once_with(ns=None, keep_keys=None)
+
+
+# ── list-by-tier CLI ───────────────────────────────────────────────────────────
+
+def test_cli_list_by_tier_text(tmp_path, capsys):
+    """list-by-tier prints matching memories."""
+    mock_store = MagicMock()
+    mock_store.list_by_tier.return_value = [
+        {"id": 1, "text": "pinned doc", "tier": 0, "ns": "default",
+         "summary": None, "created": "t", "meta": {}}
+    ]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "list-by-tier", "0",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "[1]" in out
+
+
+def test_cli_list_by_tier_json(tmp_path, capsys):
+    """list-by-tier --json outputs JSON."""
+    mock_store = MagicMock()
+    mock_store.list_by_tier.return_value = [{"id": 1, "tier": 0}]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "list-by-tier", "0", "--json",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert json.loads(out)[0]["id"] == 1
+
+
+def test_cli_list_by_tier_all_ns(tmp_path, capsys):
+    """list-by-tier --all-ns passes ns=None."""
+    mock_store = MagicMock()
+    mock_store.list_by_tier.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "list-by-tier", "0", "--all-ns",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.list_by_tier.assert_called_once_with(0, ns=None, limit=100)
+
+
+# ── newest CLI ─────────────────────────────────────────────────────────────────
+
+def test_cli_recent_text(tmp_path, capsys):
+    """newest prints most recently created memories."""
+    mock_store = MagicMock()
+    mock_store.recent.return_value = [
+        {"id": 5, "text": "latest", "tier": 1, "ns": "default",
+         "summary": None, "created": "t"}
+    ]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "newest", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "[5]" in out
+
+
+def test_cli_recent_json(tmp_path, capsys):
+    """newest --json outputs JSON."""
+    mock_store = MagicMock()
+    mock_store.recent.return_value = [{"id": 5, "text": "x"}]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "newest", "--json",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert json.loads(out)[0]["id"] == 5
+
+
+def test_cli_recent_all_ns(tmp_path, capsys):
+    """newest --all-ns passes ns=None."""
+    mock_store = MagicMock()
+    mock_store.recent.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "newest", "--all-ns",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.recent.assert_called_once_with(ns=None, n=10)
+
+
+# ── oldest CLI ─────────────────────────────────────────────────────────────────
+
+def test_cli_oldest_text(tmp_path, capsys):
+    """oldest prints oldest memories."""
+    mock_store = MagicMock()
+    mock_store.oldest.return_value = [
+        {"id": 1, "text": "very old", "tier": 1, "ns": "default",
+         "summary": None, "created": "t"}
+    ]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "oldest", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "[1]" in out
+
+
+def test_cli_oldest_json(tmp_path, capsys):
+    """oldest --json outputs JSON."""
+    mock_store = MagicMock()
+    mock_store.oldest.return_value = [{"id": 1, "text": "old"}]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "oldest", "--json",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert json.loads(out)[0]["id"] == 1
+
+
+def test_cli_oldest_all_ns(tmp_path, capsys):
+    """oldest --all-ns passes ns=None."""
+    mock_store = MagicMock()
+    mock_store.oldest.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "oldest", "--all-ns",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.oldest.assert_called_once_with(ns=None, n=10)
+
+
+# ── replace-text CLI ───────────────────────────────────────────────────────────
+
+def test_cli_replace_text_success(tmp_path, capsys):
+    """replace-text prints confirmation on success."""
+    mock_store = MagicMock()
+    mock_store.replace_text.return_value = True
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "replace-text", "1", "new content",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "updated" in out
+
+
+def test_cli_replace_text_not_found(tmp_path):
+    """replace-text exits 1 when memory not found."""
+    mock_store = MagicMock()
+    mock_store.replace_text.return_value = False
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "replace-text", "999", "x",
+                           "--path", str(tmp_path)]),
+    ):
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+    assert exc_info.value.code == 1
+
+
+def test_cli_recent_json_coverage(tmp_path, capsys):
+    """recent --json path (line 1717) is covered."""
+    import json as _json
+    hits = [{"id": 2, "ns": "default", "tier": 1, "text": "hello",
+             "summary": None, "last_accessed": None, "access_count": 0}]
+    mock_store = MagicMock()
+    mock_store.recent_accessed.return_value = hits
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "recent", "--json",
+                           "--ns", "default", "--path", str(tmp_path)]),
+    ):
+        main()
+    parsed = _json.loads(capsys.readouterr().out)
+    assert parsed[0]["id"] == 2

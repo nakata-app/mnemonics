@@ -657,6 +657,10 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_set_tier_by_tag",
         "mnemonics_rotate_ns",
         "mnemonics_compact_meta",
+        "mnemonics_list_by_tier",
+        "mnemonics_newest",
+        "mnemonics_oldest",
+        "mnemonics_replace_text",
     }
 
 
@@ -4671,3 +4675,197 @@ def test_mcp_compact_meta(tmp_path):
                                     "arguments": {"ns": "default"}}})[0]
     text = resp["result"]["content"][0]["text"]
     assert "1" in text
+
+
+# ── list-by-tier REST ──────────────────────────────────────────────────────────
+
+def test_http_list_by_tier_success(tmp_path):
+    """GET /list-by-tier returns memories with the given tier."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(2, DIM).astype(np.float32)
+    ids = store.add(["a", "b"], vecs, ns="default")
+    store.pin(ids[0])
+    code, data = http_call(store, "GET", "/list-by-tier?tier=0&ns=default")
+    assert code == 200
+    assert data["count"] == 1
+
+
+def test_http_list_by_tier_missing_tier(tmp_path):
+    """GET /list-by-tier returns 400 when tier param missing."""
+    store = Store(tmp_path)
+    code, data = http_call(store, "GET", "/list-by-tier?ns=default")
+    assert code == 400
+
+
+def test_http_list_by_tier_all_ns(tmp_path):
+    """GET /list-by-tier without ns spans all namespaces."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(1, DIM).astype(np.float32)
+    ids = store.add(["doc"], vecs, ns="ns1")
+    store.pin(ids[0])
+    code, data = http_call(store, "GET", "/list-by-tier?tier=0")
+    assert code == 200
+    assert data["count"] == 1
+
+
+# ── recent REST ────────────────────────────────────────────────────────────────
+
+def test_http_recent_returns_results(tmp_path):
+    """GET /recent returns most recently created memories."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(3, DIM).astype(np.float32)
+    store.add(["a", "b", "c"], vecs, ns="default")
+    code, data = http_call(store, "GET", "/newest?ns=default&n=2")
+    assert code == 200
+    assert data["count"] == 2
+
+
+def test_http_recent_all_ns(tmp_path):
+    """GET /newest without ns spans all namespaces."""
+    import numpy as np
+    store = Store(tmp_path)
+    v1 = np.random.rand(1, DIM).astype(np.float32)
+    v2 = np.random.rand(1, DIM).astype(np.float32)
+    store.add(["ns1"], v1, ns="ns1")
+    store.add(["ns2"], v2, ns="ns2")
+    code, data = http_call(store, "GET", "/newest")
+    assert code == 200
+    assert data["count"] == 2
+
+
+# ── oldest REST ────────────────────────────────────────────────────────────────
+
+def test_http_oldest_returns_results(tmp_path):
+    """GET /oldest returns oldest memories."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(3, DIM).astype(np.float32)
+    store.add(["a", "b", "c"], vecs, ns="default")
+    code, data = http_call(store, "GET", "/oldest?ns=default&n=2")
+    assert code == 200
+    assert data["count"] == 2
+
+
+def test_http_oldest_all_ns(tmp_path):
+    """GET /oldest without ns spans all namespaces."""
+    import numpy as np
+    store = Store(tmp_path)
+    v1 = np.random.rand(1, DIM).astype(np.float32)
+    store.add(["doc"], v1, ns="ns1")
+    code, data = http_call(store, "GET", "/oldest")
+    assert code == 200
+    assert data["count"] == 1
+
+
+# ── replace-text REST ──────────────────────────────────────────────────────────
+
+def test_http_replace_text_success(tmp_path):
+    """POST /replace-text updates text field."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(1, DIM).astype(np.float32)
+    ids = store.add(["original text"], vecs, ns="default")
+    code, data = http_call(store, "POST", "/replace-text",
+                           {"id": ids[0], "text": "new text"})
+    assert code == 200
+    assert "id" in data
+
+
+def test_http_replace_text_missing_params(tmp_path):
+    """POST /replace-text returns 400 when id missing."""
+    store = Store(tmp_path)
+    code, data = http_call(store, "POST", "/replace-text", {"text": "hello"})
+    assert code == 400
+
+
+def test_http_replace_text_not_found(tmp_path):
+    """POST /replace-text returns 404 for unknown memory."""
+    store = Store(tmp_path)
+    code, data = http_call(store, "POST", "/replace-text",
+                           {"id": 99999, "text": "x"})
+    assert code == 404
+
+
+# ── MCP: list_by_tier, recent, oldest, replace_text ───────────────────────────
+
+def test_mcp_list_by_tier(tmp_path):
+    """MCP mnemonics_list_by_tier returns tier-filtered memories."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(1, DIM).astype(np.float32)
+    ids = store.add(["doc"], vecs, ns="default")
+    store.pin(ids[0])
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_list_by_tier",
+                                    "arguments": {"tier": 0, "ns": "default"}}})[0]
+    text = resp["result"]["content"][0]["text"]
+    assert "1" in text
+
+
+def test_mcp_list_by_tier_missing(tmp_path):
+    """MCP mnemonics_list_by_tier returns error when tier missing."""
+    store = Store(tmp_path)
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_list_by_tier",
+                                    "arguments": {}}})[0]
+    assert "error" in resp
+
+
+def test_mcp_newest(tmp_path):
+    """MCP mnemonics_newest returns most recently created memories."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(2, DIM).astype(np.float32)
+    store.add(["a", "b"], vecs, ns="default")
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_newest",
+                                    "arguments": {"ns": "default", "n": 2}}})[0]
+    text = resp["result"]["content"][0]["text"]
+    assert "2" in text
+
+
+def test_mcp_oldest(tmp_path):
+    """MCP mnemonics_oldest returns oldest memories."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(2, DIM).astype(np.float32)
+    store.add(["first", "second"], vecs, ns="default")
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_oldest",
+                                    "arguments": {"ns": "default", "n": 1}}})[0]
+    text = resp["result"]["content"][0]["text"]
+    assert "1" in text
+
+
+def test_mcp_replace_text(tmp_path):
+    """MCP mnemonics_replace_text updates text."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(1, DIM).astype(np.float32)
+    ids = store.add(["original"], vecs, ns="default")
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_replace_text",
+                                    "arguments": {"id": ids[0], "text": "updated"}}})[0]
+    text = resp["result"]["content"][0]["text"]
+    assert "updated" in text
+
+
+def test_mcp_replace_text_missing(tmp_path):
+    """MCP mnemonics_replace_text returns error when id missing."""
+    store = Store(tmp_path)
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_replace_text",
+                                    "arguments": {"text": "x"}}})[0]
+    assert "error" in resp
+
+
+def test_mcp_replace_text_not_found(tmp_path):
+    """MCP mnemonics_replace_text returns error for missing id."""
+    store = Store(tmp_path)
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_replace_text",
+                                    "arguments": {"id": 99999, "text": "x"}}})[0]
+    assert "error" in resp

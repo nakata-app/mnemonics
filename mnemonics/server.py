@@ -262,6 +262,18 @@ class _Handler(BaseHTTPRequestHandler):
             n_mtn = _get_store().move_to_ns([int(i) for i in mtn_ids], mtn_ns)
             self._json(200, {"moved": n_mtn, "target_ns": mtn_ns})
 
+        elif self.path == "/replace-text":
+            rt_id = body.get("id")
+            rt_text = body.get("text")
+            if rt_id is None or not isinstance(rt_text, str):
+                self._json(400, {"error": "'id' (int) and 'text' (str) are required"})
+                return
+            ok_rt = _get_store().replace_text(int(rt_id), rt_text)
+            if not ok_rt:
+                self._json(404, {"error": f"memory id={rt_id!r} not found"})
+            else:
+                self._json(200, {"id": int(rt_id), "text": rt_text[:80]})
+
         elif self.path == "/update-meta-key":
             umk_id = body.get("id")
             umk_key = body.get("key")
@@ -590,6 +602,34 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(200, _get_store().health_check())
         elif path == "/namespaces":
             self._json(200, {"namespaces": _get_store().list_namespaces()})
+        elif path.startswith("/list-by-tier"):
+            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_lbt
+            qs_lbt = parse_qs(urlparse(self.path).query)
+            tier_lbt_raw = (qs_lbt.get("tier") or [None])[0]
+            if tier_lbt_raw is None:
+                self._json(400, {"error": "'tier' query param is required"})
+                return
+            ns_lbt_raw = qs_lbt.get("ns", [None])[0]
+            ns_lbt = _uqp_lbt(ns_lbt_raw) if ns_lbt_raw is not None else None
+            limit_lbt = int((qs_lbt.get("limit") or ["100"])[0])
+            hits_lbt = _get_store().list_by_tier(int(tier_lbt_raw), ns=ns_lbt, limit=limit_lbt)
+            self._json(200, {"count": len(hits_lbt), "results": hits_lbt})
+        elif path.startswith("/newest"):
+            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_rec
+            qs_rec = parse_qs(urlparse(self.path).query)
+            ns_rec_raw = qs_rec.get("ns", [None])[0]
+            ns_rec = _uqp_rec(ns_rec_raw) if ns_rec_raw is not None else None
+            n_rec = int((qs_rec.get("n") or qs_rec.get("limit") or ["10"])[0])
+            hits_rec = _get_store().recent(ns=ns_rec, n=n_rec)
+            self._json(200, {"count": len(hits_rec), "results": hits_rec})
+        elif path.startswith("/oldest"):
+            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_old
+            qs_old = parse_qs(urlparse(self.path).query)
+            ns_old_raw = qs_old.get("ns", [None])[0]
+            ns_old = _uqp_old(ns_old_raw) if ns_old_raw is not None else None
+            n_old = int((qs_old.get("n") or ["10"])[0])
+            hits_old = _get_store().oldest(ns=ns_old, n=n_old)
+            self._json(200, {"count": len(hits_old), "results": hits_old})
         elif path.startswith("/set-tier-by-tag"):
             from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_stbt
             qs_stbt = parse_qs(urlparse(self.path).query)
@@ -1081,6 +1121,53 @@ def _mcp_loop() -> None:
                             "max_tier": {"type": "integer", "description": "Only return memories with tier <= this value"},
                         },
                         "required": ["query", "vector"],
+                    },
+                },
+                {
+                    "name": "mnemonics_list_by_tier",
+                    "description": "Return all memories with the given tier (0=pinned, 1=default, 2=ambient), ordered by created DESC. Omit ns to span all namespaces.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "tier": {"type": "integer"},
+                            "ns": {"type": "string"},
+                            "limit": {"type": "integer", "default": 100},
+                        },
+                        "required": ["tier"],
+                    },
+                },
+                {
+                    "name": "mnemonics_newest",
+                    "description": "Return the N most recently CREATED memories (by created date, newest first). Different from mnemonics_recent which returns recently ACCESSED. Omit ns to span all namespaces.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ns": {"type": "string"},
+                            "n": {"type": "integer", "default": 10},
+                        },
+                    },
+                },
+                {
+                    "name": "mnemonics_oldest",
+                    "description": "Return the N oldest memories (created ASC). Omit ns to span all namespaces.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ns": {"type": "string"},
+                            "n": {"type": "integer", "default": 10},
+                        },
+                    },
+                },
+                {
+                    "name": "mnemonics_replace_text",
+                    "description": "Replace the text field of a memory in-place (SQL-only; vector not re-embedded). Returns error if id not found.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer"},
+                            "text": {"type": "string"},
+                        },
+                        "required": ["id", "text"],
                     },
                 },
                 {
@@ -1962,6 +2049,47 @@ def _mcp_loop() -> None:
                         if r.get("summary"):
                             lines_hs.append(f"           summary: {r['summary'][:120]}")
                     ok({"content": [{"type": "text", "text": "\n".join(lines_hs)}]})
+
+            elif name == "mnemonics_list_by_tier":
+                lbt_tier_m = args.get("tier")
+                if lbt_tier_m is None:
+                    err("mnemonics_list_by_tier: 'tier' is required")
+                    continue
+                lbt_ns_m = args.get("ns")
+                lbt_limit_m = int(args.get("limit", 100))
+                lbt_hits_m = _get_store().list_by_tier(int(lbt_tier_m), ns=lbt_ns_m, limit=lbt_limit_m)
+                ok({"content": [{"type": "text", "text":
+                    f"Found {len(lbt_hits_m)} tier={lbt_tier_m} memories.\n" +
+                    "\n".join(f"  [{h['id']}] {h['text'][:70]}" for h in lbt_hits_m)}]})
+
+            elif name == "mnemonics_newest":
+                rec_ns_m = args.get("ns")
+                rec_n_m = int(args.get("n", 10))
+                rec_hits_m = _get_store().recent(ns=rec_ns_m, n=rec_n_m)
+                ok({"content": [{"type": "text", "text":
+                    f"Most recent {len(rec_hits_m)} memories (by created date).\n" +
+                    "\n".join(f"  [{h['id']}] {h['text'][:70]}" for h in rec_hits_m)}]})
+
+            elif name == "mnemonics_oldest":
+                old_ns_m = args.get("ns")
+                old_n_m = int(args.get("n", 10))
+                old_hits_m = _get_store().oldest(ns=old_ns_m, n=old_n_m)
+                ok({"content": [{"type": "text", "text":
+                    f"Oldest {len(old_hits_m)} memories.\n" +
+                    "\n".join(f"  [{h['id']}] {h['text'][:70]}" for h in old_hits_m)}]})
+
+            elif name == "mnemonics_replace_text":
+                rt_id_m = args.get("id")
+                rt_text_m = args.get("text", "").strip()
+                if rt_id_m is None or not rt_text_m:
+                    err("mnemonics_replace_text: 'id' and 'text' are required")
+                    continue
+                ok_rt_m = _get_store().replace_text(int(rt_id_m), rt_text_m)
+                if not ok_rt_m:
+                    err(f"mnemonics_replace_text: id={rt_id_m!r} not found")
+                    continue
+                ok({"content": [{"type": "text", "text":
+                    f"Text updated for id={rt_id_m}: {rt_text_m[:60]!r}"}]})
 
             elif name == "mnemonics_set_tier_by_tag":
                 stbt_tag_m = args.get("tag", "").strip()

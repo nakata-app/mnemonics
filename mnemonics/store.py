@@ -832,6 +832,117 @@ class Store:
             self._db.commit()
         return True
 
+    def list_by_tier(
+        self,
+        tier: int,
+        ns: str | None = "default",
+        limit: int = 100,
+    ) -> list[dict]:
+        """Return memories with the given *tier*, ordered by ``created DESC``.
+
+        *ns=None* spans all namespaces.  Returns dicts with ``id``, ``ns``,
+        ``text``, ``summary``, ``tier``, ``created``, and parsed ``meta``.
+        """
+        import json as _j_lbt
+
+        if ns is not None:
+            rows = self._db.execute(
+                "SELECT id, ns, text, summary, tier, created, meta "
+                "FROM memories WHERE ns=? AND tier=? ORDER BY created DESC LIMIT ?",
+                (ns, tier, limit),
+            ).fetchall()
+        else:
+            rows = self._db.execute(
+                "SELECT id, ns, text, summary, tier, created, meta "
+                "FROM memories WHERE tier=? ORDER BY created DESC LIMIT ?",
+                (tier, limit),
+            ).fetchall()
+
+        return [
+            {"id": r[0], "ns": r[1], "text": r[2], "summary": r[3],
+             "tier": r[4], "created": r[5],
+             "meta": _j_lbt.loads(r[6]) if r[6] else {}}
+            for r in rows
+        ]
+
+    def recent(
+        self,
+        ns: str | None = "default",
+        n: int = 10,
+    ) -> list[dict]:
+        """Return the *n* most recently created memories.
+
+        *ns=None* spans all namespaces.  Returns dicts with ``id``, ``ns``,
+        ``text``, ``summary``, ``tier``, and ``created``.
+        """
+        if ns is not None:
+            rows = self._db.execute(
+                "SELECT id, ns, text, summary, tier, created FROM memories "
+                "WHERE ns=? ORDER BY created DESC LIMIT ?",
+                (ns, n),
+            ).fetchall()
+        else:
+            rows = self._db.execute(
+                "SELECT id, ns, text, summary, tier, created FROM memories "
+                "ORDER BY created DESC LIMIT ?",
+                (n,),
+            ).fetchall()
+
+        return [
+            {"id": r[0], "ns": r[1], "text": r[2], "summary": r[3],
+             "tier": r[4], "created": r[5]}
+            for r in rows
+        ]
+
+    def oldest(
+        self,
+        ns: str | None = "default",
+        n: int = 10,
+    ) -> list[dict]:
+        """Return the *n* oldest memories (``created ASC``).
+
+        *ns=None* spans all namespaces.  Same dict shape as :meth:`recent`.
+        """
+        if ns is not None:
+            rows = self._db.execute(
+                "SELECT id, ns, text, summary, tier, created FROM memories "
+                "WHERE ns=? ORDER BY created ASC LIMIT ?",
+                (ns, n),
+            ).fetchall()
+        else:
+            rows = self._db.execute(
+                "SELECT id, ns, text, summary, tier, created FROM memories "
+                "ORDER BY created ASC LIMIT ?",
+                (n,),
+            ).fetchall()
+
+        return [
+            {"id": r[0], "ns": r[1], "text": r[2], "summary": r[3],
+             "tier": r[4], "created": r[5]}
+            for r in rows
+        ]
+
+    def replace_text(self, memory_id: int, new_text: str) -> bool:
+        """Replace the text field of a memory in-place.
+
+        The hnswlib vector embedding is NOT updated — this is a lightweight
+        SQL-only operation suitable for fixing typos or metadata corrections
+        where re-embedding is not required.  Returns ``True`` on success,
+        ``False`` if *memory_id* does not exist.
+        """
+        row = self._db.execute(
+            "SELECT id FROM memories WHERE id=?", (memory_id,)
+        ).fetchone()
+        if row is None:
+            return False
+        with self._lock:
+            self._db.execute(
+                "UPDATE memories SET text=? WHERE id=?",
+                (new_text, memory_id),
+            )
+            self._db.commit()
+        return True
+
     def set_tier_by_tag(
         self,
         tag: str,
