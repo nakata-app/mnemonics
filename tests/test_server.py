@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from mnemonics import server as srv
-from mnemonics.store import DIM
+from mnemonics.store import DIM, Store
 
 
 # ── helper: in-process server ────────────────────────────────────────────────
@@ -651,6 +651,9 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_bulk_delete",
         "mnemonics_filter_by_meta",
         "mnemonics_summary_stats",
+        "mnemonics_pinned_memories",
+        "mnemonics_update_meta_key",
+        "mnemonics_search_by_summary",
     }
 
 
@@ -4357,3 +4360,176 @@ def test_mcp_summary_stats_all_ns(populated_store):
         "params": {"name": "mnemonics_summary_stats", "arguments": {}},
     })[0]
     assert "result" in r
+
+
+# ── pinned-memories REST ────────────────────────────────────────────────────────
+
+def test_http_pinned_memories_empty(tmp_path):
+    """GET /pinned-memories returns empty list when nothing pinned."""
+    store = Store(tmp_path)
+    code, data = http_call(store, "GET", "/pinned-memories?ns=default")
+    assert code == 200
+    assert data["count"] == 0
+    assert data["results"] == []
+
+
+def test_http_pinned_memories_with_pinned(tmp_path):
+    """GET /pinned-memories returns pinned tier=0 memories."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(2, DIM).astype(np.float32)
+    ids = store.add(["pinned one", "not pinned"], vecs, ns="default")
+    store.pin(ids[0])
+    code, data = http_call(store, "GET", "/pinned-memories?ns=default")
+    assert code == 200
+    assert data["count"] == 1
+    assert data["results"][0]["id"] == ids[0]
+
+
+def test_http_pinned_memories_all_ns(tmp_path):
+    """GET /pinned-memories without ns spans all namespaces."""
+    import numpy as np
+    store = Store(tmp_path)
+    v1 = np.random.rand(1, DIM).astype(np.float32)
+    v2 = np.random.rand(1, DIM).astype(np.float32)
+    ids1 = store.add(["ns1 doc"], v1, ns="ns1")
+    ids2 = store.add(["ns2 doc"], v2, ns="ns2")
+    store.pin(ids1[0])
+    store.pin(ids2[0])
+    code, data = http_call(store, "GET", "/pinned-memories")
+    assert code == 200
+    assert data["count"] == 2
+
+
+# ── update-meta-key REST ────────────────────────────────────────────────────────
+
+def test_http_update_meta_key_success(tmp_path):
+    """POST /update-meta-key sets a key in meta."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(1, DIM).astype(np.float32)
+    ids = store.add(["test doc"], vecs, ns="default")
+    code, data = http_call(store, "POST", "/update-meta-key",
+                           {"id": ids[0], "key": "flagged", "value": True})
+    assert code == 200
+    assert data["key"] == "flagged"
+
+
+def test_http_update_meta_key_missing_id(tmp_path):
+    """POST /update-meta-key returns 400 when id missing."""
+    store = Store(tmp_path)
+    code, data = http_call(store, "POST", "/update-meta-key", {"key": "k"})
+    assert code == 400
+
+
+def test_http_update_meta_key_not_found(tmp_path):
+    """POST /update-meta-key returns 404 for unknown memory id."""
+    store = Store(tmp_path)
+    code, data = http_call(store, "POST", "/update-meta-key",
+                           {"id": 99999, "key": "k", "value": "v"})
+    assert code == 404
+
+
+def test_http_update_meta_key_remove(tmp_path):
+    """POST /update-meta-key with value=null removes the key."""
+    import numpy as np
+    import json
+    store = Store(tmp_path)
+    vecs = np.random.rand(1, DIM).astype(np.float32)
+    ids = store.add(["test doc"], vecs, ns="default")
+    store.update_meta_key(ids[0], "temp", "x")
+    code, data = http_call(store, "POST", "/update-meta-key",
+                           {"id": ids[0], "key": "temp", "value": None})
+    assert code == 200
+    row = store._db.execute("SELECT meta FROM memories WHERE id=?", (ids[0],)).fetchone()
+    assert "temp" not in json.loads(row[0])
+
+
+# ── search-by-summary REST ─────────────────────────────────────────────────────
+
+def test_http_search_by_summary_returns_matches(tmp_path):
+    """GET /search-by-summary returns memories with matching summary."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(2, DIM).astype(np.float32)
+    store.add(["doc a", "doc b"], vecs, ns="default",
+              summaries=["unique keyword here", "something else"])
+    code, data = http_call(store, "GET", "/search-by-summary?q=unique%20keyword&ns=default")
+    assert code == 200
+    assert data["count"] == 1
+
+
+def test_http_search_by_summary_missing_q(tmp_path):
+    """GET /search-by-summary returns 400 when q is missing."""
+    store = Store(tmp_path)
+    code, data = http_call(store, "GET", "/search-by-summary?ns=default")
+    assert code == 400
+
+
+# ── MCP: pinned_memories, update_meta_key, search_by_summary ──────────────────
+
+def test_mcp_pinned_memories(tmp_path):
+    """MCP mnemonics_pinned_memories returns pinned entries."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(1, DIM).astype(np.float32)
+    ids = store.add(["pinned doc"], vecs, ns="default")
+    store.pin(ids[0])
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_pinned_memories",
+                                    "arguments": {"ns": "default"}}})[0]
+    text = resp["result"]["content"][0]["text"]
+    assert "1 pinned" in text
+
+
+def test_mcp_update_meta_key(tmp_path):
+    """MCP mnemonics_update_meta_key sets a key in meta."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(1, DIM).astype(np.float32)
+    ids = store.add(["doc"], vecs, ns="default")
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_update_meta_key",
+                                    "arguments": {"id": ids[0], "key": "active", "value": True}}})[0]
+    text = resp["result"]["content"][0]["text"]
+    assert "active" in text
+
+
+def test_mcp_update_meta_key_missing_args(tmp_path):
+    """MCP mnemonics_update_meta_key returns error when id missing."""
+    store = Store(tmp_path)
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_update_meta_key",
+                                    "arguments": {"key": "k"}}})[0]
+    assert "error" in resp
+
+
+def test_mcp_update_meta_key_not_found(tmp_path):
+    """MCP mnemonics_update_meta_key returns error for missing id."""
+    store = Store(tmp_path)
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_update_meta_key",
+                                    "arguments": {"id": 99999, "key": "k", "value": "v"}}})[0]
+    assert "error" in resp
+
+
+def test_mcp_search_by_summary(tmp_path):
+    """MCP mnemonics_search_by_summary returns matching memories."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(1, DIM).astype(np.float32)
+    store.add(["test doc"], vecs, ns="default", summaries=["needle in a haystack"])
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_search_by_summary",
+                                    "arguments": {"query": "needle", "ns": "default"}}})[0]
+    text = resp["result"]["content"][0]["text"]
+    assert "1" in text
+
+
+def test_mcp_search_by_summary_missing_query(tmp_path):
+    """MCP mnemonics_search_by_summary returns error when query missing."""
+    store = Store(tmp_path)
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_search_by_summary",
+                                    "arguments": {}}})[0]
+    assert "error" in resp

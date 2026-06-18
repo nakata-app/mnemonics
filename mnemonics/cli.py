@@ -80,6 +80,30 @@ def main() -> None:
     ts.add_argument("--json", dest="json_out", action="store_true", help="Output results as JSON array")
     ts.add_argument("--path", default="~/.mnemonics")
 
+    # pinned-memories
+    pm = sub.add_parser("pinned-memories", help="List all pinned (tier=0) memories")
+    pm.add_argument("--ns", default="default")
+    pm.add_argument("--all-ns", action="store_true")
+    pm.add_argument("--limit", type=int, default=100)
+    pm.add_argument("--json", action="store_true", dest="as_json")
+    pm.add_argument("--path", default="~/.mnemonics")
+
+    # update-meta-key
+    umk = sub.add_parser("update-meta-key", help="Set or update a single key in a memory's meta")
+    umk.add_argument("id", type=int, help="Memory ID")
+    umk.add_argument("key", help="Meta key to set/update")
+    umk.add_argument("value", nargs="?", default=None, help="New value (omit to remove key)")
+    umk.add_argument("--path", default="~/.mnemonics")
+
+    # search-by-summary
+    sbs = sub.add_parser("search-by-summary", help="Search memories by summary text (LIKE match)")
+    sbs.add_argument("query", help="Text to search in summary field")
+    sbs.add_argument("--ns", default="default")
+    sbs.add_argument("--all-ns", action="store_true")
+    sbs.add_argument("--limit", type=int, default=20)
+    sbs.add_argument("--json", action="store_true", dest="as_json")
+    sbs.add_argument("--path", default="~/.mnemonics")
+
     # filter-by-meta
     fbm = sub.add_parser("filter-by-meta", help="Find memories where meta[key]==value")
     fbm.add_argument("key", help="Top-level meta key")
@@ -656,6 +680,59 @@ def main() -> None:
                 print(line)
                 if r.get("summary"):
                     print(f"           summary: {r['summary']}")
+
+    elif args.cmd == "pinned-memories":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        ns_q = None if args.all_ns else args.ns
+        hits = store.pinned_memories(ns=ns_q, limit=args.limit)
+        if args.as_json:
+            print(json.dumps(hits, default=str, ensure_ascii=False))
+        else:
+            ns_label = repr(ns_q) if ns_q is not None else "(all)"
+            print(f"Pinned memories in ns={ns_label}: {len(hits)}")
+            for r in hits:
+                print(f"  [{r['id']}] {r['text'][:80]}")
+
+    elif args.cmd == "update-meta-key":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        # Parse value
+        raw = args.value
+        val: object = None
+        if raw is not None:
+            if raw.lower() == "true":
+                val = True
+            elif raw.lower() == "false":
+                val = False
+            else:
+                try:
+                    val = int(raw)
+                except ValueError:
+                    try:
+                        val = float(raw)
+                    except ValueError:
+                        val = raw
+        ok_umk = store.update_meta_key(args.id, args.key, val)
+        if ok_umk:
+            action = "removed" if val is None else f"set to {val!r}"
+            print(f"meta.{args.key} {action} for id={args.id}.")
+        else:
+            print(f"Memory id={args.id} not found.", file=sys.stderr)
+            sys.exit(1)
+
+    elif args.cmd == "search-by-summary":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        ns_q = None if args.all_ns else args.ns
+        hits = store.search_by_summary(args.query, ns=ns_q, limit=args.limit)
+        if args.as_json:
+            print(json.dumps(hits, default=str, ensure_ascii=False))
+        else:
+            ns_label = repr(ns_q) if ns_q is not None else "(all)"
+            print(f"Found {len(hits)} memories matching {args.query!r} in summary (ns={ns_label}):")
+            for r in hits:
+                print(f"  [{r['id']}] {r['text'][:60]} — {r['summary'][:60] if r['summary'] else '(no summary)'}")
 
     elif args.cmd == "filter-by-meta":
         from mnemonics.store import Store

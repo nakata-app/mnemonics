@@ -262,6 +262,19 @@ class _Handler(BaseHTTPRequestHandler):
             n_mtn = _get_store().move_to_ns([int(i) for i in mtn_ids], mtn_ns)
             self._json(200, {"moved": n_mtn, "target_ns": mtn_ns})
 
+        elif self.path == "/update-meta-key":
+            umk_id = body.get("id")
+            umk_key = body.get("key")
+            if umk_id is None or not umk_key:
+                self._json(400, {"error": "'id' (int) and 'key' (str) are required"})
+                return
+            umk_val = body.get("value")  # None → key removed
+            ok_umk = _get_store().update_meta_key(int(umk_id), str(umk_key), umk_val)
+            if not ok_umk:
+                self._json(404, {"error": f"memory id={umk_id!r} not found"})
+            else:
+                self._json(200, {"id": int(umk_id), "key": str(umk_key), "value": umk_val})
+
         elif self.path == "/bulk-delete":
             bd_ids = body.get("ids")
             if not isinstance(bd_ids, list):
@@ -577,6 +590,26 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(200, _get_store().health_check())
         elif path == "/namespaces":
             self._json(200, {"namespaces": _get_store().list_namespaces()})
+        elif path.startswith("/pinned-memories"):
+            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_pm
+            qs_pm = parse_qs(urlparse(self.path).query)
+            ns_pm_raw = qs_pm.get("ns", [None])[0]
+            ns_pm = _uqp_pm(ns_pm_raw) if ns_pm_raw is not None else None
+            limit_pm = int((qs_pm.get("limit") or ["100"])[0])
+            hits_pm = _get_store().pinned_memories(ns=ns_pm, limit=limit_pm)
+            self._json(200, {"count": len(hits_pm), "results": hits_pm})
+        elif path.startswith("/search-by-summary"):
+            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_sbs
+            qs_sbs = parse_qs(urlparse(self.path).query)
+            q_sbs = (qs_sbs.get("q") or [None])[0]
+            if not q_sbs:
+                self._json(400, {"error": "'q' query param is required"})
+                return
+            ns_sbs_raw = qs_sbs.get("ns", [None])[0]
+            ns_sbs = _uqp_sbs(ns_sbs_raw) if ns_sbs_raw is not None else None
+            limit_sbs = int((qs_sbs.get("limit") or ["20"])[0])
+            hits_sbs = _get_store().search_by_summary(q_sbs, ns=ns_sbs, limit=limit_sbs)
+            self._json(200, {"count": len(hits_sbs), "results": hits_sbs})
         elif path.startswith("/filter-by-meta"):
             from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_fbm
             qs_fbm = parse_qs(urlparse(self.path).query)
@@ -1010,6 +1043,43 @@ def _mcp_loop() -> None:
                             "max_tier": {"type": "integer", "description": "Only return memories with tier <= this value"},
                         },
                         "required": ["query", "vector"],
+                    },
+                },
+                {
+                    "name": "mnemonics_pinned_memories",
+                    "description": "Return all pinned (tier=0) memories in a namespace, ordered by created DESC. Omit ns to span all namespaces. Returns id, ns, text, summary, tier, created, meta per result.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ns": {"type": "string", "description": "Namespace (omit for all)"},
+                            "limit": {"type": "integer", "default": 100},
+                        },
+                    },
+                },
+                {
+                    "name": "mnemonics_update_meta_key",
+                    "description": "Set or update a single key in a memory's meta dict without replacing the entire meta object. Pass value=null to remove the key.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer"},
+                            "key": {"type": "string"},
+                            "value": {"description": "New value (any JSON type). Omit or null to remove the key."},
+                        },
+                        "required": ["id", "key"],
+                    },
+                },
+                {
+                    "name": "mnemonics_search_by_summary",
+                    "description": "Search memories whose summary field contains 'query' (case-insensitive LIKE). Omit ns to span all namespaces. Returns id, ns, text, summary, tier, created per result.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string"},
+                            "ns": {"type": "string"},
+                            "limit": {"type": "integer", "default": 20},
+                        },
+                        "required": ["query"],
                     },
                 },
                 {
@@ -1816,6 +1886,43 @@ def _mcp_loop() -> None:
                         if r.get("summary"):
                             lines_hs.append(f"           summary: {r['summary'][:120]}")
                     ok({"content": [{"type": "text", "text": "\n".join(lines_hs)}]})
+
+            elif name == "mnemonics_pinned_memories":
+                pm_ns_m = args.get("ns")
+                pm_limit_m = int(args.get("limit", 100))
+                pm_hits_m = _get_store().pinned_memories(ns=pm_ns_m, limit=pm_limit_m)
+                pm_ns_label = repr(pm_ns_m) if pm_ns_m is not None else "(all)"
+                ok({"content": [{"type": "text", "text":
+                    f"Found {len(pm_hits_m)} pinned memories in ns={pm_ns_label}.\n" +
+                    "\n".join(f"  [{h['id']}] {h['text'][:80]}" for h in pm_hits_m)}]})
+
+            elif name == "mnemonics_update_meta_key":
+                umk_id_m = args.get("id")
+                umk_key_m = args.get("key", "").strip()
+                if umk_id_m is None or not umk_key_m:
+                    err("mnemonics_update_meta_key: 'id' and 'key' are required")
+                    continue
+                umk_val_m = args.get("value")
+                ok_umk_m = _get_store().update_meta_key(int(umk_id_m), umk_key_m, umk_val_m)
+                if not ok_umk_m:
+                    err(f"mnemonics_update_meta_key: id={umk_id_m!r} not found")
+                    continue
+                action = "removed" if umk_val_m is None else f"set to {umk_val_m!r}"
+                ok({"content": [{"type": "text", "text":
+                    f"meta.{umk_key_m} {action} for id={umk_id_m}."}]})
+
+            elif name == "mnemonics_search_by_summary":
+                sbs_q_m = args.get("query", "").strip()
+                if not sbs_q_m:
+                    err("mnemonics_search_by_summary: 'query' is required")
+                    continue
+                sbs_ns_m = args.get("ns")
+                sbs_limit_m = int(args.get("limit", 20))
+                sbs_hits_m = _get_store().search_by_summary(sbs_q_m, ns=sbs_ns_m, limit=sbs_limit_m)
+                import json as _j_sbs
+                ok({"content": [{"type": "text", "text":
+                    f"Found {len(sbs_hits_m)} memories with summary matching {sbs_q_m!r}.\n" +
+                    _j_sbs.dumps(sbs_hits_m, default=str, ensure_ascii=False)}]})
 
             elif name == "mnemonics_filter_by_meta":
                 fbm_key_m = args.get("key", "").strip()

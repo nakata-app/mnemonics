@@ -769,6 +769,101 @@ class Store:
             self._db.commit()
         return cur.rowcount
 
+    def pinned_memories(
+        self,
+        ns: str | None = "default",
+        limit: int = 100,
+    ) -> list[dict]:
+        """Return all pinned (tier=0) memories in *ns*, ordered by ``created DESC``.
+
+        Convenience wrapper around the tier=0 filter.  *ns=None* spans all
+        namespaces.  Each result dict has ``id``, ``ns``, ``text``,
+        ``summary``, ``tier``, ``created``, and ``meta`` (as parsed dict).
+        """
+        import json as _j_pm
+
+        if ns is not None:
+            rows = self._db.execute(
+                "SELECT id, ns, text, summary, tier, created, meta "
+                "FROM memories WHERE ns=? AND tier=0 ORDER BY created DESC LIMIT ?",
+                (ns, limit),
+            ).fetchall()
+        else:
+            rows = self._db.execute(
+                "SELECT id, ns, text, summary, tier, created, meta "
+                "FROM memories WHERE tier=0 ORDER BY created DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+
+        return [
+            {
+                "id": r[0], "ns": r[1], "text": r[2], "summary": r[3],
+                "tier": r[4], "created": r[5],
+                "meta": _j_pm.loads(r[6]) if r[6] else {},
+            }
+            for r in rows
+        ]
+
+    def update_meta_key(self, memory_id: int, key: str, value: object) -> bool:
+        """Set or update a single key in a memory's meta dict.
+
+        Reads the current meta, merges in ``{key: value}``, and writes it
+        back.  If *value* is ``None`` the key is removed (if present).
+        Returns ``True`` on success, ``False`` if *memory_id* does not exist.
+        """
+        import json as _j_umk
+
+        row = self._db.execute(
+            "SELECT meta FROM memories WHERE id=?", (memory_id,)
+        ).fetchone()
+        if row is None:
+            return False
+
+        meta = _j_umk.loads(row[0]) if row[0] else {}
+        if value is None:
+            meta.pop(key, None)
+        else:
+            meta[key] = value
+        with self._lock:
+            self._db.execute(
+                "UPDATE memories SET meta=? WHERE id=?",
+                (_j_umk.dumps(meta, ensure_ascii=False), memory_id),
+            )
+            self._db.commit()
+        return True
+
+    def search_by_summary(
+        self,
+        query: str,
+        ns: str | None = "default",
+        limit: int = 20,
+    ) -> list[dict]:
+        """Full-text search on the summary field using SQLite ``LIKE``.
+
+        Returns memories whose ``summary`` contains *query* (case-insensitive).
+        *ns=None* spans all namespaces.  Each result dict has ``id``, ``ns``,
+        ``text``, ``summary``, ``tier``, and ``created``.
+        """
+        pattern = f"%{query}%"
+        if ns is not None:
+            rows = self._db.execute(
+                "SELECT id, ns, text, summary, tier, created FROM memories "
+                "WHERE ns=? AND summary LIKE ? ORDER BY created DESC LIMIT ?",
+                (ns, pattern, limit),
+            ).fetchall()
+        else:
+            rows = self._db.execute(
+                "SELECT id, ns, text, summary, tier, created FROM memories "
+                "WHERE summary LIKE ? ORDER BY created DESC LIMIT ?",
+                (pattern, limit),
+            ).fetchall()
+
+        return [
+            {"id": r[0], "ns": r[1], "text": r[2], "summary": r[3],
+             "tier": r[4], "created": r[5]}
+            for r in rows
+        ]
+
     def filter_by_meta(
         self,
         key: str,

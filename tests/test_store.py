@@ -3172,3 +3172,103 @@ def test_summary_stats_empty_ns(tmp_store):
     stats = tmp_store.summary_stats("ghost")
     assert stats["total"] == 0
     assert stats["pct_with_summary"] == 0.0
+
+
+# ── pinned_memories ───────────────────────────────────────────────────────────
+
+def test_pinned_memories_returns_only_pinned(populated_store):
+    """pinned_memories returns only tier=0 memories."""
+    store, docs, vecs = populated_store
+    # Pin the first memory
+    mid = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    store.pin(mid)
+    hits = store.pinned_memories("default")
+    assert all(h["tier"] == 0 for h in hits)
+    assert any(h["id"] == mid for h in hits)
+
+
+def test_pinned_memories_empty_when_none_pinned(populated_store):
+    """pinned_memories returns empty list when no memories are pinned."""
+    store, docs, vecs = populated_store
+    hits = store.pinned_memories("default")
+    assert hits == []
+
+
+def test_pinned_memories_all_ns(populated_store):
+    """pinned_memories ns=None spans all namespaces."""
+    store, docs, vecs = populated_store
+    mid = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    store.pin(mid)
+    hits = store.pinned_memories(ns=None)
+    assert len(hits) >= 1
+
+
+def test_pinned_memories_limit(populated_store):
+    """pinned_memories respects limit."""
+    store, docs, vecs = populated_store
+    ids = [r[0] for r in store._db.execute("SELECT id FROM memories LIMIT 3").fetchall()]
+    for mid in ids:
+        store.pin(mid)
+    hits = store.pinned_memories("default", limit=2)
+    assert len(hits) == 2
+
+
+# ── update_meta_key ────────────────────────────────────────────────────────────
+
+def test_update_meta_key_sets_new_key(populated_store):
+    """update_meta_key adds a new key to an existing memory's meta."""
+    import json as _j
+    store, docs, vecs = populated_store
+    mid = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    result = store.update_meta_key(mid, "new_key", "hello")
+    assert result is True
+    row = store._db.execute("SELECT meta FROM memories WHERE id=?", (mid,)).fetchone()
+    assert _j.loads(row[0])["new_key"] == "hello"
+
+
+def test_update_meta_key_removes_key(populated_store):
+    """update_meta_key with value=None removes the key."""
+    import json as _j
+    store, docs, vecs = populated_store
+    mid = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    store.update_meta_key(mid, "temp", "x")
+    store.update_meta_key(mid, "temp", None)
+    row = store._db.execute("SELECT meta FROM memories WHERE id=?", (mid,)).fetchone()
+    assert "temp" not in _j.loads(row[0])
+
+
+def test_update_meta_key_missing_id(tmp_store):
+    """update_meta_key returns False for non-existent memory."""
+    assert tmp_store.update_meta_key(999999, "k", "v") is False
+
+
+# ── search_by_summary ─────────────────────────────────────────────────────────
+
+def test_search_by_summary_finds_match(tmp_store):
+    """search_by_summary returns memories whose summary contains the query."""
+    import numpy as np
+    vecs = np.random.rand(3, 384).astype(np.float32)
+    tmp_store.add(["a", "b", "c"], vecs, ns="default",
+                  summaries=["the quick brown fox", "lazy dog", "quick summary"])
+    hits = tmp_store.search_by_summary("quick", ns="default")
+    assert len(hits) == 2
+
+
+def test_search_by_summary_no_match(tmp_store):
+    """search_by_summary returns empty list when no summary matches."""
+    import numpy as np
+    vecs = np.random.rand(2, 384).astype(np.float32)
+    tmp_store.add(["x", "y"], vecs, ns="default", summaries=["alpha", "beta"])
+    hits = tmp_store.search_by_summary("gamma", ns="default")
+    assert hits == []
+
+
+def test_search_by_summary_all_ns(tmp_store):
+    """search_by_summary ns=None spans all namespaces."""
+    import numpy as np
+    v1 = np.random.rand(1, 384).astype(np.float32)
+    v2 = np.random.rand(1, 384).astype(np.float32)
+    tmp_store.add(["ns1"], v1, ns="ns1", summaries=["target word"])
+    tmp_store.add(["ns2"], v2, ns="ns2", summaries=["target word"])
+    hits = tmp_store.search_by_summary("target", ns=None)
+    assert len(hits) == 2

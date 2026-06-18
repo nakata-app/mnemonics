@@ -3534,3 +3534,177 @@ def test_cli_filter_by_meta_false(tmp_path, capsys):
     ):
         main()
     mock_store.filter_by_meta.assert_called_once_with("active", False, ns="default", limit=100)
+
+
+# ── pinned-memories CLI ────────────────────────────────────────────────────────
+
+def test_cli_pinned_memories_empty(tmp_path, capsys):
+    """pinned-memories prints empty count when nothing pinned."""
+    mock_store = MagicMock()
+    mock_store.pinned_memories.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "pinned-memories", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "0" in out
+
+
+def test_cli_pinned_memories_json(tmp_path, capsys):
+    """pinned-memories --json outputs JSON."""
+    mock_store = MagicMock()
+    mock_store.pinned_memories.return_value = [{"id": 1, "text": "pinned", "tier": 0}]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "pinned-memories", "--json",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    parsed = json.loads(out)
+    assert parsed[0]["tier"] == 0
+
+
+def test_cli_pinned_memories_all_ns(tmp_path, capsys):
+    """pinned-memories --all-ns passes ns=None."""
+    mock_store = MagicMock()
+    mock_store.pinned_memories.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "pinned-memories", "--all-ns",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.pinned_memories.assert_called_once_with(ns=None, limit=100)
+
+
+# ── update-meta-key CLI ────────────────────────────────────────────────────────
+
+def test_cli_update_meta_key_sets_value(tmp_path, capsys):
+    """update-meta-key prints confirmation."""
+    mock_store = MagicMock()
+    mock_store.update_meta_key.return_value = True
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "update-meta-key", "1", "active", "true",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.update_meta_key.assert_called_once_with(1, "active", True)
+
+
+def test_cli_update_meta_key_false_value(tmp_path, capsys):
+    """update-meta-key converts 'false' to Python False."""
+    mock_store = MagicMock()
+    mock_store.update_meta_key.return_value = True
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "update-meta-key", "1", "active", "false",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.update_meta_key.assert_called_once_with(1, "active", False)
+
+
+def test_cli_update_meta_key_not_found(tmp_path, capsys):
+    """update-meta-key exits 1 when memory not found."""
+    mock_store = MagicMock()
+    mock_store.update_meta_key.return_value = False
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "update-meta-key", "999", "k", "v",
+                           "--path", str(tmp_path)]),
+    ):
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+    assert exc_info.value.code == 1
+
+
+def test_cli_update_meta_key_removes(tmp_path, capsys):
+    """update-meta-key with no value arg removes the key."""
+    mock_store = MagicMock()
+    mock_store.update_meta_key.return_value = True
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "update-meta-key", "1", "temp",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.update_meta_key.assert_called_once_with(1, "temp", None)
+
+
+def test_cli_update_meta_key_int_value(tmp_path, capsys):
+    """update-meta-key parses int value correctly."""
+    mock_store = MagicMock()
+    mock_store.update_meta_key.return_value = True
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "update-meta-key", "1", "score", "42",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.update_meta_key.assert_called_once_with(1, "score", 42)
+
+
+# ── search-by-summary CLI ──────────────────────────────────────────────────────
+
+def test_cli_search_by_summary_returns_hits(tmp_path, capsys):
+    """search-by-summary prints matching memories."""
+    mock_store = MagicMock()
+    mock_store.search_by_summary.return_value = [
+        {"id": 1, "text": "hello world", "summary": "greeting", "tier": 1, "created": "t", "ns": "default"}
+    ]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "search-by-summary", "greeting",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "1" in out
+
+
+def test_cli_search_by_summary_json(tmp_path, capsys):
+    """search-by-summary --json outputs JSON."""
+    mock_store = MagicMock()
+    mock_store.search_by_summary.return_value = [
+        {"id": 1, "text": "t", "summary": "s", "tier": 1, "created": "c", "ns": "default"}
+    ]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "search-by-summary", "s", "--json",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert json.loads(out)[0]["id"] == 1
+
+
+def test_cli_search_by_summary_all_ns(tmp_path, capsys):
+    """search-by-summary --all-ns passes ns=None."""
+    mock_store = MagicMock()
+    mock_store.search_by_summary.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "search-by-summary", "q", "--all-ns",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.search_by_summary.assert_called_once_with("q", ns=None, limit=20)
+
+
+def test_cli_pinned_memories_nonempty(tmp_path, capsys):
+    """pinned-memories prints each pinned memory row in text mode."""
+    mock_store = MagicMock()
+    mock_store.pinned_memories.return_value = [
+        {"id": 7, "text": "important doc", "tier": 0, "ns": "default",
+         "summary": None, "created": "2026-01-01", "meta": {}}
+    ]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "pinned-memories", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "[7]" in out
