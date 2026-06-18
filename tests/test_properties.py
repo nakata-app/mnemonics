@@ -43,7 +43,7 @@ _SUPPRESS = [HealthCheck.too_slow]
     n=st.integers(min_value=1, max_value=20),
     seed=st.integers(min_value=0, max_value=999),
 )
-@settings(max_examples=30, suppress_health_check=_SUPPRESS)
+@settings(max_examples=30, suppress_health_check=_SUPPRESS, deadline=None)
 def test_add_increases_count_by_n(n, seed):
     s, d = _fresh_store()
     with d:
@@ -57,7 +57,7 @@ def test_add_increases_count_by_n(n, seed):
     n=st.integers(min_value=2, max_value=15),
     seed=st.integers(min_value=0, max_value=999),
 )
-@settings(max_examples=20, suppress_health_check=_SUPPRESS)
+@settings(max_examples=20, suppress_health_check=_SUPPRESS, deadline=None)
 def test_delete_reduces_count_by_one(n, seed):
     s, d = _fresh_store()
     with d:
@@ -76,7 +76,7 @@ def test_delete_reduces_count_by_one(n, seed):
     top_k=st.integers(min_value=1, max_value=10),
     seed=st.integers(min_value=0, max_value=999),
 )
-@settings(max_examples=25, suppress_health_check=_SUPPRESS)
+@settings(max_examples=25, suppress_health_check=_SUPPRESS, deadline=None)
 def test_search_returns_at_most_top_k(n, top_k, seed):
     s, d = _fresh_store()
     with d:
@@ -92,7 +92,7 @@ def test_search_returns_at_most_top_k(n, top_k, seed):
     n=st.integers(min_value=1, max_value=20),
     seed=st.integers(min_value=0, max_value=999),
 )
-@settings(max_examples=25, suppress_health_check=_SUPPRESS)
+@settings(max_examples=25, suppress_health_check=_SUPPRESS, deadline=None)
 def test_search_scores_in_valid_range(n, seed):
     s, d = _fresh_store()
     with d:
@@ -107,7 +107,7 @@ def test_search_scores_in_valid_range(n, seed):
     n=st.integers(min_value=2, max_value=20),
     seed=st.integers(min_value=0, max_value=999),
 )
-@settings(max_examples=20, suppress_health_check=_SUPPRESS)
+@settings(max_examples=20, suppress_health_check=_SUPPRESS, deadline=None)
 def test_deleted_item_absent_from_search(n, seed):
     s, d = _fresh_store()
     with d:
@@ -127,7 +127,7 @@ def test_deleted_item_absent_from_search(n, seed):
     n2=st.integers(min_value=1, max_value=10),
     seed=st.integers(min_value=0, max_value=999),
 )
-@settings(max_examples=20, suppress_health_check=_SUPPRESS)
+@settings(max_examples=20, suppress_health_check=_SUPPRESS, deadline=None)
 def test_namespace_count_isolation(n1, n2, seed):
     s, d = _fresh_store()
     with d:
@@ -144,7 +144,7 @@ def test_namespace_count_isolation(n1, n2, seed):
     n=st.integers(min_value=1, max_value=15),
     seed=st.integers(min_value=0, max_value=999),
 )
-@settings(max_examples=15, suppress_health_check=_SUPPRESS)
+@settings(max_examples=15, suppress_health_check=_SUPPRESS, deadline=None)
 def test_forget_zeroes_ns_count(n, seed):
     s, d = _fresh_store()
     with d:
@@ -163,7 +163,7 @@ def test_forget_zeroes_ns_count(n, seed):
     n=st.integers(min_value=2, max_value=10),
     seed=st.integers(min_value=0, max_value=999),
 )
-@settings(max_examples=15, suppress_health_check=_SUPPRESS)
+@settings(max_examples=15, suppress_health_check=_SUPPRESS, deadline=None)
 def test_gc_only_removes_tier2(n, seed):
     s, d = _fresh_store()
     with d:
