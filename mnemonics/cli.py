@@ -248,7 +248,7 @@ def main() -> None:
             tier_label = {0: "pin", 1: "def", 2: "amb"}.get(r["tier"], "?")
             header = (
                 f"  [{r['score']:.3f}] "
-                f"[raw={r['raw_score']:.3f} decay={r['decay_factor']:.2f} "
+                f"[id={r['id']} raw={r['raw_score']:.3f} decay={r['decay_factor']:.2f} "
                 f"boost={r['boost']:.2f} age={r['age_days']:.0f}d "
                 f"tier={tier_label}]"
             )

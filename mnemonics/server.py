@@ -589,7 +589,7 @@ def _mcp_loop() -> None:
                 lines = []
                 for r in result["results"]:
                     header = (
-                        f"[{r['score']:.3f}] [raw={r['raw_score']:.3f} decay={r['decay_factor']:.2f} "
+                        f"[{r['score']:.3f}] [id={r['id']} raw={r['raw_score']:.3f} decay={r['decay_factor']:.2f} "
                         f"boost={r['boost']:.2f} age={r['age_days']:.0f}d "
                         f"tier={tier_label.get(r['tier'], '?')}]"
                     )
