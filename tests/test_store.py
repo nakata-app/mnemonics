@@ -586,3 +586,31 @@ def test_migration_adds_summary_column(tmp_path):
     hits = store.search_bm25("pterodactyls", top_k=5)
     assert hits and hits[0]["text"] == "legacy row about pterodactyls"
     assert hits[0]["summary"] is None
+
+
+# ── Store.get() ───────────────────────────────────────────────────────────────
+
+def test_get_returns_row(tmp_store):
+    ids = tmp_store.add(["hello world"], make_vecs(1), ns="test")
+    mid = ids[0]
+    row = tmp_store.get(mid)
+    assert row is not None
+    assert row["id"] == mid
+    assert row["text"] == "hello world"
+    assert row["ns"] == "test"
+    assert row["tier"] == 1
+    assert "created" in row
+    assert "last_accessed" in row
+    assert "access_count" in row
+
+
+def test_get_missing_returns_none(tmp_store):
+    assert tmp_store.get(9999) is None
+
+
+def test_get_after_pin(tmp_store):
+    ids = tmp_store.add(["pin me"], make_vecs(1), ns="default")
+    mid = ids[0]
+    tmp_store.pin(mid)
+    row = tmp_store.get(mid)
+    assert row["tier"] == 0
