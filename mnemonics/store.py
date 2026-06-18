@@ -526,19 +526,28 @@ class Store:
     def list_memories(
         self, ns: str = "default", limit: int = 20, offset: int = 0,
         tier: int | None = None,
+        since: str | None = None,
     ) -> list[dict]:
+        """List memories in ns, newest first.
+
+        since: ISO date string (YYYY-MM-DD or YYYY-MM-DD HH:MM:SS). Only rows
+        with created >= since are returned.
+        """
+        where: list[str] = ["ns=?"]
+        params: list = [ns]
         if tier is not None:
-            rows = self._db.execute(
-                "SELECT id, ns, text, summary, tier, created, last_accessed, access_count "
-                "FROM memories WHERE ns=? AND tier=? ORDER BY id DESC LIMIT ? OFFSET ?",
-                (ns, tier, limit, offset),
-            ).fetchall()
-        else:
-            rows = self._db.execute(
-                "SELECT id, ns, text, summary, tier, created, last_accessed, access_count "
-                "FROM memories WHERE ns=? ORDER BY id DESC LIMIT ? OFFSET ?",
-                (ns, limit, offset),
-            ).fetchall()
+            where.append("tier=?")
+            params.append(tier)
+        if since is not None:
+            where.append("created >= ?")
+            params.append(since)
+        where_clause = " AND ".join(where)
+        params.extend([limit, offset])
+        rows = self._db.execute(
+            f"SELECT id, ns, text, summary, tier, created, last_accessed, access_count "
+            f"FROM memories WHERE {where_clause} ORDER BY id DESC LIMIT ? OFFSET ?",
+            params,
+        ).fetchall()
         return [
             {
                 "id": r[0], "ns": r[1], "text": r[2], "summary": r[3],

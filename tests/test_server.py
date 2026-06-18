@@ -1685,3 +1685,25 @@ def test_mcp_ingest_tier_invalid(tmp_store):
                    "arguments": {"texts": ["x"], "tier": 5}},
     })
     assert "error" in resp[0]
+
+
+# ── GET /memories?since= ──────────────────────────────────────────────────────
+
+def test_http_list_memories_since_filter(populated_store):
+    """GET /memories?since= passes since to list_memories."""
+    store, docs, vecs = populated_store
+    with patch.object(store, "list_memories", wraps=store.list_memories) as mock_lm:
+        with patch("mnemonics.server._get_store", return_value=store):
+            code, data = http_call(store, "GET", "/memories?ns=default&since=2000-01-01")
+    assert code == 200
+    call_kwargs = mock_lm.call_args[1]
+    assert call_kwargs.get("since") == "2000-01-01"
+    assert data["count"] > 0
+
+
+def test_http_list_memories_since_future(populated_store):
+    """GET /memories?since=far-future returns zero rows."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/memories?ns=default&since=2099-01-01")
+    assert code == 200
+    assert data["count"] == 0

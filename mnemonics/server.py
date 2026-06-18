@@ -331,7 +331,10 @@ class _Handler(BaseHTTPRequestHandler):
             offset = int(params.get("offset", "0"))
             tier_param = params.get("tier")
             tier_val = int(tier_param) if tier_param is not None else None
-            rows = _get_store().list_memories(ns=ns_val, limit=limit, offset=offset, tier=tier_val)
+            since_param = params.get("since")
+            from urllib.parse import unquote_plus
+            since_val = unquote_plus(since_param) if since_param else None
+            rows = _get_store().list_memories(ns=ns_val, limit=limit, offset=offset, tier=tier_val, since=since_val)
             self._json(200, {"ns": ns_val, "offset": offset, "count": len(rows), "rows": rows})
         elif path.startswith("/memory/"):
             try:

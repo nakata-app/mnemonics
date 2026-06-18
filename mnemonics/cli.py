@@ -165,6 +165,7 @@ def main() -> None:
     ls.add_argument("--limit", type=int, default=20, help="Max rows to show (default: 20)")
     ls.add_argument("--offset", type=int, default=0, help="Pagination offset (default: 0)")
     ls.add_argument("--tier", type=int, choices=[0, 1, 2], default=None, help="Filter to tier: 0=pinned, 1=default, 2=ambient")
+    ls.add_argument("--since", default=None, metavar="DATE", help="Only show memories created on or after DATE (YYYY-MM-DD or YYYY-MM-DD HH:MM:SS)")
     ls.add_argument("--json", dest="json_out", action="store_true", help="Output as JSONL (one object per line)")
     ls.add_argument("--path", default="~/.mnemonics")
 
@@ -461,7 +462,7 @@ def main() -> None:
     elif args.cmd == "list":
         from mnemonics.store import Store
         store = Store(args.path)
-        rows = store.list_memories(ns=args.ns, limit=args.limit, offset=args.offset, tier=args.tier)
+        rows = store.list_memories(ns=args.ns, limit=args.limit, offset=args.offset, tier=args.tier, since=args.since)
         if not rows:
             if args.json_out:
                 print("[]")

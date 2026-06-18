@@ -1752,3 +1752,19 @@ def test_cli_ingest_tier_pinned(tmp_path):
         main()
     kwargs = mock_ingest.call_args[1]
     assert kwargs["tier"] == 0
+
+
+# ── list --since ──────────────────────────────────────────────────────────────
+
+def test_cli_list_since_passed(tmp_path):
+    """list --since passes since parameter to list_memories."""
+    mock_store = MagicMock()
+    mock_store.list_memories.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "list", "--since", "2026-01-01",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    kwargs = mock_store.list_memories.call_args[1]
+    assert kwargs["since"] == "2026-01-01"

@@ -1304,3 +1304,35 @@ def test_store_add_invalid_tier(tmp_store):
     vecs = np.random.rand(1, 384).astype("float32")
     with pytest.raises(ValueError, match="tier"):
         tmp_store.add(["x"], vecs, tier=9)
+
+
+# ── list_memories --since ────────────────────────────────────────────────────
+
+def test_list_memories_since_filters(populated_store):
+    """list_memories(since=...) returns only rows created >= since."""
+    store, docs, vecs = populated_store
+    all_rows = store.list_memories(ns="default", limit=100)
+    # All test rows are created 'now'; since=far-future should return nothing
+    future = "2099-01-01 00:00:00"
+    rows_future = store.list_memories(ns="default", limit=100, since=future)
+    assert rows_future == []
+
+    # since=far-past should return everything
+    past = "2000-01-01 00:00:00"
+    rows_past = store.list_memories(ns="default", limit=100, since=past)
+    assert len(rows_past) == len(all_rows)
+
+
+def test_list_memories_since_combined_tier(populated_store):
+    """since + tier filters both apply (AND logic)."""
+    store, docs, vecs = populated_store
+    first_id = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    store.pin(first_id)
+    past = "2000-01-01"
+    future = "2099-01-01"
+    # tier=0 + far-future → no rows
+    assert store.list_memories(ns="default", limit=100, tier=0, since=future) == []
+    # tier=0 + far-past → only pinned row
+    pinned = store.list_memories(ns="default", limit=100, tier=0, since=past)
+    assert len(pinned) == 1
+    assert pinned[0]["id"] == first_id
