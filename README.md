@@ -147,6 +147,8 @@ The server binds to `127.0.0.1` only, no external interface, no telemetry.
 | GET | `/doctor` | (DB integrity, index vs SQL counts, capacity) |
 | GET | `/namespaces` | |
 | GET | `/count?ns=default` | |
+| GET | `/memories?ns=default&limit=20&offset=0` | (browse newest-first) |
+| GET | `/memory/<id>` | (single memory by id) |
 | DELETE | `/memory/<id>` | |
 
 ## MCP (Claude Code / Cursor / Metis)
@@ -169,13 +171,15 @@ mnem mcp
 Tools exposed:
 - `mnemonics_ingest`
 - `mnemonics_retrieve` (decay-aware, supports `decay: false` for raw cosine)
+- `mnemonics_list` (browse a namespace newest-first, with limit/offset)
+- `mnemonics_get` (fetch a single memory by id)
 - `mnemonics_forget` (delete by id)
 - `mnemonics_forget_ns` (bulk delete a namespace; dry-run by default)
 - `mnemonics_rebuild_index` (rebuild index for a namespace from SQL source of truth)
 - `mnemonics_pin`
 - `mnemonics_tier`
 - `mnemonics_gc` (supports `tier: 1` for default-tier rows)
-- `mnemonics_stats`
+- `mnemonics_stats` (per-namespace tier breakdown: pin/def/amb counts)
 - `mnemonics_health` (DB integrity + index health report as JSON)
 - `mnemonics_repair` (auto-fix orphan vectors and orphan index files)
 

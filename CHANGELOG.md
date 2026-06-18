@@ -39,6 +39,19 @@ All notable changes to mnemonics. Format follows [Keep a Changelog](https://keep
 - **`POST /repair` REST endpoint** calls `Store.repair()` and returns a JSON
   summary of what was fixed (orphan vectors rebuilt, orphan .bin files
   removed, missing vectors reported). Matches `mnemonics_repair` MCP tool.
+- **`mnem list` CLI command, `mnemonics_list` MCP tool, `GET /memories` REST
+  endpoint.** Browse memories in a namespace newest-first with optional
+  `--limit` / `--offset` pagination. Returns id, tier, created timestamp,
+  text snippet (200 chars), and summary. Agents can now audit a namespace
+  without semantic search.
+- **`mnemonics_get` MCP tool, `GET /memory/<id>` REST endpoint, `Store.get()`.
+  Fetch a single memory by ID. Returns full text, summary, ns, tier,
+  created, last_accessed, access_count. Useful before pinning or deleting.
+- **`GET /stats` REST endpoint.** Per-namespace tier breakdown as JSON array.
+  Each entry: `{ns, total, pin, def, amb}`. Complements `GET /namespaces`.
+- **`POST /forget-ns` REST endpoint.** Bulk-delete a namespace via REST
+  (mirrors `mnemonics_forget_ns`). Accepts `ns`, `before`, `tier`,
+  `dry_run`. Defaults to dry-run.
 - **`mnemonics_forget_ns` MCP tool** bulk-deletes a namespace from AI agents.
   Accepts `ns` (required), `before`, `tier`, `dry_run` (default true).
   Complements `mnemonics_forget` (single-id) and `mnemonics_gc` (age-based).
