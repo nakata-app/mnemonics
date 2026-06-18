@@ -405,3 +405,35 @@ def test_get_rerank_ce_missing_sentence_transformers(monkeypatch):
 
     _ret._rerank_ce = None
     _ret._rerank_model_name = None
+
+
+def test_retrieve_min_tier_filter(tmp_path, mock_enc):
+    """retrieve min_tier excludes tier-0 items from results."""
+    import numpy as np
+    from mnemonics.store import DIM, Store
+    s = Store(tmp_path)
+    rng = np.random.default_rng(7)
+    vecs = rng.random((2, DIM)).astype("float32")
+    vecs /= np.linalg.norm(vecs, axis=1, keepdims=True)
+    ids = s.add(["pinned text about dogs", "default text about cats"], vecs)
+    s.pin(ids[0])
+    mock_enc.return_value = _enc_returning(vecs[0])
+    out = retrieve("dogs", store=s, top_k=5, min_tier=1)
+    result_ids = {r["id"] for r in out["results"]}
+    assert ids[0] not in result_ids
+
+
+def test_retrieve_max_tier_filter(tmp_path, mock_enc):
+    """retrieve max_tier excludes tier-2 items from results."""
+    import numpy as np
+    from mnemonics.store import DIM, Store
+    s = Store(tmp_path)
+    rng = np.random.default_rng(13)
+    vecs = rng.random((2, DIM)).astype("float32")
+    vecs /= np.linalg.norm(vecs, axis=1, keepdims=True)
+    ids = s.add(["default text about dogs", "ambient text about cats"], vecs)
+    s.set_tier(ids[1], 2)
+    mock_enc.return_value = _enc_returning(vecs[0])
+    out = retrieve("dogs", store=s, top_k=5, max_tier=1)
+    result_ids = {r["id"] for r in out["results"]}
+    assert ids[1] not in result_ids

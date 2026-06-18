@@ -191,6 +191,8 @@ def retrieve(
     candidate_k: int = 50,
     rerank: bool = False,
     boost_signals: bool = True,
+    min_tier: int | None = None,
+    max_tier: int | None = None,
 ) -> dict[str, Any]:
     """Search the store for query. Tier-aware decay + reinforcement applied unless decay=False.
 
@@ -213,11 +215,11 @@ def retrieve(
     qvec = enc.encode([query], normalize_embeddings=True, convert_to_numpy=True)[0]
     fusion_top = candidate_k if rerank else top_k
     if hybrid:
-        vec_results = store.search(qvec, ns=ns, top_k=candidate_k)
-        bm25_results = store.search_bm25(query, ns=ns, top_k=candidate_k)
+        vec_results = store.search(qvec, ns=ns, top_k=candidate_k, min_tier=min_tier, max_tier=max_tier)
+        bm25_results = store.search_bm25(query, ns=ns, top_k=candidate_k, min_tier=min_tier, max_tier=max_tier)
         results = _rrf_fuse([vec_results, bm25_results], top_k=fusion_top)
     else:
-        results = store.search(qvec, ns=ns, top_k=fusion_top)
+        results = store.search(qvec, ns=ns, top_k=fusion_top, min_tier=min_tier, max_tier=max_tier)
 
     quoted = _extract_quoted_phrases(query) if boost_signals else []
     names = _extract_person_names(query) if boost_signals else []
