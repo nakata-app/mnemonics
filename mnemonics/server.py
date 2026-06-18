@@ -392,6 +392,23 @@ class _Handler(BaseHTTPRequestHandler):
                 self._json(404, {"error": f"memory {mid} not found"})
             else:
                 self._json(200, row)
+        elif path == "/text-search":
+            from urllib.parse import urlparse, parse_qs, unquote_plus
+            qs_parsed = parse_qs(urlparse(self.path).query)
+            q_raw = qs_parsed.get("q", [None])[0]
+            if not q_raw:
+                self._json(400, {"error": "'q' query parameter is required"})
+                return
+            q = unquote_plus(q_raw)
+            ns_raw = qs_parsed.get("ns", ["default"])[0]
+            ns_val = unquote_plus(ns_raw) if ns_raw != "all" else None
+            tier_raw = qs_parsed.get("tier", [None])[0]
+            limit = min(int(qs_parsed.get("limit", ["20"])[0]), 100)
+            hits = _get_store().text_search(
+                q, ns=ns_val, limit=limit,
+                tier=int(tier_raw) if tier_raw is not None else None,
+            )
+            self._json(200, {"query": q, "count": len(hits), "results": hits})
         elif path == "/export-jsonl":
             from urllib.parse import urlparse, parse_qs, unquote_plus
             import json as _json
@@ -733,6 +750,20 @@ def _mcp_loop() -> None:
                     },
                 },
                 {
+                    "name": "mnemonics_text_search",
+                    "description": "Case-insensitive substring search over memory text and summary. Faster than vector search for exact keyword lookups. Returns rows newest-first.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string", "description": "Substring to search for"},
+                            "ns": {"type": "string", "description": "Namespace to search (default: 'default', use 'all' for all namespaces)"},
+                            "tier": {"type": "integer", "enum": [0, 1, 2], "description": "Filter to specific tier (omit for all tiers)"},
+                            "limit": {"type": "integer", "description": "Max results (default: 20, capped at 100)"},
+                        },
+                        "required": ["query"],
+                    },
+                },
+                {
                     "name": "mnemonics_import",
                     "description": "Import memories from a JSONL string (counterpart to mnemonics_export). Each line must be a JSON object with at least a 'text' field. Optional fields: ns, tier, summary, meta. ns/tier overrides apply to all rows when set.",
                     "inputSchema": {
@@ -1052,6 +1083,28 @@ def _mcp_loop() -> None:
                     }, ensure_ascii=False))
                 result_text = "\n".join(lines) if lines else "(no memories matched)"
                 ok({"content": [{"type": "text", "text": result_text}]})
+
+            elif name == "mnemonics_text_search":
+                q = args.get("query", "").strip()
+                if not q:
+                    err("mnemonics_text_search: 'query' is required")
+                    continue
+                ns_arg = args.get("ns", "default")
+                ns_val = None if ns_arg == "all" else ns_arg
+                tier_arg = args.get("tier")
+                limit = min(int(args.get("limit", 20)), 100)
+                hits = _get_store().text_search(
+                    q, ns=ns_val, limit=limit,
+                    tier=int(tier_arg) if tier_arg is not None else None,
+                )
+                if hits:
+                    lines_ts = [
+                        f"id={h['id']} ns={h['ns']} tier={h['tier']}: {h['text'][:120]}"
+                        for h in hits
+                    ]
+                    ok({"content": [{"type": "text", "text": "\n".join(lines_ts)}]})
+                else:
+                    ok({"content": [{"type": "text", "text": f"No results for: {q!r}"}]})
 
             elif name == "mnemonics_import":
                 jsonl_str = args.get("jsonl", "")

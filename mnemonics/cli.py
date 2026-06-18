@@ -71,6 +71,15 @@ def main() -> None:
     bm.add_argument("--json", dest="json_out", action="store_true", help="Output results as JSON array")
     bm.add_argument("--path", default="~/.mnemonics")
 
+    # text-search
+    ts = sub.add_parser("text-search", help="Case-insensitive substring search over text and summary")
+    ts.add_argument("query", help="Substring to search for")
+    ts.add_argument("--ns", default="default", help="Namespace to search (use 'all' for all namespaces)")
+    ts.add_argument("--tier", type=int, choices=[0, 1, 2], default=None, help="Filter by tier")
+    ts.add_argument("--limit", type=int, default=20, help="Max results (default: 20)")
+    ts.add_argument("--json", dest="json_out", action="store_true", help="Output results as JSON array")
+    ts.add_argument("--path", default="~/.mnemonics")
+
     # stats
     st = sub.add_parser("stats", help="Show memory stats")
     st.add_argument("--path", default="~/.mnemonics")
@@ -388,6 +397,24 @@ def main() -> None:
                 print(line)
                 if r.get("summary"):
                     print(f"           summary: {r['summary']}")
+
+    elif args.cmd == "text-search":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        ns_val = None if args.ns == "all" else args.ns
+        hits = store.text_search(args.query, ns=ns_val, limit=args.limit, tier=args.tier)
+        if args.json_out:
+            print(json.dumps(hits, default=str, ensure_ascii=False))
+        elif not hits:
+            print(f"No results for {args.query!r} in ns={args.ns!r}")
+        else:
+            tier_label = {0: "pin", 1: "def", 2: "amb"}
+            for r in hits:
+                tl = tier_label.get(r["tier"], "?")
+                snippet = r["text"][:120].replace("\n", " ")
+                print(f"  [{tl}] id={r['id']}  {snippet}")
+                if r.get("summary"):
+                    print(f"       summary: {r['summary']}")
 
     elif args.cmd == "count":
         from mnemonics.store import Store

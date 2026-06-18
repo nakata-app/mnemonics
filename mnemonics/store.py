@@ -561,6 +561,42 @@ class Store:
             for r in rows
         ]
 
+    def text_search(
+        self,
+        query: str,
+        ns: str | None = "default",
+        tier: int | None = None,
+        limit: int = 20,
+    ) -> list[dict]:
+        """Case-insensitive substring search over text and summary columns.
+
+        Faster than BM25 for exact keyword lookups; no tokenization, no FTS
+        index required. Returns rows ordered newest-first.
+        """
+        pattern = f"%{query}%"
+        where: list[str] = ["(text LIKE ? OR summary LIKE ?)"]
+        params: list = [pattern, pattern]
+        if ns is not None:
+            where.append("ns=?")
+            params.append(ns)
+        if tier is not None:
+            where.append("tier=?")
+            params.append(tier)
+        params.append(limit)
+        rows = self._db.execute(
+            f"SELECT id, ns, text, summary, tier, created, last_accessed, access_count "
+            f"FROM memories WHERE {' AND '.join(where)} ORDER BY id DESC LIMIT ?",
+            params,
+        ).fetchall()
+        return [
+            {
+                "id": r[0], "ns": r[1], "text": r[2], "summary": r[3],
+                "tier": r[4], "created": r[5], "last_accessed": r[6],
+                "access_count": r[7],
+            }
+            for r in rows
+        ]
+
     def get(self, memory_id: int) -> dict | None:
         row = self._db.execute(
             "SELECT id, ns, text, summary, tier, created, last_accessed, access_count "

@@ -1362,3 +1362,62 @@ def test_list_memories_since_and_before(populated_store):
     # past..past: nothing
     empty = store.list_memories(ns="default", limit=100, since="2000-01-01", before="2001-01-01")
     assert empty == []
+
+
+# ── text_search ───────────────────────────────────────────────────────────────
+
+def test_text_search_basic(populated_store):
+    store, docs, vecs = populated_store
+    # "Eiffel" appears in texts[0]
+    hits = store.text_search("Eiffel")
+    assert len(hits) >= 1
+    assert any("Eiffel" in h["text"] for h in hits)
+
+
+def test_text_search_no_match(populated_store):
+    store, docs, vecs = populated_store
+    hits = store.text_search("xyzzy_no_match_ever")
+    assert hits == []
+
+
+def test_text_search_ns_filter(populated_store):
+    store, docs, vecs = populated_store
+    import numpy as np
+    v = np.random.rand(384).astype("float32")
+    v /= np.linalg.norm(v)
+    store.add(["Eiffel other ns"], v[None], ns="other")
+    hits = store.text_search("Eiffel", ns="other")
+    assert all(h["ns"] == "other" for h in hits)
+
+
+def test_text_search_all_ns(populated_store):
+    store, docs, vecs = populated_store
+    import numpy as np
+    v = np.random.rand(384).astype("float32")
+    v /= np.linalg.norm(v)
+    store.add(["Eiffel other ns"], v[None], ns="other")
+    hits = store.text_search("Eiffel", ns=None)
+    ns_set = {h["ns"] for h in hits}
+    assert len(ns_set) > 1
+
+
+def test_text_search_tier_filter(populated_store):
+    store, docs, vecs = populated_store
+    first_id = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    store.pin(first_id)
+    hits = store.text_search("", ns=None, tier=0)
+    assert all(h["tier"] == 0 for h in hits)
+
+
+def test_text_search_limit(populated_store):
+    store, docs, vecs = populated_store
+    hits = store.text_search("", ns=None, limit=2)
+    assert len(hits) <= 2
+
+
+def test_text_search_summary_match(populated_store):
+    store, docs, vecs = populated_store
+    first_id = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    store.update_summary(first_id, "unique_summary_keyword_xyz")
+    hits = store.text_search("unique_summary_keyword_xyz")
+    assert any(h["id"] == first_id for h in hits)

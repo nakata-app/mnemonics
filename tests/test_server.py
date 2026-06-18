@@ -618,7 +618,7 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_pin", "mnemonics_tier", "mnemonics_gc", "mnemonics_stats",
         "mnemonics_health", "mnemonics_repair",
         "mnemonics_search_by_meta", "mnemonics_delete_many", "mnemonics_update_meta",
-        "mnemonics_export", "mnemonics_import",
+        "mnemonics_export", "mnemonics_import", "mnemonics_text_search",
     }
 
 
@@ -2134,3 +2134,83 @@ def test_mcp_import_tools_list(tmp_store):
     })[0]
     names = {t["name"] for t in resp["result"]["tools"]}
     assert "mnemonics_import" in names
+
+
+# ── GET /text-search ─────────────────────────────────────────────────────────
+
+def test_http_text_search_basic(populated_store):
+    """GET /text-search?q=Eiffel finds the Eiffel row."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/text-search?q=Eiffel")
+    assert code == 200
+    assert data["count"] >= 1
+    assert any("Eiffel" in r["text"] for r in data["results"])
+
+
+def test_http_text_search_no_match(populated_store):
+    """GET /text-search with unknown term returns empty results."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/text-search?q=xyzzy_never_matches")
+    assert code == 200
+    assert data["count"] == 0
+
+
+def test_http_text_search_missing_q(tmp_store):
+    """GET /text-search without q returns 400."""
+    code, data = http_call(tmp_store, "GET", "/text-search")
+    assert code == 400
+
+
+def test_http_text_search_all_ns(populated_store):
+    """GET /text-search?ns=all searches across all namespaces."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/text-search?q=Eiffel&ns=all")
+    assert code == 200
+    assert data["count"] >= 1
+
+
+def test_http_text_search_limit(populated_store):
+    """GET /text-search?limit=1 returns at most 1 result."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/text-search?q=e&limit=1")
+    assert code == 200
+    assert len(data["results"]) <= 1
+
+
+# ── MCP mnemonics_text_search ─────────────────────────────────────────────────
+
+def _mcp_ts(store, **kwargs):
+    return _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_text_search", "arguments": kwargs},
+    })[0]
+
+
+def test_mcp_text_search_hit(populated_store):
+    """mnemonics_text_search finds a matching memory."""
+    store, docs, vecs = populated_store
+    r = _mcp_ts(store, query="Eiffel")
+    assert "result" in r
+    assert "id=" in r["result"]["content"][0]["text"]
+
+
+def test_mcp_text_search_no_hit(populated_store):
+    """mnemonics_text_search returns 'No results' when nothing matches."""
+    store, docs, vecs = populated_store
+    r = _mcp_ts(store, query="xyzzy_never_matches")
+    assert "No results" in r["result"]["content"][0]["text"]
+
+
+def test_mcp_text_search_empty_query(tmp_store):
+    """mnemonics_text_search with empty query returns error."""
+    r = _mcp_ts(tmp_store, query="")
+    assert "error" in r
+
+
+def test_mcp_text_search_in_tools_list(tmp_store):
+    """mnemonics_text_search appears in the MCP tools list."""
+    resp = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {},
+    })[0]
+    names = {t["name"] for t in resp["result"]["tools"]}
+    assert "mnemonics_text_search" in names

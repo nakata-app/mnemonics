@@ -1996,3 +1996,76 @@ def test_cli_import_jsonl_bad_tier_clamped(tmp_path, capsys):
         main()
     kwargs = mock_ingest.call_args[1]
     assert kwargs["tier"] == 1
+
+
+# ── text-search ───────────────────────────────────────────────────────────────
+
+def test_cli_text_search_hit(tmp_path, capsys):
+    """text-search prints matching rows."""
+    hits = [{"id": 1, "ns": "default", "tier": 1, "text": "Eiffel Tower Paris", "summary": None}]
+    mock_store = MagicMock()
+    mock_store.text_search.return_value = hits
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "text-search", "Eiffel", "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.text_search.assert_called_once()
+    out = capsys.readouterr().out
+    assert "Eiffel" in out
+
+
+def test_cli_text_search_no_results(tmp_path, capsys):
+    """text-search prints 'No results' when nothing matches."""
+    mock_store = MagicMock()
+    mock_store.text_search.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "text-search", "xyz_nomatch", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "No results" in out
+
+
+def test_cli_text_search_json(tmp_path, capsys):
+    """text-search --json outputs JSON array."""
+    import json as _json
+    hits = [{"id": 1, "ns": "default", "tier": 1, "text": "hello", "summary": None}]
+    mock_store = MagicMock()
+    mock_store.text_search.return_value = hits
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "text-search", "hello", "--json", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    parsed = _json.loads(out)
+    assert parsed[0]["id"] == 1
+
+
+def test_cli_text_search_all_ns(tmp_path, capsys):
+    """text-search --ns all passes ns=None to store."""
+    mock_store = MagicMock()
+    mock_store.text_search.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "text-search", "q", "--ns", "all", "--path", str(tmp_path)]),
+    ):
+        main()
+    kwargs = mock_store.text_search.call_args[1]
+    assert kwargs["ns"] is None
+
+
+def test_cli_text_search_summary_shown(tmp_path, capsys):
+    """text-search prints summary line when present."""
+    hits = [{"id": 1, "ns": "default", "tier": 1, "text": "Paris", "summary": "city in France"}]
+    mock_store = MagicMock()
+    mock_store.text_search.return_value = hits
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "text-search", "Paris", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "city in France" in out
