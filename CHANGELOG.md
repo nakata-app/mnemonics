@@ -6,6 +6,14 @@ All notable changes to mnemonics. Format follows [Keep a Changelog](https://keep
 
 ### Added
 
+- **Auto-resize on ingest.** `Store.add()` now calls `idx.resize_index()`
+  before `add_items` when the new batch would exceed the current
+  `max_elements` ceiling (default 100K). Prevents `add_items` from silently
+  failing on large namespaces without any configuration change.
+- **Capacity warning in health_check / doctor.** Each namespace report now
+  includes `max_elements`, `usage_pct`, and `capacity_warning` (true when
+  ≥ 85% full). `mnemonics doctor` shows "⚠ X% full, rebuild-index
+  recommended" so the operator knows before hitting the limit.
 - **`mnemonics doctor --fix`** one-shot auto-repair: rebuilds indexes with
   orphan vectors via `Store.repair()`, deletes orphan `.bin` files, reports
   missing vectors (sql > idx) that need manual `rebuild-index`.
