@@ -908,3 +908,110 @@ def test_migrate_fts_rebuild_when_behind(tmp_path):
     s._migrate_fts()
     count = s._db.execute("SELECT COUNT(*) FROM memories_fts").fetchone()[0]
     assert count >= 1
+
+
+def test_apply_key_invalid_hex_raises(monkeypatch):
+    """_apply_key raises when key is not 64 hex chars (lines 44-51)."""
+    import sqlite3 as _sqlite
+    import mnemonics.store as _store_mod
+    import mnemonics.crypto as _crypto_mod
+
+    monkeypatch.setattr(_store_mod, "_ENCRYPTED", True)
+    monkeypatch.setattr(_crypto_mod, "require_key", lambda: "tooshort")
+    conn = _sqlite.connect(":memory:")
+    with pytest.raises(RuntimeError, match="64-character"):
+        _store_mod._apply_key(conn)
+    conn.close()
+
+
+def test_apply_key_valid_hex_executes(monkeypatch):
+    """_apply_key runs PRAGMA key when key is valid 64-char hex (line 52)."""
+    import sqlite3 as _sqlite
+    from unittest.mock import MagicMock
+    import mnemonics.store as _store_mod
+    import mnemonics.crypto as _crypto_mod
+
+    valid_key = "a" * 64
+    monkeypatch.setattr(_store_mod, "_ENCRYPTED", True)
+    monkeypatch.setattr(_crypto_mod, "require_key", lambda: valid_key)
+    conn = MagicMock()
+    _store_mod._apply_key(conn)
+    conn.execute.assert_called_once()
+    call_arg = conn.execute.call_args[0][0]
+    assert "PRAGMA key" in call_arg
+    assert valid_key in call_arg
+
+
+def test_wal_switch_error_swallowed(tmp_path, monkeypatch):
+    """lines 130-133: OperationalError during WAL switch is silently swallowed."""
+    import mnemonics.store as _s
+    import sqlite3 as _sqlite
+
+    original_connect = _sqlite.connect
+    triggered = [False]
+
+    class _WrapConn:
+        """Thin wrapper so we can intercept execute without mutating C extension."""
+        def __init__(self, real):
+            self._real = real
+        def __getattr__(self, name):
+            return getattr(self._real, name)
+        def execute(self, sql, *a, **k):
+            if "journal_mode=WAL" in sql and not triggered[0]:
+                triggered[0] = True
+                raise _sqlite.OperationalError("locked by peer")
+            return self._real.execute(sql, *a, **k)
+        def executescript(self, sql):
+            return self._real.executescript(sql)
+
+    def patched_connect(path, **kw):
+        return _WrapConn(original_connect(path, **kw))
+
+    monkeypatch.setattr(_s.sqlite3, "connect", patched_connect)
+    s = _s.Store(tmp_path)
+    assert s is not None
+    assert triggered[0]
+
+
+def test_rebuild_ns_index_get_items_exception_skips(tmp_path, monkeypatch):
+    """lines 553-554: get_items exception in rebuild_ns_index → item skipped."""
+    from unittest.mock import MagicMock, patch as _patch
+    import mnemonics.store as _s
+
+    s = Store(tmp_path)
+    s.add(["a", "b"], make_vecs(2), ns="ns1")
+
+    # patch hnswlib.Index.get_items to fail for the second call
+    call_count = [0]
+    orig_get_items = None
+
+    import hnswlib
+    real_get_items = hnswlib.Index.get_items
+
+    def flaky_get_items(self, ids):
+        call_count[0] += 1
+        if call_count[0] == 2:
+            raise Exception("disk read error")
+        return real_get_items(self, ids)
+
+    monkeypatch.setattr(hnswlib.Index, "get_items", flaky_get_items)
+    # Force rebuild — should succeed despite one item's vector being unreadable
+    s.rebuild_ns_index("ns1")
+    # Index still exists and is usable
+    results = s.search(make_vecs(1)[0], ns="ns1", top_k=5)
+    assert isinstance(results, list)
+
+
+def test_health_check_load_index_exception(tmp_path):
+    """lines 654-655: corrupted .bin file → load_index Exception → idx_count=None."""
+    s = Store(tmp_path)
+    s.add(["x"], make_vecs(1))
+    # Corrupt the index file
+    bin_path = tmp_path / "index_default.bin"
+    bin_path.write_bytes(b"this is not a valid hnswlib index")
+    s._index.clear()
+    report = s.health_check()
+    # Should not raise; idx_count falls back to None → soft_deleted=0, missing_vectors=0
+    ns = next(r for r in report["namespaces"] if r["ns"] == "default")
+    assert ns["soft_deleted"] == 0
+    assert ns["missing_vectors"] == 0

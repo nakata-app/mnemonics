@@ -197,7 +197,7 @@ class Store:
                 "INSERT INTO memories_fts(rowid, text, summary) "
                 "SELECT id, text, summary FROM memories"
             )
-        elif fts_count < mem_count:
+        elif fts_count < mem_count:  # pragma: no cover — FTS5 content-table COUNT always mirrors memories
             self._db.execute("INSERT INTO memories_fts(memories_fts) VALUES('rebuild')")
 
     @contextlib.contextmanager
