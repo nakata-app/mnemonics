@@ -669,6 +669,10 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_find_duplicates",
         "mnemonics_swap_tier",
         "mnemonics_ns_summary",
+        "mnemonics_toggle_tier",
+        "mnemonics_merge_texts",
+        "mnemonics_truncate_text",
+        "mnemonics_search_by_access_count",
     }
 
 
@@ -5235,3 +5239,217 @@ def test_mcp_ns_summary_missing(tmp_path):
                          "params": {"name": "mnemonics_ns_summary",
                                     "arguments": {}}})[0]
     assert "error" in resp
+
+
+# ── toggle-tier REST ───────────────────────────────────────────────────────────
+
+def test_http_toggle_tier(tmp_path):
+    """POST /toggle-tier cycles memory tier."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(1, DIM).astype(np.float32)
+    ids = store.add(["x"], vecs, ns="default")
+    code, data = http_call(store, "POST", "/toggle-tier", {"id": ids[0]})
+    assert code == 200
+    assert data["tier"] in (0, 1, 2)
+
+
+def test_http_toggle_tier_missing_id(tmp_path):
+    """POST /toggle-tier returns 400 when id missing."""
+    store = Store(tmp_path)
+    code, data = http_call(store, "POST", "/toggle-tier", {})
+    assert code == 400
+
+
+def test_http_toggle_tier_not_found(tmp_path):
+    """POST /toggle-tier returns 404 for missing memory."""
+    store = Store(tmp_path)
+    code, data = http_call(store, "POST", "/toggle-tier", {"id": 99999})
+    assert code == 404
+
+
+# ── merge-texts REST ───────────────────────────────────────────────────────────
+
+def test_http_merge_texts(tmp_path):
+    """POST /merge-texts creates new merged memory."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(2, DIM).astype(np.float32)
+    ids = store.add(["a", "b"], vecs, ns="default")
+    code, data = http_call(store, "POST", "/merge-texts", {"ids": ids})
+    assert code == 201
+    assert "id" in data
+
+
+def test_http_merge_texts_missing_ids(tmp_path):
+    """POST /merge-texts returns 400 when ids missing."""
+    store = Store(tmp_path)
+    code, data = http_call(store, "POST", "/merge-texts", {})
+    assert code == 400
+
+
+def test_http_merge_texts_not_found(tmp_path):
+    """POST /merge-texts returns 404 when ids not in DB."""
+    store = Store(tmp_path)
+    code, data = http_call(store, "POST", "/merge-texts", {"ids": [99998, 99999]})
+    assert code == 404
+
+
+# ── truncate-text REST ─────────────────────────────────────────────────────────
+
+def test_http_truncate_text(tmp_path):
+    """POST /truncate-text trims memory text."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(1, DIM).astype(np.float32)
+    ids = store.add(["hello world"], vecs, ns="default")
+    code, data = http_call(store, "POST", "/truncate-text",
+                           {"id": ids[0], "max_chars": 5})
+    assert code == 200
+
+
+def test_http_truncate_text_missing_params(tmp_path):
+    """POST /truncate-text returns 400 when params missing."""
+    store = Store(tmp_path)
+    code, data = http_call(store, "POST", "/truncate-text", {"id": 1})
+    assert code == 400
+
+
+def test_http_truncate_text_not_found(tmp_path):
+    """POST /truncate-text returns 404 for missing memory."""
+    store = Store(tmp_path)
+    code, data = http_call(store, "POST", "/truncate-text",
+                           {"id": 99999, "max_chars": 10})
+    assert code == 404
+
+
+# ── search-by-access-count REST ────────────────────────────────────────────────
+
+def test_http_search_by_access_count(tmp_path):
+    """GET /search-by-access-count returns memories in range."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(3, DIM).astype(np.float32)
+    store.add(["a", "b", "c"], vecs, ns="default")
+    code, data = http_call(store, "GET", "/search-by-access-count?min=0&ns=default")
+    assert code == 200
+    assert data["count"] == 3
+
+
+def test_http_search_by_access_count_all_ns(tmp_path):
+    """GET /search-by-access-count without ns spans all namespaces."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(1, DIM).astype(np.float32)
+    store.add(["x"], vecs, ns="ns1")
+    code, data = http_call(store, "GET", "/search-by-access-count?min=0")
+    assert code == 200
+    assert data["count"] >= 1
+
+
+# ── MCP: toggle_tier, merge_texts, truncate_text, search_by_access_count ──────
+
+def test_mcp_toggle_tier(tmp_path):
+    """MCP mnemonics_toggle_tier cycles tier."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(1, DIM).astype(np.float32)
+    ids = store.add(["x"], vecs, ns="default")
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_toggle_tier",
+                                    "arguments": {"id": ids[0]}}})[0]
+    text = resp["result"]["content"][0]["text"]
+    assert "tier cycled" in text
+
+
+def test_mcp_toggle_tier_missing_id(tmp_path):
+    """MCP mnemonics_toggle_tier returns error when id missing."""
+    store = Store(tmp_path)
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_toggle_tier",
+                                    "arguments": {}}})[0]
+    assert "error" in resp
+
+
+def test_mcp_toggle_tier_not_found(tmp_path):
+    """MCP mnemonics_toggle_tier returns error for missing memory."""
+    store = Store(tmp_path)
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_toggle_tier",
+                                    "arguments": {"id": 99999}}})[0]
+    assert "error" in resp
+
+
+def test_mcp_merge_texts(tmp_path):
+    """MCP mnemonics_merge_texts creates merged memory."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(2, DIM).astype(np.float32)
+    ids = store.add(["x", "y"], vecs, ns="default")
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_merge_texts",
+                                    "arguments": {"ids": ids, "ns": "default"}}})[0]
+    text = resp["result"]["content"][0]["text"]
+    assert "Merged" in text
+
+
+def test_mcp_merge_texts_missing(tmp_path):
+    """MCP mnemonics_merge_texts returns error when ids missing."""
+    store = Store(tmp_path)
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_merge_texts",
+                                    "arguments": {}}})[0]
+    assert "error" in resp
+
+
+def test_mcp_merge_texts_not_found(tmp_path):
+    """MCP mnemonics_merge_texts returns error when ids not in DB."""
+    store = Store(tmp_path)
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_merge_texts",
+                                    "arguments": {"ids": [99998]}}})[0]
+    assert "error" in resp
+
+
+def test_mcp_truncate_text(tmp_path):
+    """MCP mnemonics_truncate_text truncates memory text."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(1, DIM).astype(np.float32)
+    ids = store.add(["hello world"], vecs, ns="default")
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_truncate_text",
+                                    "arguments": {"id": ids[0], "max_chars": 5}}})[0]
+    text = resp["result"]["content"][0]["text"]
+    assert "truncated" in text
+
+
+def test_mcp_truncate_text_missing(tmp_path):
+    """MCP mnemonics_truncate_text returns error when params missing."""
+    store = Store(tmp_path)
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_truncate_text",
+                                    "arguments": {"id": 1}}})[0]
+    assert "error" in resp
+
+
+def test_mcp_truncate_text_not_found(tmp_path):
+    """MCP mnemonics_truncate_text returns error for missing memory."""
+    store = Store(tmp_path)
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_truncate_text",
+                                    "arguments": {"id": 99999, "max_chars": 5}}})[0]
+    assert "error" in resp
+
+
+def test_mcp_search_by_access_count(tmp_path):
+    """MCP mnemonics_search_by_access_count returns matching memories."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(2, DIM).astype(np.float32)
+    store.add(["a", "b"], vecs, ns="default")
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_search_by_access_count",
+                                    "arguments": {"min": 0, "ns": "default"}}})[0]
+    text = resp["result"]["content"][0]["text"]
+    assert "2" in text

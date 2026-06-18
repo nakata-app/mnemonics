@@ -832,6 +832,130 @@ class Store:
             self._db.commit()
         return True
 
+    def toggle_tier(self, memory_id: int) -> int | None:
+        """Cycle a memory's tier: pinned(0) → ambient(2) → default(1) → pinned(0).
+
+        Returns the new tier value, or ``None`` if *memory_id* does not exist.
+        This round-trip cycle lets a UI button step through all three tiers
+        with a single call.
+        """
+        row = self._db.execute(
+            "SELECT tier FROM memories WHERE id=?", (memory_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        current = row[0]
+        _cycle = {0: 2, 2: 1, 1: 0}
+        new_tier = _cycle.get(current, 1)
+        with self._lock:
+            self._db.execute(
+                "UPDATE memories SET tier=? WHERE id=?", (new_tier, memory_id)
+            )
+            self._db.commit()
+        return new_tier
+
+    def merge_texts(
+        self,
+        ids: list[int],
+        separator: str = "\n\n",
+        ns: str = "default",
+        delete_originals: bool = False,
+    ) -> int | None:
+        """Concatenate the text of multiple memories into a new memory in *ns*.
+
+        Returns the ``id`` of the newly created memory, or ``None`` if no
+        memories were found for the given *ids*.  The new memory uses zero
+        vectors (call ``reindex_all(ns)`` afterwards).  When
+        *delete_originals* is ``True``, the source memories are deleted after
+        the merge.
+        """
+        import json as _j_mt
+        import numpy as _np_mt
+
+        rows = self._db.execute(
+            f"SELECT id, text, summary, meta FROM memories "
+            f"WHERE id IN ({','.join('?' * len(ids))})",
+            ids,
+        ).fetchall() if ids else []
+
+        if not rows:
+            return None
+
+        merged_text = separator.join(r[1] for r in rows)
+        first_meta = _j_mt.loads(rows[0][3]) if rows[0][3] else {}
+        zero_vec = _np_mt.zeros((1, self.dim), dtype=_np_mt.float32)
+        new_ids = self.add([merged_text], zero_vec, ns=ns, meta=[first_meta])
+        new_id = new_ids[0] if new_ids else None
+
+        if delete_originals and new_id is not None:
+            src_ids = [r[0] for r in rows]
+            placeholders = ",".join("?" * len(src_ids))
+            with self._lock:
+                self._db.execute(
+                    f"DELETE FROM memories WHERE id IN ({placeholders})", src_ids
+                )
+                self._db.commit()
+
+        return new_id
+
+    def truncate_text(self, memory_id: int, max_chars: int) -> bool:
+        """Truncate a memory's text to at most *max_chars* characters.
+
+        No-ops if the text is already shorter. Returns ``True`` on success,
+        ``False`` if *memory_id* does not exist.  Does NOT re-embed; call the
+        ``update`` method if you need the vector to stay in sync.
+        """
+        row = self._db.execute(
+            "SELECT text FROM memories WHERE id=?", (memory_id,)
+        ).fetchone()
+        if row is None:
+            return False
+        text = row[0]
+        if len(text) <= max_chars:
+            return True
+        with self._lock:
+            self._db.execute(
+                "UPDATE memories SET text=? WHERE id=?",
+                (text[:max_chars], memory_id),
+            )
+            self._db.commit()
+        return True
+
+    def search_by_access_count(
+        self,
+        min_count: int = 0,
+        max_count: int | None = None,
+        ns: str | None = "default",
+        limit: int = 20,
+    ) -> list[dict]:
+        """Return memories whose ``access_count`` falls in [*min_count*, *max_count*].
+
+        *max_count=None* means no upper bound.  *ns=None* spans all
+        namespaces.  Ordered by access_count DESC.  Useful for finding
+        heavily-used memories (min_count=10) or completely untouched ones
+        (min_count=0, max_count=0).
+        """
+        where: list[str] = ["access_count >= ?"]
+        params: list = [min_count]
+        if max_count is not None:
+            where.append("access_count <= ?")
+            params.append(max_count)
+        if ns is not None:
+            where.append("ns = ?")
+            params.append(ns)
+        params.append(limit)
+        rows = self._db.execute(
+            "SELECT id, ns, text, summary, tier, created, access_count "
+            "FROM memories WHERE " + " AND ".join(where) +
+            " ORDER BY access_count DESC LIMIT ?",
+            params,
+        ).fetchall()
+        return [
+            {"id": r[0], "ns": r[1], "text": r[2], "summary": r[3],
+             "tier": r[4], "created": r[5], "access_count": r[6]}
+            for r in rows
+        ]
+
     def rename_tag(
         self,
         old_tag: str,

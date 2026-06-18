@@ -3802,3 +3802,149 @@ def test_rename_tag_skips_invalid_json(tmp_store):
     # Should not raise, should return 0 (no update possible)
     n = tmp_store.rename_tag("foo", "bar", ns="default")
     assert n == 0
+
+
+# ── toggle_tier ────────────────────────────────────────────────────────────────
+
+def test_toggle_tier_cycles_correctly(tmp_store):
+    """toggle_tier cycles: default(1)→pinned(0)→ambient(2)→default(1)."""
+    import numpy as np
+    vecs = np.random.rand(1, 384).astype(np.float32)
+    ids = tmp_store.add(["x"], vecs, ns="default")
+    memory_id = ids[0]
+    # initial tier should be 1 (default)
+    t1 = tmp_store.toggle_tier(memory_id)
+    assert t1 == 0  # 1→0 (pinned)
+    t2 = tmp_store.toggle_tier(memory_id)
+    assert t2 == 2  # 0→2 (ambient)
+    t3 = tmp_store.toggle_tier(memory_id)
+    assert t3 == 1  # 2→1 (default)
+
+
+def test_toggle_tier_not_found(tmp_store):
+    """toggle_tier returns None for non-existent memory."""
+    result = tmp_store.toggle_tier(99999)
+    assert result is None
+
+
+# ── merge_texts ────────────────────────────────────────────────────────────────
+
+def test_merge_texts_creates_new_memory(tmp_store):
+    """merge_texts creates a new memory with concatenated text."""
+    import numpy as np
+    vecs = np.random.rand(3, 384).astype(np.float32)
+    ids = tmp_store.add(["alpha", "beta", "gamma"], vecs, ns="default")
+    new_id = tmp_store.merge_texts(ids, separator=" | ", ns="default")
+    assert new_id is not None
+    row = tmp_store._db.execute(
+        "SELECT text FROM memories WHERE id=?", (new_id,)
+    ).fetchone()
+    assert "alpha" in row[0]
+    assert "beta" in row[0]
+    assert " | " in row[0]
+
+
+def test_merge_texts_delete_originals(tmp_store):
+    """merge_texts with delete_originals removes source memories."""
+    import numpy as np
+    vecs = np.random.rand(2, 384).astype(np.float32)
+    ids = tmp_store.add(["x", "y"], vecs, ns="default")
+    new_id = tmp_store.merge_texts(ids, delete_originals=True)
+    assert new_id is not None
+    # originals gone
+    remaining = tmp_store._db.execute(
+        f"SELECT COUNT(*) FROM memories WHERE id IN ({','.join('?'*len(ids))})", ids
+    ).fetchone()[0]
+    assert remaining == 0
+
+
+def test_merge_texts_empty_ids(tmp_store):
+    """merge_texts returns None for empty ids list."""
+    result = tmp_store.merge_texts([])
+    assert result is None
+
+
+def test_merge_texts_missing_ids(tmp_store):
+    """merge_texts returns None when none of the ids exist."""
+    result = tmp_store.merge_texts([99998, 99999])
+    assert result is None
+
+
+# ── truncate_text ─────────────────────────────────────────────────────────────
+
+def test_truncate_text_shortens(tmp_store):
+    """truncate_text trims text to max_chars."""
+    import numpy as np
+    vecs = np.random.rand(1, 384).astype(np.float32)
+    ids = tmp_store.add(["hello world long text"], vecs, ns="default")
+    ok = tmp_store.truncate_text(ids[0], 5)
+    assert ok is True
+    row = tmp_store._db.execute(
+        "SELECT text FROM memories WHERE id=?", (ids[0],)
+    ).fetchone()
+    assert row[0] == "hello"
+
+
+def test_truncate_text_noop_if_short(tmp_store):
+    """truncate_text is a no-op if text already fits."""
+    import numpy as np
+    vecs = np.random.rand(1, 384).astype(np.float32)
+    ids = tmp_store.add(["hi"], vecs, ns="default")
+    ok = tmp_store.truncate_text(ids[0], 100)
+    assert ok is True
+    row = tmp_store._db.execute(
+        "SELECT text FROM memories WHERE id=?", (ids[0],)
+    ).fetchone()
+    assert row[0] == "hi"
+
+
+def test_truncate_text_not_found(tmp_store):
+    """truncate_text returns False for non-existent memory."""
+    result = tmp_store.truncate_text(99999, 10)
+    assert result is False
+
+
+# ── search_by_access_count ────────────────────────────────────────────────────
+
+def test_search_by_access_count_min_only(tmp_store):
+    """search_by_access_count with min_count=0 returns all."""
+    import numpy as np
+    vecs = np.random.rand(3, 384).astype(np.float32)
+    tmp_store.add(["a", "b", "c"], vecs, ns="default")
+    hits = tmp_store.search_by_access_count(min_count=0, ns="default")
+    assert len(hits) == 3
+
+
+def test_search_by_access_count_max_zero(tmp_store):
+    """search_by_access_count max_count=0 returns never-accessed memories."""
+    import numpy as np
+    vecs = np.random.rand(2, 384).astype(np.float32)
+    ids = tmp_store.add(["a", "b"], vecs, ns="default")
+    # increment one
+    tmp_store._db.execute(
+        "UPDATE memories SET access_count=5 WHERE id=?", (ids[0],)
+    )
+    tmp_store._db.commit()
+    hits = tmp_store.search_by_access_count(min_count=0, max_count=0, ns="default")
+    assert len(hits) == 1
+    assert hits[0]["access_count"] == 0
+
+
+def test_search_by_access_count_all_ns(tmp_store):
+    """search_by_access_count ns=None spans all namespaces."""
+    import numpy as np
+    v1 = np.random.rand(1, 384).astype(np.float32)
+    v2 = np.random.rand(1, 384).astype(np.float32)
+    tmp_store.add(["a"], v1, ns="ns1")
+    tmp_store.add(["b"], v2, ns="ns2")
+    hits = tmp_store.search_by_access_count(min_count=0, ns=None)
+    assert len(hits) >= 2
+
+
+def test_search_by_access_count_limit(tmp_store):
+    """search_by_access_count respects limit."""
+    import numpy as np
+    vecs = np.random.rand(5, 384).astype(np.float32)
+    tmp_store.add(["a", "b", "c", "d", "e"], vecs, ns="default")
+    hits = tmp_store.search_by_access_count(min_count=0, ns="default", limit=2)
+    assert len(hits) == 2

@@ -80,6 +80,35 @@ def main() -> None:
     ts.add_argument("--json", dest="json_out", action="store_true", help="Output results as JSON array")
     ts.add_argument("--path", default="~/.mnemonics")
 
+    # toggle-tier
+    tt_p = sub.add_parser("toggle-tier", help="Cycle memory tier: pinned→ambient→default→pinned")
+    tt_p.add_argument("id", type=int, help="Memory ID")
+    tt_p.add_argument("--path", default="~/.mnemonics")
+
+    # merge-texts
+    mt_p = sub.add_parser("merge-texts", help="Merge multiple memories into one")
+    mt_p.add_argument("ids", nargs="+", type=int, help="Memory IDs to merge")
+    mt_p.add_argument("--ns", default="default")
+    mt_p.add_argument("--sep", default="\n\n", dest="separator")
+    mt_p.add_argument("--delete-originals", action="store_true")
+    mt_p.add_argument("--path", default="~/.mnemonics")
+
+    # truncate-text
+    trt_p = sub.add_parser("truncate-text", help="Trim memory text to max chars")
+    trt_p.add_argument("id", type=int, help="Memory ID")
+    trt_p.add_argument("max_chars", type=int, help="Maximum character count")
+    trt_p.add_argument("--path", default="~/.mnemonics")
+
+    # search-by-access-count
+    sbac_p = sub.add_parser("search-by-access-count", help="Find memories by access count range")
+    sbac_p.add_argument("--min", type=int, default=0, dest="min_count")
+    sbac_p.add_argument("--max", type=int, default=None, dest="max_count")
+    sbac_p.add_argument("--ns", default="default")
+    sbac_p.add_argument("--all-ns", action="store_true")
+    sbac_p.add_argument("--limit", type=int, default=20)
+    sbac_p.add_argument("--json", action="store_true", dest="as_json")
+    sbac_p.add_argument("--path", default="~/.mnemonics")
+
     # rename-tag
     rt_p = sub.add_parser("rename-tag", help="Rename a tag across memories")
     rt_p.add_argument("old_tag", help="Tag to rename from")
@@ -788,6 +817,52 @@ def main() -> None:
                 print(line)
                 if r.get("summary"):
                     print(f"           summary: {r['summary']}")
+
+    elif args.cmd == "toggle-tier":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        new_tier = store.toggle_tier(args.id)
+        if new_tier is None:
+            print(f"Memory {args.id} not found.")
+        else:
+            _tier_label = {0: "pinned", 1: "default", 2: "ambient"}
+            print(f"Memory {args.id} tier → {new_tier} ({_tier_label.get(new_tier, '?')}).")
+
+    elif args.cmd == "merge-texts":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        new_id = store.merge_texts(
+            args.ids, separator=args.separator, ns=args.ns,
+            delete_originals=args.delete_originals,
+        )
+        if new_id is None:
+            print("No memories found for given IDs.")
+        else:
+            print(f"Merged {len(args.ids)} memories → new id={new_id} (ns={args.ns!r}).")
+
+    elif args.cmd == "truncate-text":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        ok = store.truncate_text(args.id, args.max_chars)
+        if not ok:
+            print(f"Memory {args.id} not found.")
+        else:
+            print(f"Memory {args.id} text truncated to max {args.max_chars} chars.")
+
+    elif args.cmd == "search-by-access-count":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        ns_q = None if args.all_ns else args.ns
+        hits = store.search_by_access_count(
+            min_count=args.min_count, max_count=args.max_count, ns=ns_q, limit=args.limit
+        )
+        if args.as_json:
+            print(json.dumps(hits, default=str, ensure_ascii=False))
+        else:
+            label = f"[{args.min_count}, {args.max_count}]" if args.max_count is not None else f"[{args.min_count}, ∞)"
+            print(f"Found {len(hits)} memories with access_count in {label}:")
+            for r in hits:
+                print(f"  [{r['id']}] accesses={r['access_count']} {r['text'][:60]!r}")
 
     elif args.cmd == "rename-tag":
         from mnemonics.store import Store

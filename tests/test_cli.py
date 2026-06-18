@@ -4250,3 +4250,147 @@ def test_cli_ns_summary_json(tmp_path, capsys):
         main()
     out = capsys.readouterr().out
     assert json.loads(out)["count"] == 5
+
+
+# ── toggle-tier CLI ────────────────────────────────────────────────────────────
+
+def test_cli_toggle_tier(tmp_path, capsys):
+    """toggle-tier cycles tier and prints result."""
+    mock_store = MagicMock()
+    mock_store.toggle_tier.return_value = 0
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "toggle-tier", "42",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.toggle_tier.assert_called_once_with(42)
+    out = capsys.readouterr().out
+    assert "0" in out or "pinned" in out
+
+
+def test_cli_toggle_tier_not_found(tmp_path, capsys):
+    """toggle-tier prints message for missing memory."""
+    mock_store = MagicMock()
+    mock_store.toggle_tier.return_value = None
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "toggle-tier", "99",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "not found" in out
+
+
+# ── merge-texts CLI ────────────────────────────────────────────────────────────
+
+def test_cli_merge_texts(tmp_path, capsys):
+    """merge-texts prints new merged memory id."""
+    mock_store = MagicMock()
+    mock_store.merge_texts.return_value = 99
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "merge-texts", "1", "2", "3",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.merge_texts.assert_called_once_with(
+        [1, 2, 3], separator="\n\n", ns="default", delete_originals=False
+    )
+    out = capsys.readouterr().out
+    assert "99" in out
+
+
+def test_cli_merge_texts_not_found(tmp_path, capsys):
+    """merge-texts prints message when ids not found."""
+    mock_store = MagicMock()
+    mock_store.merge_texts.return_value = None
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "merge-texts", "99",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "No memories" in out
+
+
+# ── truncate-text CLI ──────────────────────────────────────────────────────────
+
+def test_cli_truncate_text(tmp_path, capsys):
+    """truncate-text prints success message."""
+    mock_store = MagicMock()
+    mock_store.truncate_text.return_value = True
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "truncate-text", "5", "50",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.truncate_text.assert_called_once_with(5, 50)
+    out = capsys.readouterr().out
+    assert "truncated" in out
+
+
+def test_cli_truncate_text_not_found(tmp_path, capsys):
+    """truncate-text prints not found message."""
+    mock_store = MagicMock()
+    mock_store.truncate_text.return_value = False
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "truncate-text", "99", "10",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "not found" in out
+
+
+# ── search-by-access-count CLI ─────────────────────────────────────────────────
+
+def test_cli_search_by_access_count_text(tmp_path, capsys):
+    """search-by-access-count prints matching memories."""
+    mock_store = MagicMock()
+    mock_store.search_by_access_count.return_value = [
+        {"id": 1, "text": "some memory", "access_count": 3, "ns": "default",
+         "tier": 1, "summary": None, "created": "t"}
+    ]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "search-by-access-count",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "[1]" in out
+
+
+def test_cli_search_by_access_count_json(tmp_path, capsys):
+    """search-by-access-count --json outputs JSON."""
+    mock_store = MagicMock()
+    mock_store.search_by_access_count.return_value = [
+        {"id": 1, "access_count": 0}
+    ]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "search-by-access-count", "--json",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert json.loads(out)[0]["id"] == 1
+
+
+def test_cli_search_by_access_count_all_ns(tmp_path):
+    """search-by-access-count --all-ns passes ns=None."""
+    mock_store = MagicMock()
+    mock_store.search_by_access_count.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "search-by-access-count", "--all-ns",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    call_kwargs = mock_store.search_by_access_count.call_args
+    assert call_kwargs.kwargs.get("ns") is None or call_kwargs[1].get("ns") is None

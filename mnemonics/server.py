@@ -262,6 +262,46 @@ class _Handler(BaseHTTPRequestHandler):
             n_mtn = _get_store().move_to_ns([int(i) for i in mtn_ids], mtn_ns)
             self._json(200, {"moved": n_mtn, "target_ns": mtn_ns})
 
+        elif self.path == "/toggle-tier":
+            tt_id = body.get("id")
+            if tt_id is None:
+                self._json(400, {"error": "'id' (int) is required"})
+                return
+            new_tier = _get_store().toggle_tier(int(tt_id))
+            if new_tier is None:
+                self._json(404, {"error": f"Memory {tt_id} not found"})
+                return
+            self._json(200, {"id": int(tt_id), "tier": new_tier})
+
+        elif self.path == "/merge-texts":
+            mt_ids = body.get("ids")
+            mt_ns = body.get("ns", "default")
+            mt_sep = body.get("separator", "\n\n")
+            mt_del = bool(body.get("delete_originals", False))
+            if not mt_ids:
+                self._json(400, {"error": "'ids' (list[int]) is required"})
+                return
+            new_id = _get_store().merge_texts(
+                [int(i) for i in mt_ids], separator=str(mt_sep),
+                ns=str(mt_ns), delete_originals=mt_del
+            )
+            if new_id is None:
+                self._json(404, {"error": "No memories found for given ids"})
+                return
+            self._json(201, {"id": new_id, "ns": mt_ns, "delete_originals": mt_del})
+
+        elif self.path == "/truncate-text":
+            trt_id = body.get("id")
+            trt_max = body.get("max_chars")
+            if trt_id is None or trt_max is None:
+                self._json(400, {"error": "'id' (int) and 'max_chars' (int) are required"})
+                return
+            ok_trt = _get_store().truncate_text(int(trt_id), int(trt_max))
+            if not ok_trt:
+                self._json(404, {"error": f"Memory {trt_id} not found"})
+                return
+            self._json(200, {"id": int(trt_id), "max_chars": int(trt_max)})
+
         elif self.path == "/rename-tag":
             rt_old = body.get("old_tag")
             rt_new = body.get("new_tag")
@@ -643,6 +683,19 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(200, _get_store().health_check())
         elif path == "/namespaces":
             self._json(200, {"namespaces": _get_store().list_namespaces()})
+        elif path.startswith("/search-by-access-count"):
+            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_sbac
+            qs_sbac = parse_qs(urlparse(self.path).query)
+            min_c = int((qs_sbac.get("min") or ["0"])[0])
+            max_c_raw = (qs_sbac.get("max") or [None])[0]
+            max_c = int(max_c_raw) if max_c_raw is not None else None
+            ns_sbac_raw = qs_sbac.get("ns", [None])[0]
+            ns_sbac = _uqp_sbac(ns_sbac_raw) if ns_sbac_raw is not None else None
+            limit_sbac = int((qs_sbac.get("limit") or ["20"])[0])
+            hits_sbac = _get_store().search_by_access_count(
+                min_count=min_c, max_count=max_c, ns=ns_sbac, limit=limit_sbac
+            )
+            self._json(200, {"count": len(hits_sbac), "results": hits_sbac})
         elif path.startswith("/find-duplicates"):
             from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_fd
             qs_fd = parse_qs(urlparse(self.path).query)
@@ -1193,6 +1246,54 @@ def _mcp_loop() -> None:
                             "max_tier": {"type": "integer", "description": "Only return memories with tier <= this value"},
                         },
                         "required": ["query", "vector"],
+                    },
+                },
+                {
+                    "name": "mnemonics_toggle_tier",
+                    "description": "Cycle a memory's tier: pinned(0)→ambient(2)→default(1)→pinned(0). Returns new tier.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {"id": {"type": "integer"}},
+                        "required": ["id"],
+                    },
+                },
+                {
+                    "name": "mnemonics_merge_texts",
+                    "description": "Concatenate the text of multiple memories into a new memory. Optionally delete originals. Vectors are zero-filled; reindex_all to fix.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ids": {"type": "array", "items": {"type": "integer"}},
+                            "separator": {"type": "string", "default": "\n\n"},
+                            "ns": {"type": "string", "default": "default"},
+                            "delete_originals": {"type": "boolean", "default": False},
+                        },
+                        "required": ["ids"],
+                    },
+                },
+                {
+                    "name": "mnemonics_truncate_text",
+                    "description": "Trim a memory's text to at most max_chars characters. Does NOT re-embed.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer"},
+                            "max_chars": {"type": "integer"},
+                        },
+                        "required": ["id", "max_chars"],
+                    },
+                },
+                {
+                    "name": "mnemonics_search_by_access_count",
+                    "description": "Return memories with access_count in [min, max] range. Omit max for no upper bound. Useful for finding never-touched or heavily-used memories.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "min": {"type": "integer", "default": 0},
+                            "max": {"type": "integer"},
+                            "ns": {"type": "string"},
+                            "limit": {"type": "integer", "default": 20},
+                        },
                     },
                 },
                 {
@@ -2206,6 +2307,65 @@ def _mcp_loop() -> None:
                         if r.get("summary"):
                             lines_hs.append(f"           summary: {r['summary'][:120]}")
                     ok({"content": [{"type": "text", "text": "\n".join(lines_hs)}]})
+
+            elif name == "mnemonics_toggle_tier":
+                tt_id_m = args.get("id")
+                if tt_id_m is None:
+                    err("mnemonics_toggle_tier: 'id' is required")
+                    continue
+                new_tier_m = _get_store().toggle_tier(int(tt_id_m))
+                if new_tier_m is None:
+                    err(f"mnemonics_toggle_tier: memory {tt_id_m} not found")
+                    continue
+                _tier_names = {0: "pinned", 1: "default", 2: "ambient"}
+                ok({"content": [{"type": "text", "text":
+                    f"Memory {tt_id_m} tier cycled → {new_tier_m} ({_tier_names.get(new_tier_m, '?')})."}]})
+
+            elif name == "mnemonics_merge_texts":
+                mt_ids_m = args.get("ids")
+                if not mt_ids_m:
+                    err("mnemonics_merge_texts: 'ids' (list[int]) is required")
+                    continue
+                mt_sep_m = args.get("separator", "\n\n")
+                mt_ns_m = args.get("ns", "default") or "default"
+                mt_del_m = bool(args.get("delete_originals", False))
+                new_id_m = _get_store().merge_texts(
+                    [int(i) for i in mt_ids_m], separator=str(mt_sep_m),
+                    ns=mt_ns_m, delete_originals=mt_del_m
+                )
+                if new_id_m is None:
+                    err("mnemonics_merge_texts: no memories found for given ids")
+                    continue
+                ok({"content": [{"type": "text", "text":
+                    f"Merged {len(mt_ids_m)} memories into new id={new_id_m} in ns={mt_ns_m!r}. "
+                    f"delete_originals={mt_del_m}. Reindex_all to fix vectors."}]})
+
+            elif name == "mnemonics_truncate_text":
+                trt_id_m = args.get("id")
+                trt_max_m = args.get("max_chars")
+                if trt_id_m is None or trt_max_m is None:
+                    err("mnemonics_truncate_text: 'id' and 'max_chars' are required")
+                    continue
+                ok_trt_m = _get_store().truncate_text(int(trt_id_m), int(trt_max_m))
+                if not ok_trt_m:
+                    err(f"mnemonics_truncate_text: memory {trt_id_m} not found")
+                    continue
+                ok({"content": [{"type": "text", "text":
+                    f"Memory {trt_id_m} text truncated to max {trt_max_m} chars."}]})
+
+            elif name == "mnemonics_search_by_access_count":
+                sbac_min = int(args.get("min", 0))
+                sbac_max_raw = args.get("max")
+                sbac_max = int(sbac_max_raw) if sbac_max_raw is not None else None
+                sbac_ns = args.get("ns")
+                sbac_limit = int(args.get("limit", 20))
+                sbac_hits = _get_store().search_by_access_count(
+                    min_count=sbac_min, max_count=sbac_max, ns=sbac_ns, limit=sbac_limit
+                )
+                import json as _j_sbac
+                ok({"content": [{"type": "text", "text":
+                    f"Found {len(sbac_hits)} memories with access_count in [{sbac_min}, {sbac_max}].\n" +
+                    _j_sbac.dumps(sbac_hits, default=str, ensure_ascii=False)}]})
 
             elif name == "mnemonics_rename_tag":
                 rt_old_m = args.get("old_tag", "").strip()
