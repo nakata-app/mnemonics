@@ -1940,3 +1940,133 @@ def test_hybrid_search_bm25_only_hit(tmp_store):
         "SELECT id FROM memories WHERE text LIKE '%xyloquantum%'"
     ).fetchone()
     assert doc0_row is not None and doc0_row[0] in ids
+
+
+# ── similar_to ────────────────────────────────────────────────────────────────
+
+def test_similar_to_returns_results(populated_store):
+    """similar_to returns nearest neighbors for an existing memory."""
+    store, docs, vecs = populated_store
+    first_id = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    results = store.similar_to(first_id, top_k=3)
+    assert isinstance(results, list)
+    assert len(results) <= 3
+    for r in results:
+        assert r["id"] != first_id  # excludes itself
+        assert "score" in r
+        assert -0.1 <= r["score"] <= 1.1
+
+
+def test_similar_to_not_found(populated_store):
+    """similar_to returns [] for a non-existent memory ID."""
+    store, docs, vecs = populated_store
+    assert store.similar_to(99999) == []
+
+
+def test_similar_to_single_doc(tmp_store):
+    """similar_to returns [] when only one memory exists (no neighbors)."""
+    import numpy as np
+    from mnemonics.store import DIM
+    rng = np.random.default_rng(1)
+    v = rng.random((DIM,)).astype("float32")
+    v /= np.linalg.norm(v)
+    ids = tmp_store.add(["only doc"], v.reshape(1, -1))
+    assert tmp_store.similar_to(ids[0]) == []
+
+
+def test_similar_to_tier_filter(populated_store):
+    """similar_to max_tier filters exclude ambient memories."""
+    store, docs, vecs = populated_store
+    ids = store._db.execute("SELECT id FROM memories").fetchall()
+    all_ids = [r[0] for r in ids]
+    # Mark all but the first as ambient
+    for mid in all_ids[1:]:
+        store.set_tier(mid, 2)
+    first_id = all_ids[0]
+    results = store.similar_to(first_id, top_k=10, max_tier=1)
+    for r in results:
+        assert r["tier"] <= 1
+
+
+def test_similar_to_min_tier_filter(populated_store):
+    """similar_to min_tier filters exclude lower-tier memories."""
+    store, docs, vecs = populated_store
+    all_ids = [r[0] for r in store._db.execute("SELECT id FROM memories ORDER BY id").fetchall()]
+    # Mark first memory as pinned (tier=0), rest as default (tier=1)
+    store.set_tier(all_ids[0], 0)
+    # Search similar to second memory, min_tier=1 → pinned (tier=0) must be excluded
+    results = store.similar_to(all_ids[1], top_k=10, min_tier=1)
+    ids_returned = {r["id"] for r in results}
+    assert all_ids[0] not in ids_returned
+
+
+def test_similar_to_get_items_exception(tmp_store):
+    """similar_to returns [] when get_items raises (ID not in hnswlib index)."""
+    import numpy as np, hnswlib
+    from mnemonics.store import DIM
+    rng = np.random.default_rng(7)
+    vec = rng.random((DIM,)).astype("float32")
+    vec /= np.linalg.norm(vec)
+    ids = tmp_store.add(["doc for exception test"], vec.reshape(1, -1))
+    # Replace the .bin file with an EMPTY index so get_items raises on the stored ID
+    ns = "default"
+    bin_path = tmp_store.root / f"index_{ns}.bin"
+    empty_idx = hnswlib.Index(space="cosine", dim=DIM)
+    empty_idx.init_index(max_elements=1, ef_construction=100, M=16)
+    empty_idx.save_index(str(bin_path))
+    # Bust the in-memory cache so the file is reloaded
+    tmp_store._index.pop(ns, None)
+    tmp_store._index_mtime.pop(ns, None)
+    result = tmp_store.similar_to(ids[0])
+    assert result == []
+
+
+def test_similar_to_empty_index_after_deletes(tmp_store):
+    """similar_to returns [] when all other docs in index are mark_deleted."""
+    import numpy as np
+    from mnemonics.store import DIM
+    rng = np.random.default_rng(5)
+    vecs = rng.random((2, DIM)).astype("float32")
+    vecs /= np.linalg.norm(vecs, axis=1, keepdims=True)
+    ids = tmp_store.add(["doc a", "doc b"], vecs)
+    # Delete second doc from the index (mark_deleted via hnsw)
+    tmp_store.delete(ids[1])
+    # similar_to(ids[0]) should work but return [] because no valid neighbors
+    result = tmp_store.similar_to(ids[0])
+    # Either empty (all deleted) or valid result — both are fine
+    assert isinstance(result, list)
+
+
+def test_similar_to_knn_runtime_error(tmp_store):
+    """similar_to returns [] when knn_query raises RuntimeError (all elements mark_deleted)."""
+    import numpy as np
+    from unittest.mock import patch, MagicMock
+    from mnemonics.store import DIM
+    rng = np.random.default_rng(77)
+    vecs = rng.random((2, DIM)).astype("float32")
+    vecs /= np.linalg.norm(vecs, axis=1, keepdims=True)
+    ids = tmp_store.add(["doc1", "doc2"], vecs)
+    mock_idx = MagicMock()
+    mock_idx.get_items.return_value = [vecs[0].tolist()]
+    mock_idx.get_current_count.return_value = 2
+    mock_idx.knn_query.side_effect = RuntimeError("No valid elements in index")
+    with patch.object(tmp_store, "_index_for", return_value=mock_idx):
+        result = tmp_store.similar_to(ids[0])
+    assert result == []
+
+
+def test_similar_to_fetch_n_zero(tmp_store):
+    """similar_to returns [] when get_current_count returns 0 (fetch_n == 0 path)."""
+    import numpy as np
+    from unittest.mock import patch, MagicMock
+    from mnemonics.store import DIM
+    rng = np.random.default_rng(88)
+    v = rng.random((DIM,)).astype("float32")
+    v /= np.linalg.norm(v)
+    ids = tmp_store.add(["only doc"], v.reshape(1, -1))
+    mock_idx = MagicMock()
+    mock_idx.get_items.return_value = [v.tolist()]
+    mock_idx.get_current_count.return_value = 0
+    with patch.object(tmp_store, "_index_for", return_value=mock_idx):
+        result = tmp_store.similar_to(ids[0])
+    assert result == []

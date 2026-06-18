@@ -249,6 +249,21 @@ class _Handler(BaseHTTPRequestHandler):
             )
             self._json(200, {"query": query, "ns": ns_val, "results": hits})
 
+        elif self.path == "/similar-to":
+            sim_id = body.get("id")
+            if sim_id is None:
+                self._json(400, {"error": "'id' (int) is required"})
+                return
+            top_k_sim = int(body.get("top_k", 5))
+            sim_min_tier = body.get("min_tier")
+            sim_max_tier = body.get("max_tier")
+            sim_hits = _get_store().similar_to(
+                int(sim_id), top_k=top_k_sim,
+                min_tier=int(sim_min_tier) if sim_min_tier is not None else None,
+                max_tier=int(sim_max_tier) if sim_max_tier is not None else None,
+            )
+            self._json(200, {"id": int(sim_id), "results": sim_hits})
+
         elif self.path == "/hybrid-search":
             query_hs = body.get("query", "").strip()
             vector_hs = body.get("vector")
@@ -691,6 +706,20 @@ def _mcp_loop() -> None:
                             "max_tier": {"type": "integer", "description": "Only return memories with tier <= this value"},
                         },
                         "required": ["query"],
+                    },
+                },
+                {
+                    "name": "mnemonics_similar_to",
+                    "description": "Find memories most similar to an existing memory by ID. Loads the stored vector for that memory and returns the top_k nearest neighbors (excluding itself). Useful for 'more like this' queries without re-embedding.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer", "description": "ID of the reference memory"},
+                            "top_k": {"type": "integer", "description": "Max similar results to return (default: 5)"},
+                            "min_tier": {"type": "integer", "description": "Filter: tier >= this value"},
+                            "max_tier": {"type": "integer", "description": "Filter: tier <= this value"},
+                        },
+                        "required": ["id"],
                     },
                 },
                 {
@@ -1154,6 +1183,32 @@ def _mcp_loop() -> None:
                         if r.get("summary"):
                             lines.append(f"           summary: {r['summary'][:120]}")
                     ok({"content": [{"type": "text", "text": "\n".join(lines)}]})
+
+            elif name == "mnemonics_similar_to":
+                sim_id_m = args.get("id")
+                if sim_id_m is None:
+                    err("mnemonics_similar_to: 'id' (int) is required")
+                    continue
+                sim_top_k = int(args.get("top_k", 5))
+                sim_min = args.get("min_tier")
+                sim_max = args.get("max_tier")
+                sim_hits = _get_store().similar_to(
+                    int(sim_id_m), top_k=sim_top_k,
+                    min_tier=int(sim_min) if sim_min is not None else None,
+                    max_tier=int(sim_max) if sim_max is not None else None,
+                )
+                if not sim_hits:
+                    ok({"content": [{"type": "text", "text": f"No similar memories found for id={sim_id_m}."}]})
+                else:
+                    tier_label_s = {0: "pin", 1: "def", 2: "amb"}
+                    lines_s = []
+                    for r in sim_hits:
+                        tl = tier_label_s.get(r["tier"], "?")
+                        snippet = (r["text"] or "")[:200].replace("\n", " ")
+                        lines_s.append(f"[{r['score']:.3f}] [{tl}] id={r['id']}  {snippet}")
+                        if r.get("summary"):
+                            lines_s.append(f"           summary: {r['summary'][:120]}")
+                    ok({"content": [{"type": "text", "text": "\n".join(lines_s)}]})
 
             elif name == "mnemonics_hybrid_search":
                 import numpy as _np_mcp

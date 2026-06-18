@@ -2448,3 +2448,53 @@ def test_cli_hybrid_search_json(tmp_path, capsys):
     out = capsys.readouterr().out
     data = _j.loads(out.strip())
     assert data[0]["id"] == 2
+
+
+# ── similar-to CLI ────────────────────────────────────────────────────────────
+
+def test_cli_similar_to_ok(tmp_path, capsys):
+    """similar-to prints nearest neighbors."""
+    mock_store = MagicMock()
+    mock_store.similar_to.return_value = [
+        {"id": 2, "text": "neighbor doc", "tier": 1, "score": 0.95, "summary": None}
+    ]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "similar-to", "1",
+                           "--top-k", "3", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "0.950" in out or "neighbor" in out
+
+
+def test_cli_similar_to_no_results(tmp_path, capsys):
+    """similar-to prints message when no neighbors."""
+    mock_store = MagicMock()
+    mock_store.similar_to.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "similar-to", "99",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "No similar" in out
+
+
+def test_cli_similar_to_json(tmp_path, capsys):
+    """similar-to --json outputs JSON."""
+    import json as _j
+    mock_store = MagicMock()
+    mock_store.similar_to.return_value = [
+        {"id": 3, "text": "similar doc", "tier": 1, "score": 0.88, "summary": None}
+    ]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "similar-to", "1",
+                           "--json", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    data = _j.loads(out.strip())
+    assert data[0]["id"] == 3

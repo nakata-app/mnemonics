@@ -80,6 +80,13 @@ def main() -> None:
     ts.add_argument("--json", dest="json_out", action="store_true", help="Output results as JSON array")
     ts.add_argument("--path", default="~/.mnemonics")
 
+    # similar-to
+    smt = sub.add_parser("similar-to", help="Find memories most similar to an existing memory by ID")
+    smt.add_argument("memory_id", type=int, help="Reference memory ID")
+    smt.add_argument("--top-k", type=int, default=5, help="Max results (default: 5)")
+    smt.add_argument("--json", dest="json_out", action="store_true", help="Output as JSON array")
+    smt.add_argument("--path", default="~/.mnemonics")
+
     # hybrid-search
     hs = sub.add_parser("hybrid-search", help="Combine vector + BM25 search with Reciprocal Rank Fusion")
     hs.add_argument("query", help="Text query (used for BM25 and as embedding source)")
@@ -460,6 +467,21 @@ def main() -> None:
                 print(line)
                 if r.get("summary"):
                     print(f"           summary: {r['summary']}")
+
+    elif args.cmd == "similar-to":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        hits = store.similar_to(args.memory_id, top_k=args.top_k)
+        if args.json_out:
+            print(json.dumps(hits, default=str, ensure_ascii=False))
+        elif not hits:
+            print(f"No similar memories found for id={args.memory_id}")
+        else:
+            tier_label = {0: "pin", 1: "def", 2: "amb"}
+            for r in hits:
+                tl = tier_label.get(r["tier"], "?")
+                snippet = r["text"][:120].replace("\n", " ")
+                print(f"  [{r['score']:.3f}] [{tl}] id={r['id']}  {snippet}")
 
     elif args.cmd == "hybrid-search":
         from mnemonics.store import Store

@@ -620,6 +620,7 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_search_by_meta", "mnemonics_delete_many", "mnemonics_update_meta",
         "mnemonics_export", "mnemonics_import", "mnemonics_text_search", "mnemonics_rename_ns", "mnemonics_namespaces", "mnemonics_bulk_tier", "mnemonics_copy_ns", "mnemonics_touch_many", "mnemonics_count", "mnemonics_merge_ns", "mnemonics_stats_by_ns", "mnemonics_recent", "mnemonics_top_accessed", "mnemonics_get_many",
         "mnemonics_hybrid_search",
+        "mnemonics_similar_to",
     }
 
 
@@ -2947,3 +2948,81 @@ def test_mcp_hybrid_search_with_summary(populated_store):
     assert "result" in r
     text = r["result"]["content"][0]["text"]
     assert "rrf=" in text or "No hybrid results" in text
+
+
+# ── similar-to REST + MCP ─────────────────────────────────────────────────────
+
+def test_http_similar_to_ok(populated_store):
+    """POST /similar-to returns nearest neighbors."""
+    store, docs, vecs = populated_store
+    first_id = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    code, data = http_call(store, "POST", "/similar-to",
+                           {"id": first_id, "top_k": 3})
+    assert code == 200
+    assert "results" in data
+    assert all(r["id"] != first_id for r in data["results"])
+
+
+def test_http_similar_to_missing_id(populated_store):
+    """POST /similar-to without id returns 400."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/similar-to", {"top_k": 3})
+    assert code == 400
+
+
+def test_http_similar_to_not_found(populated_store):
+    """POST /similar-to for non-existent ID returns empty results."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/similar-to", {"id": 99999})
+    assert code == 200
+    assert data["results"] == []
+
+
+def test_mcp_similar_to_ok(populated_store):
+    """MCP mnemonics_similar_to returns formatted results."""
+    store, docs, vecs = populated_store
+    first_id = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_similar_to",
+                   "arguments": {"id": first_id, "top_k": 3}},
+    })[0]
+    assert "result" in r
+
+
+def test_mcp_similar_to_not_found(populated_store):
+    """MCP mnemonics_similar_to for non-existent ID returns 'No similar' text."""
+    store, docs, vecs = populated_store
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_similar_to",
+                   "arguments": {"id": 99999}},
+    })[0]
+    assert "result" in r
+    assert "No similar" in r["result"]["content"][0]["text"]
+
+
+def test_mcp_similar_to_missing_id(populated_store):
+    """MCP mnemonics_similar_to without id returns error."""
+    store, docs, vecs = populated_store
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_similar_to", "arguments": {}},
+    })[0]
+    assert "error" in r
+
+
+def test_mcp_similar_to_with_summary(populated_store):
+    """MCP mnemonics_similar_to shows summary line when result has one (covers line 1210)."""
+    store, docs, vecs = populated_store
+    all_ids = [r[0] for r in store._db.execute("SELECT id FROM memories ORDER BY id").fetchall()]
+    # Give the second memory a summary
+    store.update_summary(all_ids[1], "A relevant summary")
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_similar_to",
+                   "arguments": {"id": all_ids[0], "top_k": 5}},
+    })[0]
+    assert "result" in r
+    text = r["result"]["content"][0]["text"]
+    assert text  # non-empty result

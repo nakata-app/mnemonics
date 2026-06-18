@@ -483,6 +483,77 @@ class Store:
             results.append(item)
         return results
 
+    def similar_to(
+        self,
+        memory_id: int,
+        top_k: int = 5,
+        min_tier: int | None = None,
+        max_tier: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return the top_k memories most similar to *memory_id*.
+
+        Loads the stored vector for *memory_id* from its namespace's hnswlib
+        index, then runs a vector search excluding *memory_id* itself.
+        Returns [] if the memory does not exist or has no vector.
+        """
+        row = self._db.execute(
+            "SELECT ns FROM memories WHERE id=?", (memory_id,)
+        ).fetchone()
+        if row is None:
+            return []
+        ns = row[0]
+        with self._ns_file_lock(ns, exclusive=False), self._lock:
+            self._reload_if_stale(ns)
+            idx = self._index_for(ns)
+            try:
+                vec = idx.get_items([memory_id])[0]
+            except Exception:
+                return []
+            vec_arr = np.array(vec, dtype="float32")
+            fetch_n = min(top_k + 1, idx.get_current_count())
+            if fetch_n == 0:
+                return []
+            try:
+                labels, distances = idx.knn_query(vec_arr, k=fetch_n)
+            except RuntimeError:
+                return []
+            row_ids = [int(x) for x in labels[0] if int(x) != memory_id][:top_k]
+            if not row_ids:
+                return []
+            tier_clause = ""
+            tier_params: list[int] = []
+            if min_tier is not None:
+                tier_clause += " AND tier >= ?"
+                tier_params.append(min_tier)
+            if max_tier is not None:
+                tier_clause += " AND tier <= ?"
+                tier_params.append(max_tier)
+            placeholders = ",".join("?" * len(row_ids))
+            rows = self._db.execute(
+                f"SELECT id, text, summary, meta, created, tier, last_accessed, access_count "
+                f"FROM memories WHERE id IN ({placeholders}){tier_clause}",
+                (*row_ids, *tier_params),
+            ).fetchall()
+        by_id = {r[0]: r for r in rows}
+        dist_by_id = {int(l): float(d) for l, d in zip(labels[0], distances[0])}
+        results = []
+        for rid in row_ids:
+            row = by_id.get(rid)
+            if row is None:
+                continue
+            results.append({
+                "id": row[0],
+                "text": row[1],
+                "summary": row[2],
+                "meta": json.loads(row[3]),
+                "created": row[4],
+                "tier": row[5],
+                "last_accessed": row[6],
+                "access_count": row[7],
+                "score": float(1 - dist_by_id.get(rid, 1.0)),
+            })
+        return results
+
     def set_tier(self, memory_id: int, tier: int) -> bool:
         if tier not in (0, 1, 2):
             raise ValueError("tier must be 0 (pinned), 1 (default), or 2 (ambient)")
