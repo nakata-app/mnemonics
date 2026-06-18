@@ -4,6 +4,24 @@ All notable changes to mnemonics. Format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Added
+
+- **`mnemonics rebuild-index --ns <ns>`** repairs orphan vectors without
+  re-encoding. Reads vectors for current SQL row IDs from the on-disk
+  hnswlib index via `get_items()`, writes a clean index, and returns
+  `(old_count, new_count)`. Includes a guard for case-insensitive
+  filesystems (macOS APFS): raises if the index path collides with another
+  namespace to prevent silent overwrites.
+- **`mnemonics forget --ns <ns> [--before DATE] [--tier N] [--apply]`** for
+  bulk namespace cleanup without raw SQL. Dry-run by default; `--apply` to
+  delete. Deletes from SQL and calls `mark_deleted` in hnswlib.
+- **`mnemonics doctor [--json]`** health report: DB integrity, WAL size,
+  per-namespace SQL vs index counts (orphan vectors, missing vectors), and
+  orphan `.bin` files. Exit code 1 when issues found.
+- **`mnemonics gc --tier 1`** enables GC for default-tier (tier=1) rows.
+  Previously `gc` only targeted tier=2 (ambient). Combine with `--age-days`
+  to sweep stale sessions-ns entries without raw SQL.
+
 ### Changed
 
 - **Default cross-encoder reranker upgraded to `BAAI/bge-reranker-v2-m3`.**
