@@ -231,6 +231,14 @@ def main() -> None:
     nsc = sub.add_parser("namespaces", help="List all namespaces in the store")
     nsc.add_argument("--path", default="~/.mnemonics", help="Store directory")
 
+    # recent
+    rc = sub.add_parser("recent", help="Show recently accessed memories (ordered by last retrieval)")
+    rc.add_argument("--ns", default="default", help="Namespace to filter (use 'all' for all namespaces)")
+    rc.add_argument("--tier", type=int, choices=[0, 1, 2], default=None, help="Filter by tier")
+    rc.add_argument("--limit", type=int, default=20, help="Max results (default: 20)")
+    rc.add_argument("--json", dest="json_out", action="store_true", help="Output as JSON array")
+    rc.add_argument("--path", default="~/.mnemonics", help="Store directory")
+
     # bulk-tier
     bt = sub.add_parser("bulk-tier", help="Set tier for multiple memories in one operation")
     bt.add_argument("tier", type=int, choices=[0, 1, 2], help="Target tier: 0=pin, 1=default, 2=ambient")
@@ -855,6 +863,23 @@ def main() -> None:
             for ns_name in ns_list:
                 cnt = store.count(ns_name)
                 print(f"  {ns_name}  ({cnt})")
+
+    elif args.cmd == "recent":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        ns_val = None if args.ns == "all" else args.ns
+        hits = store.recent_accessed(ns=ns_val, limit=args.limit, tier=args.tier)
+        if args.json_out:
+            print(json.dumps(hits, default=str, ensure_ascii=False))
+        elif not hits:
+            print(f"No recently accessed memories in ns={args.ns!r}")
+        else:
+            tier_label = {0: "pin", 1: "def", 2: "amb"}
+            for r in hits:
+                tl = tier_label.get(r["tier"], "?")
+                accessed = r.get("last_accessed") or "never"
+                snippet = r["text"][:100].replace("\n", " ")
+                print(f"  [{tl}] id={r['id']} accessed={accessed}  {snippet}")
 
     elif args.cmd == "bulk-tier":
         from mnemonics.store import Store

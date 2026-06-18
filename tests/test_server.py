@@ -618,7 +618,7 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_pin", "mnemonics_tier", "mnemonics_gc", "mnemonics_stats",
         "mnemonics_health", "mnemonics_repair",
         "mnemonics_search_by_meta", "mnemonics_delete_many", "mnemonics_update_meta",
-        "mnemonics_export", "mnemonics_import", "mnemonics_text_search", "mnemonics_rename_ns", "mnemonics_namespaces", "mnemonics_bulk_tier", "mnemonics_count", "mnemonics_get_many",
+        "mnemonics_export", "mnemonics_import", "mnemonics_text_search", "mnemonics_rename_ns", "mnemonics_namespaces", "mnemonics_bulk_tier", "mnemonics_count", "mnemonics_recent", "mnemonics_get_many",
     }
 
 
@@ -2470,3 +2470,62 @@ def test_mcp_bulk_tier_in_tools_list(tmp_store):
         "jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {},
     })[0]
     assert "mnemonics_bulk_tier" in {t["name"] for t in resp["result"]["tools"]}
+
+
+# ── GET /recent ───────────────────────────────────────────────────────────────
+
+def test_http_recent_basic(populated_store):
+    """GET /recent returns memories ordered by access time."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/recent?ns=default")
+    assert code == 200
+    assert data["count"] == len(docs)
+
+
+def test_http_recent_all_ns(populated_store):
+    """GET /recent?ns=all returns memories from all namespaces."""
+    import numpy as np
+    store, docs, vecs = populated_store
+    v = np.random.rand(384).astype("float32"); v /= np.linalg.norm(v)
+    store.add(["other ns row"], v[None], ns="other")
+    code, data = http_call(store, "GET", "/recent?ns=all")
+    assert code == 200
+    assert data["count"] >= len(docs) + 1
+
+
+def test_http_recent_limit(populated_store):
+    """GET /recent?limit=2 returns at most 2 results."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/recent?ns=default&limit=2")
+    assert code == 200
+    assert len(data["results"]) <= 2
+
+
+# ── MCP mnemonics_recent ──────────────────────────────────────────────────────
+
+def test_mcp_recent_basic(populated_store):
+    """mnemonics_recent returns recently accessed memories."""
+    store, docs, vecs = populated_store
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_recent", "arguments": {}},
+    })[0]
+    assert "result" in r
+    text = r["result"]["content"][0]["text"]
+    assert "id=" in text
+
+
+def test_mcp_recent_empty(tmp_store):
+    """mnemonics_recent on empty store returns placeholder."""
+    r = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_recent", "arguments": {}},
+    })[0]
+    assert "no recently" in r["result"]["content"][0]["text"]
+
+
+def test_mcp_recent_in_tools_list(tmp_store):
+    resp = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {},
+    })[0]
+    assert "mnemonics_recent" in {t["name"] for t in resp["result"]["tools"]}

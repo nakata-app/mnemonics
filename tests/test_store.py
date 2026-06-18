@@ -1496,3 +1496,50 @@ def test_set_tier_many_missing_ids_ignored(populated_store):
     store, docs, vecs = populated_store
     updated = store.set_tier_many([99999, 99998], 0)
     assert updated == 0
+
+
+# ── recent_accessed ───────────────────────────────────────────────────────────
+
+def test_recent_accessed_returns_rows(populated_store):
+    """recent_accessed returns rows from the store."""
+    store, docs, vecs = populated_store
+    hits = store.recent_accessed(ns="default")
+    assert len(hits) == len(docs)
+
+
+def test_recent_accessed_ns_filter(populated_store):
+    """recent_accessed filters by namespace."""
+    import numpy as np
+    store, docs, vecs = populated_store
+    v = np.random.rand(384).astype("float32"); v /= np.linalg.norm(v)
+    store.add(["row in other"], v[None], ns="other")
+    hits = store.recent_accessed(ns="default")
+    assert all(h["ns"] == "default" for h in hits)
+
+
+def test_recent_accessed_all_ns(populated_store):
+    """recent_accessed with ns=None spans all namespaces."""
+    import numpy as np
+    store, docs, vecs = populated_store
+    v = np.random.rand(384).astype("float32"); v /= np.linalg.norm(v)
+    store.add(["row in other"], v[None], ns="other")
+    hits = store.recent_accessed(ns=None)
+    ns_set = {h["ns"] for h in hits}
+    assert len(ns_set) > 1
+
+
+def test_recent_accessed_limit(populated_store):
+    """recent_accessed respects the limit parameter."""
+    store, docs, vecs = populated_store
+    hits = store.recent_accessed(ns="default", limit=2)
+    assert len(hits) <= 2
+
+
+def test_recent_accessed_tier_filter(populated_store):
+    """recent_accessed filters by tier."""
+    store, docs, vecs = populated_store
+    first_id = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    store.pin(first_id)
+    hits = store.recent_accessed(ns="default", tier=0)
+    assert all(h["tier"] == 0 for h in hits)
+    assert len(hits) == 1

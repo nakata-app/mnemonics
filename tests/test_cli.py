@@ -2173,3 +2173,49 @@ def test_cli_bulk_tier_invalid_tier_error(tmp_path, capsys):
         with pytest.raises(SystemExit) as exc:
             main()
     assert exc.value.code == 1
+
+
+# ── recent ─────────────────────────────────────────────────────────────────────
+
+def test_cli_recent_basic(tmp_path, capsys):
+    """recent prints recently accessed memories."""
+    hits = [{"id": 1, "ns": "default", "tier": 1, "text": "Paris memory",
+             "summary": None, "last_accessed": "2026-06-18 10:00:00", "access_count": 3}]
+    mock_store = MagicMock()
+    mock_store.recent_accessed.return_value = hits
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "recent", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "Paris" in out
+    assert "2026-06-18" in out
+
+
+def test_cli_recent_json(tmp_path, capsys):
+    """recent --json outputs JSON array."""
+    hits = [{"id": 1, "ns": "default", "tier": 1, "text": "hi",
+             "summary": None, "last_accessed": None, "access_count": 0}]
+    mock_store = MagicMock()
+    mock_store.recent_accessed.return_value = hits
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "recent", "--json", "--path", str(tmp_path)]),
+    ):
+        main()
+    import json as _json
+    parsed = _json.loads(capsys.readouterr().out)
+    assert parsed[0]["id"] == 1
+
+
+def test_cli_recent_empty(tmp_path, capsys):
+    """recent prints placeholder when no results."""
+    mock_store = MagicMock()
+    mock_store.recent_accessed.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "recent", "--path", str(tmp_path)]),
+    ):
+        main()
+    assert "No recently" in capsys.readouterr().out

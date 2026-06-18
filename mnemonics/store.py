@@ -445,6 +445,42 @@ class Store:
     def pin(self, memory_id: int) -> bool:
         return self.set_tier(memory_id, 0)
 
+    def recent_accessed(
+        self,
+        ns: str | None = "default",
+        limit: int = 20,
+        tier: int | None = None,
+    ) -> list[dict]:
+        """Return memories ordered by last_accessed descending (most recently used first).
+
+        Memories that have never been accessed (last_accessed IS NULL) are included
+        last. Useful for surfacing recently retrieved context in AI sessions.
+        """
+        where: list[str] = []
+        params: list = []
+        if ns is not None:
+            where.append("ns=?")
+            params.append(ns)
+        if tier is not None:
+            where.append("tier=?")
+            params.append(tier)
+        where_clause = ("WHERE " + " AND ".join(where)) if where else ""
+        params.append(limit)
+        rows = self._db.execute(
+            f"SELECT id, ns, text, summary, tier, created, last_accessed, access_count "
+            f"FROM memories {where_clause} "
+            f"ORDER BY last_accessed DESC NULLS LAST, id DESC LIMIT ?",
+            params,
+        ).fetchall()
+        return [
+            {
+                "id": r[0], "ns": r[1], "text": r[2], "summary": r[3],
+                "tier": r[4], "created": r[5], "last_accessed": r[6],
+                "access_count": r[7],
+            }
+            for r in rows
+        ]
+
     def set_tier_many(self, memory_ids: list[int], tier: int) -> int:
         """Set tier for multiple memories in a single transaction.
 
