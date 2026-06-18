@@ -262,6 +262,30 @@ class _Handler(BaseHTTPRequestHandler):
             n_mtn = _get_store().move_to_ns([int(i) for i in mtn_ids], mtn_ns)
             self._json(200, {"moved": n_mtn, "target_ns": mtn_ns})
 
+        elif self.path == "/tag":
+            tg_id = body.get("id")
+            tg_tag = body.get("tag", "").strip()
+            if tg_id is None or not tg_tag:
+                self._json(400, {"error": "'id' (int) and 'tag' (str) are required"})
+                return
+            ok_tg = _get_store().tag(int(tg_id), tg_tag)
+            if not ok_tg:
+                self._json(404, {"error": f"memory id={tg_id!r} not found"})
+            else:
+                self._json(200, {"id": int(tg_id), "tag": tg_tag, "action": "added"})
+
+        elif self.path == "/untag":
+            utg_id = body.get("id")
+            utg_tag = body.get("tag", "").strip()
+            if utg_id is None or not utg_tag:
+                self._json(400, {"error": "'id' (int) and 'tag' (str) are required"})
+                return
+            ok_utg = _get_store().untag(int(utg_id), utg_tag)
+            if not ok_utg:
+                self._json(404, {"error": f"memory id={utg_id!r} not found"})
+            else:
+                self._json(200, {"id": int(utg_id), "tag": utg_tag, "action": "removed"})
+
         elif self.path == "/update-text":
             ut_id = body.get("id")
             ut_text = body.get("text", "").strip()
@@ -847,6 +871,30 @@ def _mcp_loop() -> None:
                             "max_tier": {"type": "integer", "description": "Only return memories with tier <= this value"},
                         },
                         "required": ["query", "vector"],
+                    },
+                },
+                {
+                    "name": "mnemonics_tag",
+                    "description": "Add a tag string to the 'tags' list inside a memory's meta JSON. Idempotent — adding an existing tag is a no-op.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer", "description": "Memory ID"},
+                            "tag": {"type": "string", "description": "Tag to add"},
+                        },
+                        "required": ["id", "tag"],
+                    },
+                },
+                {
+                    "name": "mnemonics_untag",
+                    "description": "Remove a tag string from the 'tags' list inside a memory's meta JSON. Idempotent — removing an absent tag is a no-op.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer", "description": "Memory ID"},
+                            "tag": {"type": "string", "description": "Tag to remove"},
+                        },
+                        "required": ["id", "tag"],
                     },
                 },
                 {
@@ -1453,6 +1501,30 @@ def _mcp_loop() -> None:
                         if r.get("summary"):
                             lines_hs.append(f"           summary: {r['summary'][:120]}")
                     ok({"content": [{"type": "text", "text": "\n".join(lines_hs)}]})
+
+            elif name == "mnemonics_tag":
+                tg_id_m = args.get("id")
+                tg_tag_m = args.get("tag", "").strip()
+                if tg_id_m is None or not tg_tag_m:
+                    err("mnemonics_tag: 'id' and 'tag' are required")
+                    continue
+                ok_tg_m = _get_store().tag(int(tg_id_m), tg_tag_m)
+                if not ok_tg_m:
+                    err(f"mnemonics_tag: id={tg_id_m!r} not found")
+                    continue
+                ok({"content": [{"type": "text", "text": f"Added tag {tg_tag_m!r} to id={tg_id_m}."}]})
+
+            elif name == "mnemonics_untag":
+                utg_id_m = args.get("id")
+                utg_tag_m = args.get("tag", "").strip()
+                if utg_id_m is None or not utg_tag_m:
+                    err("mnemonics_untag: 'id' and 'tag' are required")
+                    continue
+                ok_utg_m = _get_store().untag(int(utg_id_m), utg_tag_m)
+                if not ok_utg_m:
+                    err(f"mnemonics_untag: id={utg_id_m!r} not found")
+                    continue
+                ok({"content": [{"type": "text", "text": f"Removed tag {utg_tag_m!r} from id={utg_id_m}."}]})
 
             elif name == "mnemonics_access_stats":
                 ns_as_m = args.get("ns")  # None = all

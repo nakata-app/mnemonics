@@ -769,6 +769,57 @@ class Store:
             self._db.commit()
         return cur.rowcount
 
+    def tag(self, memory_id: int, tag: str) -> bool:
+        """Add *tag* to the ``tags`` list inside a memory's meta JSON.
+
+        Creates the ``tags`` key if absent. Idempotent — adding a tag that
+        already exists is a no-op. Returns ``True`` on success, ``False`` if
+        *memory_id* does not exist.
+        """
+        import json as _j_tag
+        row = self._db.execute(
+            "SELECT meta FROM memories WHERE id=?", (memory_id,)
+        ).fetchone()
+        if row is None:
+            return False
+        meta = _j_tag.loads(row[0]) if row[0] else {}
+        tags: list = meta.get("tags", [])
+        if tag not in tags:
+            tags.append(tag)
+            meta["tags"] = tags
+            with self._lock:
+                self._db.execute(
+                    "UPDATE memories SET meta=? WHERE id=?",
+                    (_j_tag.dumps(meta, ensure_ascii=False), memory_id),
+                )
+                self._db.commit()
+        return True
+
+    def untag(self, memory_id: int, tag: str) -> bool:
+        """Remove *tag* from the ``tags`` list inside a memory's meta JSON.
+
+        Idempotent — removing a tag that is absent is a no-op. Returns
+        ``True`` on success, ``False`` if *memory_id* does not exist.
+        """
+        import json as _j_untag
+        row = self._db.execute(
+            "SELECT meta FROM memories WHERE id=?", (memory_id,)
+        ).fetchone()
+        if row is None:
+            return False
+        meta = _j_untag.loads(row[0]) if row[0] else {}
+        tags: list = meta.get("tags", [])
+        if tag in tags:
+            tags.remove(tag)
+            meta["tags"] = tags
+            with self._lock:
+                self._db.execute(
+                    "UPDATE memories SET meta=? WHERE id=?",
+                    (_j_untag.dumps(meta, ensure_ascii=False), memory_id),
+                )
+                self._db.commit()
+        return True
+
     def access_stats(self, ns: str | None = "default") -> dict:
         """Return access-count and last-accessed statistics for *ns*.
 

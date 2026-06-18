@@ -2904,3 +2904,61 @@ def test_cli_access_stats_json(tmp_path, capsys):
         main()
     parsed = json.loads(capsys.readouterr().out)
     assert parsed["ns"] == "default"
+
+
+# ── tag / untag CLI ───────────────────────────────────────────────────────────
+
+def test_cli_tag_ok(tmp_path, capsys):
+    """tag prints confirmation."""
+    mock_store = MagicMock()
+    mock_store.tag.return_value = True
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "tag", "7", "important",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.tag.assert_called_once_with(7, "important")
+    assert "Added" in capsys.readouterr().out
+
+
+def test_cli_tag_not_found(tmp_path, capsys):
+    """tag exits 1 when ID not found."""
+    mock_store = MagicMock()
+    mock_store.tag.return_value = False
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "tag", "999", "x",
+                           "--path", str(tmp_path)]),
+    ):
+        with pytest.raises(SystemExit) as exc:
+            main()
+    assert exc.value.code == 1
+
+
+def test_cli_untag_ok(tmp_path, capsys):
+    """untag prints confirmation."""
+    mock_store = MagicMock()
+    mock_store.untag.return_value = True
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "untag", "7", "important",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.untag.assert_called_once_with(7, "important")
+    assert "Removed" in capsys.readouterr().out
+
+
+def test_cli_untag_not_found(tmp_path, capsys):
+    """untag exits 1 when ID not found."""
+    mock_store = MagicMock()
+    mock_store.untag.return_value = False
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "untag", "999", "x",
+                           "--path", str(tmp_path)]),
+    ):
+        with pytest.raises(SystemExit) as exc:
+            main()
+    assert exc.value.code == 1

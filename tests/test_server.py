@@ -632,6 +632,8 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_clone",
         "mnemonics_update_text",
         "mnemonics_access_stats",
+        "mnemonics_tag",
+        "mnemonics_untag",
     }
 
 
@@ -3497,3 +3499,117 @@ def test_mcp_access_stats_all_ns(populated_store):
         "params": {"name": "mnemonics_access_stats", "arguments": {}},
     })[0]
     assert "result" in r
+
+
+# ── tag / untag REST + MCP ────────────────────────────────────────────────────
+
+def test_http_tag_ok(populated_store):
+    """POST /tag adds a tag."""
+    store, docs, vecs = populated_store
+    mid = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    code, data = http_call(store, "POST", "/tag", {"id": mid, "tag": "important"})
+    assert code == 200
+    assert data["action"] == "added"
+
+
+def test_http_tag_not_found(populated_store):
+    """POST /tag with missing id returns 404."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/tag", {"id": 999999, "tag": "x"})
+    assert code == 404
+
+
+def test_http_tag_missing_params(populated_store):
+    """POST /tag without tag param returns 400."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/tag", {"id": 1})
+    assert code == 400
+
+
+def test_http_untag_ok(populated_store):
+    """POST /untag removes a tag."""
+    store, docs, vecs = populated_store
+    mid = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    store.tag(mid, "remove-me")
+    code, data = http_call(store, "POST", "/untag", {"id": mid, "tag": "remove-me"})
+    assert code == 200
+    assert data["action"] == "removed"
+
+
+def test_http_untag_not_found(populated_store):
+    """POST /untag with missing id returns 404."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/untag", {"id": 999999, "tag": "x"})
+    assert code == 404
+
+
+def test_http_untag_missing_params(populated_store):
+    """POST /untag without tag param returns 400."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/untag", {"id": 1})
+    assert code == 400
+
+
+def test_mcp_tag_ok(populated_store):
+    """MCP mnemonics_tag adds a tag."""
+    store, docs, vecs = populated_store
+    mid = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_tag",
+                   "arguments": {"id": mid, "tag": "mcp-tag"}},
+    })[0]
+    assert "result" in r
+    assert "Added" in r["result"]["content"][0]["text"]
+
+
+def test_mcp_tag_not_found(tmp_store):
+    """MCP mnemonics_tag with missing id returns error."""
+    r = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_tag",
+                   "arguments": {"id": 999999, "tag": "x"}},
+    })[0]
+    assert "error" in r
+
+
+def test_mcp_tag_missing_args(tmp_store):
+    """MCP mnemonics_tag without args returns error."""
+    r = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_tag", "arguments": {"id": 1}},
+    })[0]
+    assert "error" in r
+
+
+def test_mcp_untag_ok(populated_store):
+    """MCP mnemonics_untag removes a tag."""
+    store, docs, vecs = populated_store
+    mid = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    store.tag(mid, "to-remove")
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_untag",
+                   "arguments": {"id": mid, "tag": "to-remove"}},
+    })[0]
+    assert "result" in r
+    assert "Removed" in r["result"]["content"][0]["text"]
+
+
+def test_mcp_untag_not_found(tmp_store):
+    """MCP mnemonics_untag with missing id returns error."""
+    r = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_untag",
+                   "arguments": {"id": 999999, "tag": "x"}},
+    })[0]
+    assert "error" in r
+
+
+def test_mcp_untag_missing_args(tmp_store):
+    """MCP mnemonics_untag without args returns error."""
+    r = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_untag", "arguments": {"id": 1}},
+    })[0]
+    assert "error" in r

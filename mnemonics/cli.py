@@ -80,6 +80,17 @@ def main() -> None:
     ts.add_argument("--json", dest="json_out", action="store_true", help="Output results as JSON array")
     ts.add_argument("--path", default="~/.mnemonics")
 
+    # tag / untag
+    tgp = sub.add_parser("tag", help="Add a tag to a memory's meta.tags list")
+    tgp.add_argument("id", type=int, help="Memory ID")
+    tgp.add_argument("tag", help="Tag string to add")
+    tgp.add_argument("--path", default="~/.mnemonics")
+
+    utg = sub.add_parser("untag", help="Remove a tag from a memory's meta.tags list")
+    utg.add_argument("id", type=int, help="Memory ID")
+    utg.add_argument("tag", help="Tag string to remove")
+    utg.add_argument("--path", default="~/.mnemonics")
+
     # access-stats
     acs = sub.add_parser("access-stats", help="Show access-count and last-accessed statistics for a namespace")
     acs.add_argument("--ns", default="default", help="Namespace (omit for all)")
@@ -541,6 +552,22 @@ def main() -> None:
                 print(line)
                 if r.get("summary"):
                     print(f"           summary: {r['summary']}")
+
+    elif args.cmd == "tag":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        if not store.tag(args.id, args.tag):
+            print(f"Error: memory id={args.id} not found.", file=sys.stderr)
+            sys.exit(1)
+        print(f"Added tag {args.tag!r} to id={args.id}.")
+
+    elif args.cmd == "untag":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        if not store.untag(args.id, args.tag):
+            print(f"Error: memory id={args.id} not found.", file=sys.stderr)
+            sys.exit(1)
+        print(f"Removed tag {args.tag!r} from id={args.id}.")
 
     elif args.cmd == "access-stats":
         from mnemonics.store import Store

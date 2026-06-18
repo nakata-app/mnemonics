@@ -2596,3 +2596,55 @@ def test_access_stats_all_ns(populated_store):
     stats_all = store.access_stats(None)
     assert stats_all["total"] == len(docs) + 1
     assert stats_all["ns"] is None
+
+
+# ── tag / untag ───────────────────────────────────────────────────────────────
+
+def test_tag_adds_tag(populated_store):
+    """tag adds a string to meta.tags."""
+    store, docs, vecs = populated_store
+    mid = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    assert store.tag(mid, "important") is True
+    row = store._db.execute("SELECT meta FROM memories WHERE id=?", (mid,)).fetchone()
+    import json as _j
+    meta = _j.loads(row[0])
+    assert "important" in meta["tags"]
+
+
+def test_tag_idempotent(populated_store):
+    """tag is idempotent — adding same tag twice keeps one entry."""
+    store, docs, vecs = populated_store
+    mid = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    store.tag(mid, "dup")
+    store.tag(mid, "dup")
+    row = store._db.execute("SELECT meta FROM memories WHERE id=?", (mid,)).fetchone()
+    import json as _j
+    assert _j.loads(row[0])["tags"].count("dup") == 1
+
+
+def test_tag_nonexistent_returns_false(tmp_store):
+    """tag returns False for missing ID."""
+    assert tmp_store.tag(99999, "x") is False
+
+
+def test_untag_removes_tag(populated_store):
+    """untag removes a previously added tag."""
+    store, docs, vecs = populated_store
+    mid = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    store.tag(mid, "remove-me")
+    assert store.untag(mid, "remove-me") is True
+    row = store._db.execute("SELECT meta FROM memories WHERE id=?", (mid,)).fetchone()
+    import json as _j
+    assert "remove-me" not in _j.loads(row[0]).get("tags", [])
+
+
+def test_untag_idempotent(populated_store):
+    """untag is idempotent — removing absent tag is a no-op."""
+    store, docs, vecs = populated_store
+    mid = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    assert store.untag(mid, "ghost-tag") is True  # still returns True, just no-op
+
+
+def test_untag_nonexistent_returns_false(tmp_store):
+    """untag returns False for missing ID."""
+    assert tmp_store.untag(99999, "x") is False
