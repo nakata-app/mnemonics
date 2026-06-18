@@ -288,6 +288,9 @@ class Store:
                 ids.append(cur.lastrowid)
             self._db.commit()
             idx = self._index_for(ns)
+            needed = idx.get_current_count() + len(ids)
+            if needed > idx.get_max_elements():
+                idx.resize_index(max(needed * 2, idx.get_max_elements() * 2))
             idx.add_items(vectors, ids)
             idx_path = self.root / f"index_{ns}.bin"
             idx.save_index(str(idx_path))

@@ -327,6 +327,52 @@ def test_health_check_clean_store(tmp_path):
     assert report["orphan_indexes"] == []
 
 
+def test_health_check_capacity_warning(tmp_path):
+    import hnswlib
+    # Build a tiny index (max_elements=4) and fill it to 100% to trigger warning
+    s = Store(tmp_path)
+    vecs = make_vecs(4)
+    s.add(["a", "b", "c", "d"], vecs, ns="tiny")
+    # Force a tiny index with low max_elements
+    idx_path = tmp_path / "index_tiny.bin"
+    idx = hnswlib.Index(space="cosine", dim=s.dim)
+    idx.init_index(max_elements=4, ef_construction=200, M=16)
+    ids = [r[0] for r in s._db.execute("SELECT id FROM memories WHERE ns='tiny'").fetchall()]
+    idx.add_items(vecs, ids)
+    idx.save_index(str(idx_path))
+
+    report = s.health_check()
+    ns_map = {n["ns"]: n for n in report["namespaces"]}
+    assert ns_map["tiny"]["usage_pct"] == 100.0
+    assert ns_map["tiny"]["capacity_warning"]
+
+
+def test_add_auto_resizes_full_index(tmp_path):
+    import hnswlib
+    # Create a tiny index at max capacity, then add one more item — must auto-resize
+    s = Store(tmp_path)
+    vecs = make_vecs(3)
+    ids = s.add(["a", "b", "c"], vecs, ns="nano")
+
+    # Shrink the index to exactly current_count so the next add overflows
+    idx_path = tmp_path / "index_nano.bin"
+    idx = hnswlib.Index(space="cosine", dim=s.dim)
+    idx.init_index(max_elements=3, ef_construction=200, M=16)
+    idx.add_items(vecs, ids)
+    idx.save_index(str(idx_path))
+    del s._index["nano"]  # evict cache so it reloads from disk
+
+    extra_vec = make_vecs(1)
+    new_ids = s.add(["d"], extra_vec, ns="nano")
+    assert len(new_ids) == 1
+
+    # Index must have grown
+    idx2 = hnswlib.Index(space="cosine", dim=s.dim)
+    idx2.load_index(str(idx_path))
+    assert idx2.get_max_elements() > 3
+    assert idx2.get_current_count() == 4
+
+
 def test_health_check_detects_soft_deleted(tmp_path):
     vecs = make_vecs(2)
     s = Store(tmp_path)
