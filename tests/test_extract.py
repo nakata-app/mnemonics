@@ -207,3 +207,59 @@ def test_extract_many():
     assert len(results) == 2
     assert len(results[0]) == 1
     assert results[1] == []
+
+
+# ── _default_client ───────────────────────────────────────────────────────────
+
+def test_default_client_deepseek_key(monkeypatch, tmp_path):
+    from unittest.mock import MagicMock as _MM
+    import sys
+    mock_openai_mod = _MM()
+    mock_cls = _MM(return_value=_MM())
+    mock_openai_mod.OpenAI = mock_cls
+    monkeypatch.setitem(sys.modules, "openai", mock_openai_mod)
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test-deepseek")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    from mnemonics.extract import _default_client
+    _default_client()
+    _, kwargs = mock_cls.call_args
+    assert kwargs["api_key"] == "sk-test-deepseek"
+    assert "deepseek" in kwargs["base_url"]
+
+
+def test_default_client_openai_key(monkeypatch):
+    from unittest.mock import MagicMock as _MM
+    import sys
+    mock_openai_mod = _MM()
+    mock_cls = _MM(return_value=_MM())
+    mock_openai_mod.OpenAI = mock_cls
+    monkeypatch.setitem(sys.modules, "openai", mock_openai_mod)
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
+    from mnemonics.extract import _default_client
+    _default_client()
+    _, kwargs = mock_cls.call_args
+    assert kwargs["api_key"] == "sk-openai"
+
+
+def test_default_client_no_key_raises(monkeypatch):
+    from unittest.mock import MagicMock as _MM
+    import sys
+    mock_openai_mod = _MM()
+    mock_openai_mod.OpenAI = _MM(return_value=_MM())
+    monkeypatch.setitem(sys.modules, "openai", mock_openai_mod)
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    from mnemonics.extract import _default_client
+    with pytest.raises(RuntimeError, match="DEEPSEEK_API_KEY"):
+        _default_client()
+
+
+def test_retry_exhausted_raises():
+    """When all retries fail the exception propagates."""
+    from unittest.mock import MagicMock as _MM
+    client = _MM()
+    client.chat.completions.create.side_effect = OSError("network down")
+    ex = FactExtractor(client=client, retries=1)
+    with pytest.raises(OSError):
+        ex.extract_session(TURNS)
