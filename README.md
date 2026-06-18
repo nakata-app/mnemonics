@@ -135,6 +135,8 @@ The server binds to `127.0.0.1` only, no external interface, no telemetry.
 |--------|------|------|
 | POST | `/ingest` | `{"texts": [...], "ns": "default"}` |
 | POST | `/retrieve` | `{"query": "...", "top_k": 5, "decay": true}` |
+| POST | `/pin` | `{"id": N}` |
+| POST | `/tier` | `{"id": N, "tier": 0\|1\|2}` |
 | POST | `/rebuild-index` | `{"ns": "..."}` |
 | POST | `/gc` | `{"ns": "...", "age_days": 30, "tier": 2, "dry_run": true}` |
 | POST | `/forget` | `{"ns": "...", "before": "2026-01-01", "dry_run": true}` |

@@ -42,6 +42,10 @@ All notable changes to mnemonics. Format follows [Keep a Changelog](https://keep
 - **`mnemonics_forget_ns` MCP tool** bulk-deletes a namespace from AI agents.
   Accepts `ns` (required), `before`, `tier`, `dry_run` (default true).
   Complements `mnemonics_forget` (single-id) and `mnemonics_gc` (age-based).
+- **`POST /pin` and `POST /tier` REST endpoints.** Complete REST parity with
+  CLI (`mnem pin`, `mnem tier`) and MCP tools. `/pin {"id": N}` pins a
+  memory (tier=0). `/tier {"id": N, "tier": 0|1|2}` changes its tier.
+  Returns 400 on invalid tier (values outside 0-2).
 - **`mnemonics_rebuild_index` MCP tool.** Rebuild the hnswlib index for a
   specific namespace from the SQL source of truth without re-encoding.
   Completes MCP parity with `mnem rebuild-index` (CLI) and
