@@ -160,6 +160,12 @@ def test_http_patch_no_summary_field(populated_store):
     assert code == 400
 
 
+def test_http_patch_invalid_id(tmp_store):
+    code, data = http_call(tmp_store, "PATCH", "/memory/abc", {"summary": "x"})
+    assert code == 400
+    assert "invalid" in data["error"]
+
+
 # ── GET /memory/<id> ──────────────────────────────────────────────────────────
 
 def test_http_get_memory(populated_store):
@@ -433,6 +439,30 @@ def test_ingest_empty_texts_400(tmp_store):
     with patch("mnemonics.server._ingest", return_value=0):
         code, data = http_call(tmp_store, "POST", "/ingest", {"texts": []})
     assert code == 400
+
+
+def test_ingest_texts_not_list_400(tmp_store):
+    code, data = http_call(tmp_store, "POST", "/ingest", {"texts": "not a list"})
+    assert code == 400
+    assert "texts" in data["error"]
+
+
+def test_ingest_summaries_wrong_length_400(tmp_store):
+    code, data = http_call(tmp_store, "POST", "/ingest", {
+        "texts": ["a", "b"],
+        "summaries": ["only one summary"],
+    })
+    assert code == 400
+    assert "summaries" in data["error"]
+
+
+def test_ingest_summaries_valid(tmp_store):
+    with patch("mnemonics.server._ingest", return_value=2):
+        code, data = http_call(tmp_store, "POST", "/ingest", {
+            "texts": ["a", "b"],
+            "summaries": ["gist a", None],
+        })
+    assert code == 200
 
 
 def test_ingest_success(tmp_store):
