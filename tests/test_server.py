@@ -1132,3 +1132,47 @@ def test_mcp_ingest_summaries_bad_length(tmp_store):
     })
     msg = _mcp_msg(resp[0]).lower()
     assert "summaries" in msg or "error" in msg or "error" in resp[0]
+
+
+# ── MCP mnemonics_gc apply (not dry_run) ─────────────────────────────────────
+
+def test_mcp_gc_apply(tmp_store):
+    import numpy as np
+    from mnemonics.store import DIM
+    rng = np.random.default_rng(0)
+    vecs = rng.random((1, DIM)).astype("float32")
+    vecs /= np.linalg.norm(vecs, axis=1, keepdims=True)
+    tmp_store.add(["old content"], vecs)
+    resp = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_gc",
+                   "arguments": {"ns": "default", "age_days": 0, "tier": 2, "dry_run": False}},
+    })
+    txt = _mcp_msg(resp[0])
+    assert "Deleted" in txt
+
+
+# ── MCP mnemonics_rebuild_index RuntimeError ──────────────────────────────────
+
+def test_mcp_rebuild_index_runtime_error(tmp_store, monkeypatch):
+    monkeypatch.setattr(tmp_store, "rebuild_ns_index",
+                        lambda ns: (_ for _ in ()).throw(RuntimeError("collision")))
+    resp = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_rebuild_index", "arguments": {"ns": "default"}},
+    })
+    assert "error" in resp[0] or "collision" in _mcp_msg(resp[0])
+
+
+# ── PATCH unknown path → 404 ──────────────────────────────────────────────────
+
+def test_http_patch_unknown_path(tmp_store):
+    code, data = http_call(tmp_store, "PATCH", "/unknown", {"summary": "x"})
+    assert code == 404
+
+
+# ── DELETE unknown path → 404 ─────────────────────────────────────────────────
+
+def test_http_delete_unknown_path(tmp_store):
+    code, data = http_call(tmp_store, "DELETE", "/unknown")
+    assert code == 404
