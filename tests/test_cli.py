@@ -1032,3 +1032,43 @@ def test_forget_many_candidates(tmp_path, capsys):
         except SystemExit:
             pass
     assert "... and 5 more" in capsys.readouterr().out
+
+
+# ── restore error paths ───────────────────────────────────────────────────────
+
+def test_restore_file_exists_error(tmp_path, capsys):
+    with (
+        patch("mnemonics.backup.restore", side_effect=FileExistsError("db already exists")),
+        patch("sys.argv", ["mnemonics", "restore", "backup.tar.gz", "--path", str(tmp_path)]),
+    ):
+        with pytest.raises(SystemExit) as exc:
+            main()
+    assert exc.value.code == 2
+    assert "Refusing" in capsys.readouterr().err
+
+
+def test_restore_no_files_written(tmp_path, capsys):
+    with (
+        patch("mnemonics.backup.restore", return_value=[]),
+        patch("sys.argv", ["mnemonics", "restore", "backup.tar.gz", "--path", str(tmp_path)]),
+    ):
+        main()
+    assert "no restorable" in capsys.readouterr().out
+
+
+# ── forget with --tier filter note ────────────────────────────────────────────
+
+def test_forget_no_candidates_with_tier(tmp_path, capsys):
+    mock_store = MagicMock()
+    mock_store.forget_candidates.return_value = []
+    mock_store._db = MagicMock()
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "forget", "--ns", "myns",
+                           "--tier", "2", "--path", str(tmp_path)]),
+    ):
+        try:
+            main()
+        except SystemExit:
+            pass
+    assert "tier=2" in capsys.readouterr().out
