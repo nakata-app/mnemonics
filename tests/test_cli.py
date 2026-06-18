@@ -1808,3 +1808,58 @@ def test_cli_export_jsonl_before_filter(tmp_path, capsys):
         main()
     out = capsys.readouterr().out
     assert out.strip() == ""
+
+
+# ── ingest --file ─────────────────────────────────────────────────────────────
+
+def test_cli_ingest_file(tmp_path, capsys):
+    """ingest --file reads text from a file."""
+    doc = tmp_path / "doc.txt"
+    doc.write_text("content from file", encoding="utf-8")
+    with (
+        patch("mnemonics.store.Store"),
+        patch("mnemonics.ingest.ingest", return_value=1) as mock_ingest,
+        patch("sys.argv", ["mnemonics", "ingest", "--file", str(doc),
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    kwargs = mock_ingest.call_args[1]
+    assert "content from file" in kwargs["texts"][0]
+
+
+def test_cli_ingest_file_not_found(tmp_path, capsys):
+    """ingest --file missing-file exits with error."""
+    with (
+        patch("mnemonics.store.Store"),
+        patch("sys.argv", ["mnemonics", "ingest", "--file", "/no/such/file.txt",
+                           "--path", str(tmp_path)]),
+    ):
+        with pytest.raises(SystemExit) as exc:
+            main()
+    assert exc.value.code == 2
+
+
+def test_cli_ingest_no_text_no_file(tmp_path, capsys):
+    """ingest with no text and no --file exits with error."""
+    with (
+        patch("mnemonics.store.Store"),
+        patch("sys.argv", ["mnemonics", "ingest", "--path", str(tmp_path)]),
+    ):
+        with pytest.raises(SystemExit) as exc:
+            main()
+    assert exc.value.code == 2
+
+
+def test_cli_ingest_file_stdin(tmp_path, capsys):
+    """ingest --file - reads from stdin."""
+    import io
+    with (
+        patch("mnemonics.store.Store"),
+        patch("mnemonics.ingest.ingest", return_value=1) as mock_ingest,
+        patch("sys.stdin", io.StringIO("hello from stdin")),
+        patch("sys.argv", ["mnemonics", "ingest", "--file", "-",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    kwargs = mock_ingest.call_args[1]
+    assert "hello from stdin" in kwargs["texts"][0]

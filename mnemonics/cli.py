@@ -20,7 +20,9 @@ def main() -> None:
 
     # ingest
     i = sub.add_parser("ingest", help="Add text to memory")
-    i.add_argument("text", nargs="+")
+    i.add_argument("text", nargs="*", help="Text to ingest (optional if --file is given)")
+    i.add_argument("--file", default=None, metavar="PATH",
+                   help="Read text from this file instead of CLI arguments (use '-' for stdin)")
     i.add_argument("--ns", default="default")
     i.add_argument("--path", default="~/.mnemonics")
     i.add_argument("--dedup", action="store_true", help="Check for near-duplicate memories before saving")
@@ -271,7 +273,20 @@ def main() -> None:
         from mnemonics.store import Store
         from mnemonics.ingest import ingest
         store = Store(args.path)
-        joined = " ".join(args.text)
+        if args.file:
+            if args.file == "-":
+                joined = sys.stdin.read()
+            else:
+                try:
+                    joined = open(args.file, encoding="utf-8").read()
+                except OSError as e:
+                    print(f"--file: cannot read {args.file!r}: {e}", file=sys.stderr)
+                    sys.exit(2)
+        elif args.text:
+            joined = " ".join(args.text)
+        else:
+            print("Error: provide text as arguments or use --file PATH", file=sys.stderr)
+            sys.exit(2)
         if args.dedup:
             from mnemonics.dedup import find_similar
             matches = find_similar(joined, store=store, ns=args.ns, threshold=args.dedup_threshold)
