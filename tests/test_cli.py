@@ -394,3 +394,72 @@ def test_mcp_calls_serve_mcp():
         main()
 
     mock_serve.assert_called_once_with(mcp=True)
+
+
+# ── sync export / import ──────────────────────────────────────────────────────
+
+def test_sync_export_calls_export_store(tmp_path, capsys):
+    from pathlib import Path
+    fake_archive = tmp_path / "store.sync.tar.gz"
+    fake_archive.write_bytes(b"")
+    with (
+        patch("mnemonics.sync.export_store", return_value=fake_archive) as mock_ex,
+        patch("sys.argv", ["mnemonics", "sync", "export", "--path", str(tmp_path)]),
+    ):
+        try:
+            main()
+        except SystemExit:
+            pass
+    mock_ex.assert_called_once()
+    out = capsys.readouterr().out
+    assert "Wrote" in out or str(fake_archive) in out
+
+
+def test_sync_import_calls_import_store(tmp_path, capsys):
+    fake_archive = str(tmp_path / "store.sync.tar.gz")
+    summary = {"imported": 5, "skipped": 1, "overwritten": 0}
+    with (
+        patch("mnemonics.sync.import_store", return_value=summary) as mock_im,
+        patch("sys.argv", ["mnemonics", "sync", "import", fake_archive, "--path", str(tmp_path)]),
+    ):
+        try:
+            main()
+        except SystemExit:
+            pass
+    mock_im.assert_called_once()
+    out = capsys.readouterr().out
+    assert "imported=5" in out
+
+
+# ── backup / restore ──────────────────────────────────────────────────────────
+
+def test_backup_calls_backup(tmp_path, capsys):
+    from pathlib import Path
+    fake_archive = tmp_path / "backup.tar.gz"
+    fake_archive.write_bytes(b"x" * 100)
+    with (
+        patch("mnemonics.backup.backup", return_value=fake_archive) as mock_bk,
+        patch("sys.argv", ["mnemonics", "backup", "--path", str(tmp_path)]),
+    ):
+        try:
+            main()
+        except SystemExit:
+            pass
+    mock_bk.assert_called_once()
+    out = capsys.readouterr().out
+    assert "Wrote" in out
+
+
+def test_restore_calls_restore(tmp_path, capsys):
+    fake_archive = str(tmp_path / "backup.tar.gz")
+    with (
+        patch("mnemonics.backup.restore", return_value=["memories.db"]) as mock_rs,
+        patch("sys.argv", ["mnemonics", "restore", fake_archive, "--path", str(tmp_path)]),
+    ):
+        try:
+            main()
+        except SystemExit:
+            pass
+    mock_rs.assert_called_once()
+    out = capsys.readouterr().out
+    assert "memories.db" in out or "Restored" in out
