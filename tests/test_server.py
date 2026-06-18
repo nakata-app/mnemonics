@@ -875,6 +875,34 @@ def test_mcp_retrieve(tmp_store):
     assert "raw=" in text and "decay=" in text and "boost=" in text and "tier=" in text
 
 
+def test_mcp_retrieve_shows_summary(tmp_store):
+    fake = {"results": [{
+        "id": 2, "score": 0.9, "raw_score": 0.9, "decay_factor": 1.0,
+        "boost": 1.0, "age_days": 0.0, "tier": 0,
+        "text": "long raw content here", "summary": "short gist",
+    }]}
+    with patch("mnemonics.server._retrieve", return_value=fake):
+        resp = _mcp(tmp_store, {
+            "jsonrpc": "2.0", "id": 45,
+            "method": "tools/call",
+            "params": {"name": "mnemonics_retrieve", "arguments": {"query": "q"}},
+        })
+    text = resp[0]["result"]["content"][0]["text"]
+    assert "short gist" in text
+    assert "└─ raw:" in text
+
+
+def test_mcp_retrieve_runtime_error(tmp_store):
+    with patch("mnemonics.server._retrieve", side_effect=RuntimeError("index broken")):
+        resp = _mcp(tmp_store, {
+            "jsonrpc": "2.0", "id": 46,
+            "method": "tools/call",
+            "params": {"name": "mnemonics_retrieve", "arguments": {"query": "q"}},
+        })
+    assert "error" in resp[0]
+    assert "index broken" in resp[0]["error"]["message"]
+
+
 def test_mcp_retrieve_default_hybrid_true(tmp_store):
     fake = {"results": []}
     with patch("mnemonics.server._retrieve", return_value=fake) as mock_ret:
