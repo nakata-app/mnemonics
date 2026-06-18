@@ -527,11 +527,12 @@ class Store:
         self, ns: str = "default", limit: int = 20, offset: int = 0,
         tier: int | None = None,
         since: str | None = None,
+        before: str | None = None,
     ) -> list[dict]:
         """List memories in ns, newest first.
 
-        since: ISO date string (YYYY-MM-DD or YYYY-MM-DD HH:MM:SS). Only rows
-        with created >= since are returned.
+        since/before: ISO date strings (YYYY-MM-DD or YYYY-MM-DD HH:MM:SS)
+        for date-range filtering. Both can be combined for a half-open interval.
         """
         where: list[str] = ["ns=?"]
         params: list = [ns]
@@ -541,6 +542,9 @@ class Store:
         if since is not None:
             where.append("created >= ?")
             params.append(since)
+        if before is not None:
+            where.append("created < ?")
+            params.append(before)
         where_clause = " AND ".join(where)
         params.extend([limit, offset])
         rows = self._db.execute(

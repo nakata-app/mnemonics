@@ -332,9 +332,11 @@ class _Handler(BaseHTTPRequestHandler):
             tier_param = params.get("tier")
             tier_val = int(tier_param) if tier_param is not None else None
             since_param = params.get("since")
+            before_param = params.get("before")
             from urllib.parse import unquote_plus
             since_val = unquote_plus(since_param) if since_param else None
-            rows = _get_store().list_memories(ns=ns_val, limit=limit, offset=offset, tier=tier_val, since=since_val)
+            before_val = unquote_plus(before_param) if before_param else None
+            rows = _get_store().list_memories(ns=ns_val, limit=limit, offset=offset, tier=tier_val, since=since_val, before=before_val)
             self._json(200, {"ns": ns_val, "offset": offset, "count": len(rows), "rows": rows})
         elif path.startswith("/memory/"):
             try:
@@ -354,6 +356,7 @@ class _Handler(BaseHTTPRequestHandler):
             ns_raw = qs_parsed.get("ns", [None])[0]
             tier_raw = qs_parsed.get("tier", [None])[0]
             since_raw = qs_parsed.get("since", [None])[0]
+            before_raw = qs_parsed.get("before", [None])[0]
             where_parts = ["1=1"]
             params: list = []
             if ns_raw is not None:
@@ -365,6 +368,9 @@ class _Handler(BaseHTTPRequestHandler):
             if since_raw is not None:
                 where_parts.append("created >= ?")
                 params.append(unquote_plus(since_raw))
+            if before_raw is not None:
+                where_parts.append("created < ?")
+                params.append(unquote_plus(before_raw))
             where = " AND ".join(where_parts)
             rows = _get_store()._db.execute(
                 f"SELECT id, ns, text, summary, meta, created, tier, last_accessed, access_count "
@@ -537,6 +543,7 @@ def _mcp_loop() -> None:
                             "offset": {"type": "integer", "description": "Pagination offset (default: 0)"},
                             "tier": {"type": "integer", "enum": [0, 1, 2], "description": "Filter to a specific tier: 0=pinned, 1=default, 2=ambient (omit for all)"},
                             "since": {"type": "string", "description": "ISO date string (YYYY-MM-DD or YYYY-MM-DD HH:MM:SS). Only return memories created on or after this date."},
+                            "before": {"type": "string", "description": "ISO date string. Only return memories created before this date. Combine with since for date-range queries."},
                         },
                     },
                 },
@@ -809,7 +816,8 @@ def _mcp_loop() -> None:
                 tier_arg = args.get("tier")
                 tier_filter = int(tier_arg) if tier_arg is not None else None
                 since_arg = args.get("since")
-                rows = _get_store().list_memories(ns=ns_val, limit=limit, offset=offset, tier=tier_filter, since=since_arg)
+                before_arg = args.get("before")
+                rows = _get_store().list_memories(ns=ns_val, limit=limit, offset=offset, tier=tier_filter, since=since_arg, before=before_arg)
                 if not rows:
                     ok({"content": [{"type": "text", "text": f"No memories in ns={ns_val!r} (offset={offset})."}]})
                 else:

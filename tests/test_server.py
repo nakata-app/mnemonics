@@ -1833,3 +1833,53 @@ def test_mcp_list_since_future(populated_store):
     })
     text = resp[0]["result"]["content"][0]["text"]
     assert "No memories" in text
+
+
+# ── GET /memories?before= ─────────────────────────────────────────────────────
+
+def test_http_list_memories_before_future(populated_store):
+    """GET /memories?before=far-future returns all rows."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/memories?ns=default&before=2099-01-01")
+    assert code == 200
+    assert data["count"] == len(docs)
+
+
+def test_http_list_memories_before_past(populated_store):
+    """GET /memories?before=far-past returns zero rows."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/memories?ns=default&before=2000-01-01")
+    assert code == 200
+    assert data["count"] == 0
+
+
+# ── GET /export-jsonl?before= ─────────────────────────────────────────────────
+
+def test_http_export_jsonl_before_future(populated_store):
+    """GET /export-jsonl?before=far-future returns all rows."""
+    store, docs, vecs = populated_store
+    code, rows = _get_export(store, "/export-jsonl?before=2099-01-01")
+    assert code == 200
+    assert len(rows) == len(docs)
+
+
+def test_http_export_jsonl_before_past(populated_store):
+    """GET /export-jsonl?before=far-past returns zero rows."""
+    store, docs, vecs = populated_store
+    code, rows = _get_export(store, "/export-jsonl?before=2000-01-01")
+    assert code == 200
+    assert rows == []
+
+
+# ── MCP mnemonics_list before ─────────────────────────────────────────────────
+
+def test_mcp_list_before_past(populated_store):
+    """mnemonics_list with before=far-past returns no memories."""
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_list",
+                   "arguments": {"ns": "default", "before": "2000-01-01"}},
+    })
+    text = resp[0]["result"]["content"][0]["text"]
+    assert "No memories" in text

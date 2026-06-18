@@ -1768,3 +1768,43 @@ def test_cli_list_since_passed(tmp_path):
         main()
     kwargs = mock_store.list_memories.call_args[1]
     assert kwargs["since"] == "2026-01-01"
+
+
+# ── list --before ─────────────────────────────────────────────────────────────
+
+def test_cli_list_before_passed(tmp_path):
+    """list --before passes before parameter to list_memories."""
+    mock_store = MagicMock()
+    mock_store.list_memories.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "list", "--before", "2027-01-01",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    kwargs = mock_store.list_memories.call_args[1]
+    assert kwargs["before"] == "2027-01-01"
+
+
+# ── export-jsonl --since / --before ───────────────────────────────────────────
+
+def test_cli_export_jsonl_since_filter(tmp_path, capsys):
+    """export-jsonl --since=far-future returns no rows from an empty store."""
+    with (
+        patch("sys.argv", ["mnemonics", "export-jsonl", "--since", "2099-01-01",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert out.strip() == ""  # far-future since → no rows
+
+
+def test_cli_export_jsonl_before_filter(tmp_path, capsys):
+    """export-jsonl --before far-past returns no rows."""
+    with (
+        patch("sys.argv", ["mnemonics", "export-jsonl", "--before", "2000-01-01",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert out.strip() == ""

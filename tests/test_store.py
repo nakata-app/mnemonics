@@ -1336,3 +1336,29 @@ def test_list_memories_since_combined_tier(populated_store):
     pinned = store.list_memories(ns="default", limit=100, tier=0, since=past)
     assert len(pinned) == 1
     assert pinned[0]["id"] == first_id
+
+
+# ── list_memories --before ────────────────────────────────────────────────────
+
+def test_list_memories_before_filters(populated_store):
+    """list_memories(before=...) returns only rows with created < before."""
+    store, docs, vecs = populated_store
+    # before=far-past: nothing
+    nothing = store.list_memories(ns="default", limit=100, before="2000-01-01")
+    assert nothing == []
+    # before=far-future: everything
+    all_rows = store.list_memories(ns="default", limit=100, before="2099-01-01")
+    total = store.list_memories(ns="default", limit=100)
+    assert len(all_rows) == len(total)
+
+
+def test_list_memories_since_and_before(populated_store):
+    """since + before creates a half-open date interval."""
+    store, docs, vecs = populated_store
+    # past..future: all rows
+    all_rows = store.list_memories(ns="default", limit=100, since="2000-01-01", before="2099-01-01")
+    total = store.list_memories(ns="default", limit=100)
+    assert len(all_rows) == len(total)
+    # past..past: nothing
+    empty = store.list_memories(ns="default", limit=100, since="2000-01-01", before="2001-01-01")
+    assert empty == []
