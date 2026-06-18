@@ -42,6 +42,11 @@ All notable changes to mnemonics. Format follows [Keep a Changelog](https://keep
 - **`mnemonics_forget_ns` MCP tool** bulk-deletes a namespace from AI agents.
   Accepts `ns` (required), `before`, `tier`, `dry_run` (default true).
   Complements `mnemonics_forget` (single-id) and `mnemonics_gc` (age-based).
+- **`mnemonics_stats` tier breakdown.** Output now includes per-namespace
+  tier counts: `default: 37 chunks  (pin=0 def=37 amb=0)`. Agents can see
+  tier distribution without raw SQL queries.
+- **`POST /rebuild-index` REST endpoint.** Accepts `{"ns": "..."}`, returns
+  `{ns, old_count, new_count, removed}`. Returns 409 on APFS collision.
 - **`POST /gc` and `POST /forget` REST endpoints** enable programmatic
   cleanup without the CLI. Both default to `dry_run: true`. `/gc` accepts
   `ns`, `age_days`, `tier` (1 or 2). `/forget` accepts `ns` (required),
