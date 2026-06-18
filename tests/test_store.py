@@ -230,6 +230,46 @@ def test_forget_nonexistent_ns(tmp_store):
     assert tmp_store.forget(ns="no-such-ns") == 0
 
 
+# ── health_check / doctor ─────────────────────────────────────────────────────
+
+def test_health_check_clean_store(tmp_path):
+    vecs = make_vecs(2)
+    s = Store(tmp_path)
+    s.add(["a", "b"], vecs, ns="alpha")
+    report = s.health_check()
+    assert report["db_integrity"] == "ok"
+    ns_map = {n["ns"]: n for n in report["namespaces"]}
+    assert "alpha" in ns_map
+    assert ns_map["alpha"]["sql_count"] == 2
+    assert ns_map["alpha"]["idx_count"] == 2
+    assert ns_map["alpha"]["soft_deleted"] == 0
+    assert report["orphan_indexes"] == []
+
+
+def test_health_check_detects_soft_deleted(tmp_path):
+    vecs = make_vecs(2)
+    s = Store(tmp_path)
+    ids = s.add(["x", "y"], vecs, ns="alpha")
+    s.delete(ids[0])
+    report = s.health_check()
+    ns_map = {n["ns"]: n for n in report["namespaces"]}
+    assert ns_map["alpha"]["sql_count"] == 1
+    assert ns_map["alpha"]["idx_count"] == 2   # mark_deleted keeps element in count
+    assert ns_map["alpha"]["soft_deleted"] == 1
+
+
+def test_health_check_orphan_index(tmp_path):
+    vecs = make_vecs(1)
+    s = Store(tmp_path)
+    ids = s.add(["x"], vecs, ns="orphan-ns")
+    # Force-delete from SQL only (bypassing store.delete to simulate old bug)
+    s._db.execute("DELETE FROM memories WHERE id=?", (ids[0],))
+    s._db.commit()
+    report = s.health_check()
+    orphan_ns = [o["ns"] for o in report["orphan_indexes"]]
+    assert "orphan-ns" in orphan_ns
+
+
 # ── namespaces ───────────────────────────────────────────────────────────────
 
 def test_list_namespaces_empty(tmp_store):

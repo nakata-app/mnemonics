@@ -498,6 +498,56 @@ class Store:
                 pass
         return len(ids)
 
+    def health_check(self) -> dict[str, Any]:
+        """Return a health report: DB integrity, WAL size, per-ns index counts, orphan indexes."""
+        report: dict[str, Any] = {}
+
+        # SQLite integrity
+        row = self._db.execute("PRAGMA integrity_check").fetchone()
+        report["db_integrity"] = row[0] if row else "unknown"
+
+        # WAL file size
+        wal_path = self.root / "memories.db-wal"
+        report["wal_size"] = wal_path.stat().st_size if wal_path.exists() else 0
+
+        # Per-namespace counts
+        ns_sql: dict[str, int] = {}
+        for r in self._db.execute("SELECT ns, count(*) FROM memories GROUP BY ns").fetchall():
+            ns_sql[r[0]] = r[1]
+
+        ns_reports = []
+        for ns, sql_count in sorted(ns_sql.items()):
+            idx_path = self.root / f"index_{ns}.bin"
+            idx_count: int | None = None
+            if idx_path.exists():
+                try:
+                    idx = hnswlib.Index(space="cosine", dim=self.dim)
+                    idx.load_index(str(idx_path))
+                    idx_count = idx.get_current_count()
+                except Exception:
+                    idx_count = None
+            soft_deleted = max(0, (idx_count or 0) - sql_count) if idx_count is not None else 0
+            missing_vectors = max(0, sql_count - (idx_count or 0)) if idx_count is not None else 0
+            ns_reports.append({
+                "ns": ns,
+                "sql_count": sql_count,
+                "idx_count": idx_count,
+                "soft_deleted": soft_deleted,
+                "missing_vectors": missing_vectors,
+                "idx_missing": idx_count is None,
+            })
+        report["namespaces"] = ns_reports
+
+        # Orphan indexes (index file exists but 0 SQL rows)
+        orphans = []
+        for idx_path in sorted(self.root.glob("index_*.bin")):
+            ns = idx_path.name[len("index_"):-len(".bin")]
+            if ns_sql.get(ns, 0) == 0:
+                orphans.append({"ns": ns, "size": idx_path.stat().st_size, "path": str(idx_path)})
+        report["orphan_indexes"] = orphans
+
+        return report
+
     def gc_candidates(self, ns: str | None = None, age_days: int = 30) -> list[dict[str, Any]]:
         """Rows safe to garbage-collect: tier 2 (ambient) older than `age_days`, never accessed."""
         sql = (

@@ -66,6 +66,11 @@ def main() -> None:
     gc.add_argument("--apply", action="store_true", help="Actually delete (default: dry-run, list only)")
     gc.add_argument("--path", default="~/.mnemonics")
 
+    # doctor
+    dr = sub.add_parser("doctor", help="Health check: DB integrity, index counts, orphan indexes")
+    dr.add_argument("--path", default="~/.mnemonics")
+    dr.add_argument("--json", dest="json_out", action="store_true", help="Output as JSON")
+
     # forget
     ft = sub.add_parser("forget", help="Bulk-delete memories in a namespace (default: dry-run)")
     ft.add_argument("--ns", required=True, help="Namespace to forget")
@@ -258,6 +263,59 @@ def main() -> None:
             print(f"\nDeleted: {n} row(s).")
         else:
             print(f"\nDry-run, {len(candidates)} candidate(s). Re-run with --apply to delete.")
+
+    elif args.cmd == "doctor":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        report = store.health_check()
+
+        if args.json_out:
+            print(json.dumps(report, indent=2))
+            sys.exit(0)
+
+        # Human-readable output
+        integrity = report["db_integrity"]
+        integrity_ok = integrity == "ok"
+        wal_mb = report["wal_size"] / 1_048_576
+        print(f"DB integrity : {'OK' if integrity_ok else 'FAIL: ' + integrity}")
+        print(f"WAL size     : {wal_mb:.1f} MB{'  ⚠ consider checkpoint' if wal_mb > 50 else ''}")
+        print()
+
+        issues = 0
+        print(f"{'Namespace':<28} {'SQL':>6} {'IDX':>6} {'Soft-del':>8}  Status")
+        print("-" * 60)
+        for ns in report["namespaces"]:
+            sql = ns["sql_count"]
+            idx = ns["idx_count"]
+            sd = ns["soft_deleted"]
+            mv = ns.get("missing_vectors", 0)
+            if ns["idx_missing"]:
+                status = "no index"
+            elif mv > 0:
+                status = f"⚠ {mv} missing vector(s)"
+                issues += 1
+            elif sd > 0:
+                status = f"⚠ {sd} orphan vector(s)"
+                issues += 1
+            else:
+                status = "OK"
+            idx_str = str(idx) if idx is not None else "—"
+            print(f"  {ns['ns']:<26} {sql:>6} {idx_str:>6} {sd:>8}  {status}")
+
+        if report["orphan_indexes"]:
+            print()
+            print("Orphan indexes (no DB rows):")
+            for o in report["orphan_indexes"]:
+                size_mb = o["size"] / 1_048_576
+                print(f"  {o['ns']:<30} {size_mb:.1f} MB  → rm \"{o['path']}\"")
+                issues += 1
+
+        print()
+        if issues == 0:
+            print(f"✓ All OK ({len(report['namespaces'])} namespaces)")
+        else:
+            print(f"⚠ {issues} issue(s) found")
+        sys.exit(0 if issues == 0 else 1)
 
     elif args.cmd == "forget":
         from mnemonics.store import Store
