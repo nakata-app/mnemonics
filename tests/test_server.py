@@ -617,6 +617,7 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_forget", "mnemonics_forget_ns", "mnemonics_rebuild_index",
         "mnemonics_pin", "mnemonics_tier", "mnemonics_gc", "mnemonics_stats",
         "mnemonics_health", "mnemonics_repair",
+        "mnemonics_search_by_meta", "mnemonics_delete_many", "mnemonics_update_meta",
     }
 
 
@@ -1452,3 +1453,105 @@ def test_post_update_meta_missing_params(populated_store):
     store, docs, vecs = populated_store
     code, data = http_call(store, "POST", "/update-meta", {"id": 1})
     assert code == 400
+
+
+def test_mcp_search_by_meta(populated_store):
+    """MCP mnemonics_search_by_meta returns matching memories."""
+    store, docs, vecs = populated_store
+    first_id = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    store.update_meta(first_id, {"tag": "mcp-test"})
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 30,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_search_by_meta", "arguments": {"filters": {"tag": "mcp-test"}}},
+    })
+    text = resp[0]["result"]["content"][0]["text"]
+    assert "Found 1 result" in text
+
+
+def test_mcp_search_by_meta_no_results(populated_store):
+    """MCP mnemonics_search_by_meta with no match returns 'No results' message."""
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 31,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_search_by_meta", "arguments": {"filters": {"tag": "nonexistent"}}},
+    })
+    text = resp[0]["result"]["content"][0]["text"]
+    assert "No results" in text
+
+
+def test_mcp_search_by_meta_bad_filters(populated_store):
+    """MCP mnemonics_search_by_meta with empty filters returns error content."""
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 32,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_search_by_meta", "arguments": {"filters": {}}},
+    })
+    r = resp[0]
+    if "result" in r:
+        text = r["result"]["content"][0]["text"]
+    else:
+        text = str(r.get("error", ""))
+    assert "error" in text.lower() or "filters" in text.lower()
+
+
+def test_mcp_delete_many(populated_store):
+    """MCP mnemonics_delete_many removes memories and reports count."""
+    store, docs, vecs = populated_store
+    ids = [r[0] for r in store._db.execute("SELECT id FROM memories LIMIT 2").fetchall()]
+    before = store.count()
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 33,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_delete_many", "arguments": {"ids": ids}},
+    })
+    text = resp[0]["result"]["content"][0]["text"]
+    assert "Deleted 2" in text
+    assert store.count() == before - 2
+
+
+def test_mcp_update_meta(populated_store):
+    """MCP mnemonics_update_meta updates metadata and confirms."""
+    store, docs, vecs = populated_store
+    first_id = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 34,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_update_meta", "arguments": {"id": first_id, "meta": {"x": 99}}},
+    })
+    text = resp[0]["result"]["content"][0]["text"]
+    assert "updated: True" in text
+
+
+def test_mcp_delete_many_bad_ids(populated_store):
+    """MCP mnemonics_delete_many with non-list ids returns error."""
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 35,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_delete_many", "arguments": {"ids": 42}},
+    })
+    r = resp[0]
+    if "result" in r:
+        text = r["result"]["content"][0]["text"]
+    else:
+        text = str(r.get("error", ""))
+    assert "error" in text.lower() or "ids" in text.lower()
+
+
+def test_mcp_update_meta_missing_params(populated_store):
+    """MCP mnemonics_update_meta without meta returns error."""
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 36,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_update_meta", "arguments": {"id": 1}},
+    })
+    r = resp[0]
+    if "result" in r:
+        text = r["result"]["content"][0]["text"]
+    else:
+        text = str(r.get("error", ""))
+    assert "error" in text.lower() or "meta" in text.lower()

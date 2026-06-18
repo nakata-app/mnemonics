@@ -559,6 +559,42 @@ def _mcp_loop() -> None:
                     "description": "List all namespaces with their chunk counts.",
                     "inputSchema": {"type": "object", "properties": {}},
                 },
+                {
+                    "name": "mnemonics_search_by_meta",
+                    "description": "Find memories where metadata matches all key=value filters (AND logic). Uses SQLite json_extract — efficient for scalar values.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "filters": {"type": "object", "description": "Key-value pairs to match in meta (all must match)"},
+                            "ns": {"type": "string", "description": "Namespace to search (default: 'default')"},
+                            "limit": {"type": "integer", "description": "Max results to return (default: 100)"},
+                        },
+                        "required": ["filters"],
+                    },
+                },
+                {
+                    "name": "mnemonics_delete_many",
+                    "description": "Delete multiple memories by ID in a single operation. Returns count of actually deleted rows. Missing IDs are silently skipped.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ids": {"type": "array", "items": {"type": "integer"}, "description": "Memory IDs to delete"},
+                        },
+                        "required": ["ids"],
+                    },
+                },
+                {
+                    "name": "mnemonics_update_meta",
+                    "description": "Replace the metadata dict of a single memory. Returns changed=true if the ID was found.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer", "description": "Memory ID"},
+                            "meta": {"type": "object", "description": "New metadata to store"},
+                        },
+                        "required": ["id", "meta"],
+                    },
+                },
             ]})
 
         elif method == "tools/call":
@@ -770,6 +806,40 @@ def _mcp_loop() -> None:
             elif name == "mnemonics_repair":
                 fix = _get_store().repair()
                 ok({"content": [{"type": "text", "text": json.dumps(fix, indent=2)}]})
+
+            elif name == "mnemonics_search_by_meta":
+                filters = args.get("filters")
+                if not isinstance(filters, dict) or not filters:
+                    err("mnemonics_search_by_meta: 'filters' must be a non-empty object")
+                    continue
+                ns_val = args.get("ns", "default")
+                limit = int(args.get("limit", 100))
+                results = _get_store().search_by_meta(filters, ns=ns_val, limit=limit)
+                if not results:
+                    ok({"content": [{"type": "text", "text": f"No results for filters {filters} in ns={ns_val!r}."}]})
+                else:
+                    import json as _json
+                    lines = [f"Found {len(results)} result(s):"]
+                    for r in results:
+                        lines.append(f"  id={r['id']} tier={r['tier']} {r['text'][:120]}")
+                    ok({"content": [{"type": "text", "text": "\n".join(lines)}]})
+
+            elif name == "mnemonics_delete_many":
+                ids = args.get("ids")
+                if not isinstance(ids, list):
+                    err("mnemonics_delete_many: 'ids' must be an array of integers")
+                    continue
+                deleted = _get_store().delete_many([int(i) for i in ids])
+                ok({"content": [{"type": "text", "text": f"Deleted {deleted} row(s)."}]})
+
+            elif name == "mnemonics_update_meta":
+                mid = args.get("id")
+                meta = args.get("meta")
+                if mid is None or not isinstance(meta, dict):
+                    err("mnemonics_update_meta: 'id' and 'meta' (object) are required")
+                    continue
+                changed = _get_store().update_meta(int(mid), meta)
+                ok({"content": [{"type": "text", "text": f"Meta updated: {changed}"}]})
 
             elif name == "mnemonics_stats":
                 store = _get_store()
