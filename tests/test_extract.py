@@ -122,3 +122,88 @@ def test_parse_json_array_variants():
     assert _parse_json_array("[broken json]") == []
     # Non-list JSON (dict at top level) → returns []
     assert _parse_json_array("{\"k\": \"v\"}") == []
+
+
+# ── edge cases ────────────────────────────────────────────────────────────────
+
+class _ErrorThenOkClient:
+    """First call raises, second call returns valid JSON."""
+    def __init__(self, raises, then_returns):
+        self._raises = raises
+        self._then = then_returns
+        self._calls = 0
+        chat = self
+
+        class _Completions:
+            def create(_self, **kw):
+                chat._calls += 1
+                if chat._calls == 1:
+                    raise chat._raises
+                content = chat._then
+
+                class _Msg:
+                    pass
+
+                class _Choice:
+                    message = _Msg()
+
+                _Choice.message.content = content
+
+                class _Resp:
+                    choices = [_Choice()]
+
+                return _Resp()
+
+        class _Chat:
+            completions = _Completions()
+
+        self.chat = _Chat()
+
+
+def test_no_valid_ids_returns_empty():
+    fake = FakeClient(["[]"])
+    ex = FactExtractor(client=fake)
+    assert ex.extract_session([{"speaker": "A", "text": "hello"}]) == []
+
+
+def test_empty_llm_response_counts_empty_session():
+    fake = FakeClient([""])  # empty string → raw.strip() is falsy
+    ex = FactExtractor(client=fake)
+    result = ex.extract_session(TURNS)
+    assert result == []
+    assert ex.stats["empty_sessions"] == 1
+
+
+def test_retry_on_exception_succeeds():
+    valid_json = json.dumps([{"fact": "A fact.", "sources": ["D1:1"]}])
+    client = _ErrorThenOkClient(raises=OSError("timeout"), then_returns=valid_json)
+    ex = FactExtractor(client=client, retries=1)
+    facts = ex.extract_session(TURNS)
+    assert len(facts) == 1
+
+
+def test_non_dict_items_in_array_skipped():
+    raw = json.dumps(["not a dict", {"fact": "Real.", "sources": ["D1:1"]}])
+    fake = FakeClient([raw])
+    ex = FactExtractor(client=fake)
+    facts = ex.extract_session(TURNS)
+    assert len(facts) == 1  # only the dict item survives
+
+
+def test_item_without_text_skipped():
+    raw = json.dumps([{"fact": "", "sources": ["D1:1"]}])
+    fake = FakeClient([raw])
+    ex = FactExtractor(client=fake)
+    facts = ex.extract_session(TURNS)
+    assert facts == []
+    assert ex.stats["empty_sessions"] == 1
+
+
+def test_extract_many():
+    valid = json.dumps([{"fact": "A fact.", "sources": ["D1:1"]}])
+    fake = FakeClient([valid, "[]"])
+    ex = FactExtractor(client=fake)
+    results = ex.extract_many([(TURNS, "2025-01-01"), (TURNS, "")])
+    assert len(results) == 2
+    assert len(results[0]) == 1
+    assert results[1] == []
