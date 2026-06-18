@@ -769,6 +769,31 @@ class Store:
             self._db.commit()
         return cur.rowcount
 
+    def word_frequency(self, ns: str | None = "default", top_n: int = 20) -> list[dict]:
+        """Return the most frequent words across all memory texts in *ns*.
+
+        Tokenises each ``text`` column value by splitting on whitespace and
+        stripping punctuation.  Stop words are not removed — callers may
+        filter the result themselves.  Returns a list of
+        ``{"word": str, "count": int}`` dicts sorted by count descending,
+        capped at *top_n* (max 500).
+        """
+        import re as _re_wf
+        top_n = max(1, min(int(top_n), 500))
+        if ns is not None:
+            rows = self._db.execute(
+                "SELECT text FROM memories WHERE ns=?", (ns,)
+            ).fetchall()
+        else:
+            rows = self._db.execute("SELECT text FROM memories").fetchall()
+        freq: dict[str, int] = {}
+        for (text,) in rows:
+            for word in _re_wf.split(r"[\s\W]+", text.lower()):
+                if len(word) >= 2:
+                    freq[word] = freq.get(word, 0) + 1
+        sorted_words = sorted(freq.items(), key=lambda kv: kv[1], reverse=True)
+        return [{"word": w, "count": c} for w, c in sorted_words[:top_n]]
+
     def find_by_tag(self, tag: str, ns: str | None = "default", limit: int = 100) -> list[dict]:
         """Return memories whose meta JSON contains *tag* in the ``tags`` list.
 

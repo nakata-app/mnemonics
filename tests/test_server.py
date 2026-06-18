@@ -636,6 +636,7 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_untag",
         "mnemonics_find_by_tag",
         "mnemonics_list_tags",
+        "mnemonics_word_frequency",
     }
 
 
@@ -3709,3 +3710,44 @@ def test_mcp_list_tags_empty(tmp_store):
     })[0]
     assert "result" in r
     assert "No tags" in r["result"]["content"][0]["text"]
+
+
+# ── word-frequency REST + MCP ─────────────────────────────────────────────────
+
+def test_http_word_frequency_ok(populated_store):
+    """GET /word-frequency?ns=default returns word list."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/word-frequency?ns=default", {})
+    assert code == 200
+    assert isinstance(data["words"], list)
+    assert len(data["words"]) > 0
+
+
+def test_http_word_frequency_all_ns(populated_store):
+    """GET /word-frequency (no ns) returns all-namespace words."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/word-frequency", {})
+    assert code == 200
+    assert data["ns"] is None
+
+
+def test_mcp_word_frequency_ok(populated_store):
+    """MCP mnemonics_word_frequency returns formatted word list."""
+    store, docs, vecs = populated_store
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_word_frequency",
+                   "arguments": {"ns": "default", "top_n": 5}},
+    })[0]
+    assert "result" in r
+    assert "Top" in r["result"]["content"][0]["text"]
+
+
+def test_mcp_word_frequency_empty(tmp_store):
+    """MCP mnemonics_word_frequency on empty store returns no-words message."""
+    r = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_word_frequency", "arguments": {"ns": "default"}},
+    })[0]
+    assert "result" in r
+    assert "No words" in r["result"]["content"][0]["text"]

@@ -3049,3 +3049,62 @@ def test_cli_list_tags_json(tmp_path, capsys):
         main()
     parsed = json.loads(capsys.readouterr().out)
     assert parsed[0]["tag"] == "z"
+
+
+# ── word-frequency CLI ────────────────────────────────────────────────────────
+
+def test_cli_word_frequency_ok(tmp_path, capsys):
+    """word-frequency prints top words."""
+    mock_store = MagicMock()
+    mock_store.word_frequency.return_value = [
+        {"word": "python", "count": 5},
+        {"word": "data", "count": 3},
+    ]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "word-frequency", "--ns", "default",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "python" in out and "5" in out
+
+
+def test_cli_word_frequency_empty(tmp_path, capsys):
+    """word-frequency prints 'No words' when empty."""
+    mock_store = MagicMock()
+    mock_store.word_frequency.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "word-frequency",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    assert "No words" in capsys.readouterr().out
+
+
+def test_cli_word_frequency_json(tmp_path, capsys):
+    """word-frequency --json outputs valid JSON."""
+    mock_store = MagicMock()
+    mock_store.word_frequency.return_value = [{"word": "ai", "count": 7}]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "word-frequency", "--json",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    parsed = json.loads(capsys.readouterr().out)
+    assert parsed[0]["word"] == "ai"
+
+
+def test_cli_word_frequency_all_ns(tmp_path, capsys):
+    """word-frequency --all-ns passes ns=None."""
+    mock_store = MagicMock()
+    mock_store.word_frequency.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "word-frequency", "--all-ns",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.word_frequency.assert_called_once_with(None, 20)

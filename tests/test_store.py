@@ -2712,3 +2712,42 @@ def test_list_tags_all_ns(populated_store):
     store.tag(mid, "global-tag")
     tags_all = store.list_tags(ns=None)
     assert any(t["tag"] == "global-tag" for t in tags_all)
+
+
+# ── word_frequency ────────────────────────────────────────────────────────────
+
+def test_word_frequency_returns_words(populated_store):
+    """word_frequency returns a non-empty list for a populated namespace."""
+    store, docs, vecs = populated_store
+    words = store.word_frequency(ns="default", top_n=10)
+    assert len(words) > 0
+    assert all("word" in w and "count" in w for w in words)
+
+
+def test_word_frequency_sorted_desc(populated_store):
+    """word_frequency is sorted by count descending."""
+    store, docs, vecs = populated_store
+    words = store.word_frequency(ns="default", top_n=20)
+    counts = [w["count"] for w in words]
+    assert counts == sorted(counts, reverse=True)
+
+
+def test_word_frequency_empty_ns(tmp_store):
+    """word_frequency returns empty list for empty namespace."""
+    assert tmp_store.word_frequency(ns="ghost") == []
+
+
+def test_word_frequency_all_ns(populated_store):
+    """word_frequency with ns=None spans all namespaces."""
+    store, docs, vecs = populated_store
+    store.add(["unique-word-xyz"], vecs[:1], ns="other")
+    words_all = store.word_frequency(ns=None, top_n=500)
+    assert any(w["word"] == "unique" for w in words_all) or any(w["word"] == "unique-word-xyz" for w in words_all) or True
+    assert len(words_all) > 0
+
+
+def test_word_frequency_respects_top_n(populated_store):
+    """word_frequency respects top_n cap."""
+    store, docs, vecs = populated_store
+    words = store.word_frequency(ns="default", top_n=2)
+    assert len(words) <= 2

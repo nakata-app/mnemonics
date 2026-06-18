@@ -531,6 +531,13 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(200, _get_store().health_check())
         elif path == "/namespaces":
             self._json(200, {"namespaces": _get_store().list_namespaces()})
+        elif path.startswith("/word-frequency"):
+            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_wf
+            qs_wf = parse_qs(urlparse(self.path).query)
+            ns_wf_raw = qs_wf.get("ns", [None])[0]
+            ns_wf = _uqp_wf(ns_wf_raw) if ns_wf_raw is not None else None
+            top_n_wf = int(qs_wf.get("top_n", ["20"])[0])
+            self._json(200, {"ns": ns_wf, "words": _get_store().word_frequency(ns_wf, top_n_wf)})
         elif path.startswith("/find-by-tag"):
             from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_fbt
             qs_fbt = parse_qs(urlparse(self.path).query)
@@ -889,6 +896,17 @@ def _mcp_loop() -> None:
                             "max_tier": {"type": "integer", "description": "Only return memories with tier <= this value"},
                         },
                         "required": ["query", "vector"],
+                    },
+                },
+                {
+                    "name": "mnemonics_word_frequency",
+                    "description": "Return the most frequent words across all memory texts in a namespace (or all namespaces). Tokenises on whitespace and punctuation; minimum word length is 2. Returns {word, count} list sorted by count descending.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ns": {"type": "string", "description": "Namespace to analyse (omit for all namespaces)"},
+                            "top_n": {"type": "integer", "default": 20, "description": "Max words to return (max 500)"},
+                        },
                     },
                 },
                 {
@@ -1542,6 +1560,19 @@ def _mcp_loop() -> None:
                         if r.get("summary"):
                             lines_hs.append(f"           summary: {r['summary'][:120]}")
                     ok({"content": [{"type": "text", "text": "\n".join(lines_hs)}]})
+
+            elif name == "mnemonics_word_frequency":
+                wf_ns = args.get("ns")
+                wf_top = int(args.get("top_n", 20))
+                wf_words = _get_store().word_frequency(wf_ns, wf_top)
+                wf_ns_label = repr(wf_ns) if wf_ns is not None else "(all)"
+                if not wf_words:
+                    ok({"content": [{"type": "text", "text": f"No words found in ns={wf_ns_label}."}]})
+                    continue
+                lines_wf = [f"Top {len(wf_words)} words in ns={wf_ns_label}:"]
+                for w in wf_words:
+                    lines_wf.append(f"  {w['word']:25s} {w['count']}")
+                ok({"content": [{"type": "text", "text": "\n".join(lines_wf)}]})
 
             elif name == "mnemonics_find_by_tag":
                 fbt_tag = args.get("tag", "").strip()

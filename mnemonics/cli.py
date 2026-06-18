@@ -80,6 +80,14 @@ def main() -> None:
     ts.add_argument("--json", dest="json_out", action="store_true", help="Output results as JSON array")
     ts.add_argument("--path", default="~/.mnemonics")
 
+    # word-frequency
+    wfp = sub.add_parser("word-frequency", help="Show most frequent words in a namespace")
+    wfp.add_argument("--ns", default="default")
+    wfp.add_argument("--all-ns", action="store_true")
+    wfp.add_argument("--top-n", type=int, default=20)
+    wfp.add_argument("--json", dest="json_out", action="store_true")
+    wfp.add_argument("--path", default="~/.mnemonics")
+
     # find-by-tag
     fbt = sub.add_parser("find-by-tag", help="Find memories with a specific tag")
     fbt.add_argument("tag", help="Tag to search for")
@@ -568,6 +576,22 @@ def main() -> None:
                 print(line)
                 if r.get("summary"):
                     print(f"           summary: {r['summary']}")
+
+    elif args.cmd == "word-frequency":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        ns_q = None if args.all_ns else args.ns
+        words = store.word_frequency(ns_q, args.top_n)
+        if args.json_out:
+            print(json.dumps(words, default=str, ensure_ascii=False))
+        else:
+            ns_label = repr(ns_q) if ns_q is not None else "(all)"
+            if not words:
+                print(f"No words found in ns={ns_label}.")
+            else:
+                print(f"Top {len(words)} words in ns={ns_label}:")
+                for w in words:
+                    print(f"  {w['word']:25s} {w['count']}")
 
     elif args.cmd == "find-by-tag":
         from mnemonics.store import Store
