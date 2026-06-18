@@ -50,6 +50,72 @@ def test_ingest_namespace(tmp_path):
     assert call_kwargs["ns"] == "myns"
 
 
+def test_ingest_dedup_no_match_ingests(tmp_path, capsys):
+    """When --dedup finds no near-duplicates, ingest proceeds normally."""
+    with (
+        patch("mnemonics.store.Store"),
+        patch("mnemonics.ingest.ingest", return_value=1) as mock_ingest,
+        patch("mnemonics.dedup.find_similar", return_value=[]),
+        patch("sys.argv", ["mnemonics", "ingest", "hello", "--dedup", "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_ingest.assert_called_once()
+    assert "1" in capsys.readouterr().out
+
+
+def test_ingest_dedup_skip_similar_exits(tmp_path, capsys):
+    """When --dedup finds matches and --skip-similar is set, ingest is skipped."""
+    match = {"id": 99, "text": "hello world", "similarity": 0.97}
+    with (
+        patch("mnemonics.store.Store"),
+        patch("mnemonics.ingest.ingest") as mock_ingest,
+        patch("mnemonics.dedup.find_similar", return_value=[match]),
+        patch("sys.argv", ["mnemonics", "ingest", "hello", "--dedup", "--skip-similar",
+                           "--path", str(tmp_path)]),
+    ):
+        try:
+            main()
+        except SystemExit:
+            pass
+    mock_ingest.assert_not_called()
+    out = capsys.readouterr().out
+    assert "Skip" in out or "skip" in out
+
+
+def test_ingest_dedup_force_new_ingests(tmp_path, capsys):
+    """When --dedup finds matches but --force-new is set, ingest proceeds."""
+    match = {"id": 99, "text": "hello world", "similarity": 0.97}
+    with (
+        patch("mnemonics.store.Store"),
+        patch("mnemonics.ingest.ingest", return_value=1) as mock_ingest,
+        patch("mnemonics.dedup.find_similar", return_value=[match]),
+        patch("sys.argv", ["mnemonics", "ingest", "hello", "--dedup", "--force-new",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_ingest.assert_called_once()
+
+
+def test_ingest_dedup_non_interactive_exits(tmp_path, capsys):
+    """Non-interactive run with matches exits without ingesting."""
+    match = {"id": 99, "text": "hello world", "similarity": 0.97}
+    with (
+        patch("mnemonics.store.Store"),
+        patch("mnemonics.ingest.ingest") as mock_ingest,
+        patch("mnemonics.dedup.find_similar", return_value=[match]),
+        patch("sys.stdin.isatty", return_value=False),
+        patch("sys.argv", ["mnemonics", "ingest", "hello", "--dedup",
+                           "--path", str(tmp_path)]),
+    ):
+        try:
+            main()
+        except SystemExit:
+            pass
+    mock_ingest.assert_not_called()
+    out = capsys.readouterr().out
+    assert "Non-interactive" in out or "non-interactive" in out.lower() or "force-new" in out
+
+
 def test_ingest_multiple_words_joined(tmp_path):
     with (
         patch("mnemonics.store.Store"),
