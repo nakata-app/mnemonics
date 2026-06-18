@@ -125,13 +125,13 @@ class _Handler(BaseHTTPRequestHandler):
             store = _get_store()
             before = body.get("before") or None
             tier_val = body.get("tier")
-            tier = int(tier_val) if tier_val is not None else None
+            tier_filter = int(tier_val) if tier_val is not None else None  # type: ignore[assignment]
             dry_run = bool(body.get("dry_run", True))
-            candidates = store.forget_candidates(ns=ns, before=before, tier=tier)
+            candidates = store.forget_candidates(ns=ns, before=before, tier=tier_filter)
             if dry_run:
                 self._json(200, {"candidates": len(candidates), "dry_run": True})
             else:
-                n = store.forget(ns=ns, before=before, tier=tier)
+                n = store.forget(ns=ns, before=before, tier=tier_filter)
                 self._json(200, {"deleted": n, "dry_run": False})
 
         elif self.path == "/search-bm25":
@@ -152,13 +152,13 @@ class _Handler(BaseHTTPRequestHandler):
             store = _get_store()
             before = body.get("before") or None
             tier_val = body.get("tier")
-            tier = int(tier_val) if tier_val is not None else None
+            tier_filter = int(tier_val) if tier_val is not None else None  # type: ignore[assignment]
             dry_run = bool(body.get("dry_run", True))
-            candidates = store.forget_candidates(ns=ns, before=before, tier=tier)
+            candidates = store.forget_candidates(ns=ns, before=before, tier=tier_filter)
             if dry_run:
                 self._json(200, {"ns": ns, "candidates": len(candidates), "dry_run": True})
             else:
-                n = store.forget(ns=ns, before=before, tier=tier)
+                n = store.forget(ns=ns, before=before, tier=tier_filter)
                 self._json(200, {"ns": ns, "deleted": n, "dry_run": False})
 
         elif self.path == "/ingest":

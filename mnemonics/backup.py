@@ -109,10 +109,10 @@ def restore(
             # Force a flat extraction — discard any directory prefix that
             # snuck into the arcname despite the prefix check.
             target = dest / Path(member.name).name
-            with tf.extractfile(member) as src:
-                if src is None:
-                    continue
-                data = src.read()
+            src = tf.extractfile(member)
+            if src is None:  # pragma: no cover — isfile() guard above makes this unreachable
+                continue
+            data = src.read()
             target.write_bytes(data)
             written.append(target.name)
     return written

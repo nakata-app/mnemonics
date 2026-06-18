@@ -113,7 +113,7 @@ def extract_preferences(text: str) -> list[str]:
     out: list[str] = []
     for pat in _PREF_PATTERNS:
         for m in pat.finditer(text):
-            if not m.groups():
+            if not m.groups():  # pragma: no cover — all _PREF_PATTERNS have capture groups
                 continue
             clean = m.group(1).strip().rstrip(".,;!? ")
             if 5 <= len(clean) <= 80 and clean.lower() not in seen:
