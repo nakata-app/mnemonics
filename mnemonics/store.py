@@ -297,7 +297,14 @@ class Store:
             self._index_mtime[ns] = idx_path.stat().st_mtime
         return ids
 
-    def search(self, vector: np.ndarray, ns: str = "default", top_k: int = 5) -> list[dict[str, Any]]:
+    def search(
+        self,
+        vector: np.ndarray,
+        ns: str = "default",
+        top_k: int = 5,
+        min_tier: int | None = None,
+        max_tier: int | None = None,
+    ) -> list[dict[str, Any]]:
         # Shared lock — multiple peers may search the same ns concurrently;
         # only a writer needs to block them. Reload-if-stale picks up freshly
         # written rows from a peer between two of our search calls.
@@ -314,10 +321,18 @@ class Store:
                 return []
             row_ids = [int(x) for x in labels[0]]
             placeholders = ",".join("?" * len(row_ids))
+            tier_clause = ""
+            tier_params: list[int] = []
+            if min_tier is not None:
+                tier_clause += " AND tier >= ?"
+                tier_params.append(min_tier)
+            if max_tier is not None:
+                tier_clause += " AND tier <= ?"
+                tier_params.append(max_tier)
             rows = self._db.execute(
                 f"SELECT id, text, summary, meta, created, tier, last_accessed, access_count "
-                f"FROM memories WHERE id IN ({placeholders})",
-                row_ids,
+                f"FROM memories WHERE id IN ({placeholders}){tier_clause}",
+                (*row_ids, *tier_params),
             ).fetchall()
             by_id = {r[0]: r for r in rows}
             results = []

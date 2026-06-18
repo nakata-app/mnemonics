@@ -1073,3 +1073,35 @@ def test_search_bm25_tier_range_filter(tmp_path):
     assert ids[1] in result_ids
     assert ids[0] not in result_ids
     assert ids[2] not in result_ids
+
+
+def test_search_min_tier_excludes_pinned(tmp_path):
+    """search min_tier=1 excludes tier-0 (pinned) items."""
+    import numpy as np
+    from mnemonics.store import DIM, Store
+    rng = np.random.default_rng(42)
+    s = Store(tmp_path)
+    v = rng.random((2, DIM)).astype("float32")
+    v /= np.linalg.norm(v, axis=1, keepdims=True)
+    ids = s.add(["pinned memory", "default memory"], v)
+    s.pin(ids[0])  # tier=0
+    results = s.search(v[0], top_k=5, min_tier=1)
+    result_ids = {r["id"] for r in results}
+    assert ids[0] not in result_ids
+    assert ids[1] in result_ids
+
+
+def test_search_max_tier_excludes_ambient(tmp_path):
+    """search max_tier=1 excludes tier-2 (ambient) items."""
+    import numpy as np
+    from mnemonics.store import DIM, Store
+    rng = np.random.default_rng(99)
+    s = Store(tmp_path)
+    v = rng.random((2, DIM)).astype("float32")
+    v /= np.linalg.norm(v, axis=1, keepdims=True)
+    ids = s.add(["default memory", "ambient memory"], v)
+    s.set_tier(ids[1], 2)  # tier=2
+    results = s.search(v[1], top_k=5, max_tier=1)
+    result_ids = {r["id"] for r in results}
+    assert ids[1] not in result_ids
+    assert ids[0] in result_ids
