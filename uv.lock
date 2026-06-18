@@ -732,6 +732,12 @@ encrypt = [
     { name = "sqlcipher3" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "coverage" },
+    { name = "pytest" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "hnswlib", specifier = ">=0.8" },
@@ -744,6 +750,12 @@ requires-dist = [
     { name = "sqlcipher3", marker = "extra == 'encrypt'", specifier = ">=0.5" },
 ]
 provides-extras = ["dev", "encrypt"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "coverage", specifier = ">=7.13.5" },
+    { name = "pytest", specifier = ">=9.0.3" },
+]
 
 [[package]]
 name = "more-itertools"

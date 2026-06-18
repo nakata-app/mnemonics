@@ -114,3 +114,11 @@ def test_parse_json_array_variants():
     assert _parse_json_array("prose [1, 2] trailing") == [1, 2]
     assert _parse_json_array("{\"a\": 1}") == []
     assert _parse_json_array("[{\"fact\": \"x\"}]") == [{"fact": "x"}]
+    # s < 0 (no '[') → returns []
+    assert _parse_json_array("no brackets here") == []
+    # s >= 0, e <= s (no ']') → returns []
+    assert _parse_json_array("[no close bracket") == []
+    # Both brackets present but invalid JSON inside → JSONDecodeError path
+    assert _parse_json_array("[broken json]") == []
+    # Non-list JSON (dict at top level) → returns []
+    assert _parse_json_array("{\"k\": \"v\"}") == []
