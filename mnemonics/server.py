@@ -262,6 +262,15 @@ class _Handler(BaseHTTPRequestHandler):
             n_mtn = _get_store().move_to_ns([int(i) for i in mtn_ids], mtn_ns)
             self._json(200, {"moved": n_mtn, "target_ns": mtn_ns})
 
+        elif self.path == "/import-records":
+            ir_records = body.get("records")
+            ir_ns_override = body.get("ns")
+            if not isinstance(ir_records, list):
+                self._json(400, {"error": "'records' (list of dicts) is required"})
+                return
+            n_ir = _get_store().import_records(ir_records, ns_override=ir_ns_override or None)
+            self._json(200, {"imported": n_ir})
+
         elif self.path == "/touch":
             tc_id = body.get("id")
             if tc_id is None:
@@ -560,6 +569,12 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(200, _get_store().health_check())
         elif path == "/namespaces":
             self._json(200, {"namespaces": _get_store().list_namespaces()})
+        elif path.startswith("/text-stats"):
+            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_ts
+            qs_ts = parse_qs(urlparse(self.path).query)
+            ns_ts_raw = qs_ts.get("ns", [None])[0]
+            ns_ts = _uqp_ts(ns_ts_raw) if ns_ts_raw is not None else None
+            self._json(200, _get_store().text_stats(ns_ts))
         elif path.startswith("/count-by-tier"):
             from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_cbt
             qs_cbt = parse_qs(urlparse(self.path).query)
@@ -968,6 +983,32 @@ def _mcp_loop() -> None:
                             "max_tier": {"type": "integer", "description": "Only return memories with tier <= this value"},
                         },
                         "required": ["query", "vector"],
+                    },
+                },
+                {
+                    "name": "mnemonics_import_records",
+                    "description": "Import a list of memory records into the store. Each record must have 'text'; optional: 'ns', 'summary', 'meta', 'tier'. Records without vectors are stored with zero vectors (keyword-only). Optionally override all namespaces via 'ns'.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "records": {
+                                "type": "array",
+                                "items": {"type": "object"},
+                                "description": "List of record dicts with at least 'text' key",
+                            },
+                            "ns": {"type": "string", "description": "Optional namespace override for all records"},
+                        },
+                        "required": ["records"],
+                    },
+                },
+                {
+                    "name": "mnemonics_text_stats",
+                    "description": "Return text-length and word-count statistics for a namespace: count, total_chars, avg_chars, min_chars, max_chars, total_words, avg_words. Omit 'ns' to span all namespaces.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ns": {"type": "string", "description": "Namespace (omit for all)"},
+                        },
                     },
                 },
                 {
@@ -1713,6 +1754,24 @@ def _mcp_loop() -> None:
                         if r.get("summary"):
                             lines_hs.append(f"           summary: {r['summary'][:120]}")
                     ok({"content": [{"type": "text", "text": "\n".join(lines_hs)}]})
+
+            elif name == "mnemonics_import_records":
+                ir_recs = args.get("records")
+                ir_ns_ov = args.get("ns")
+                if not isinstance(ir_recs, list):
+                    err("mnemonics_import_records: 'records' (list of dicts) is required")
+                    continue
+                n_ir_m = _get_store().import_records(ir_recs, ns_override=ir_ns_ov or None)
+                ok({"content": [{"type": "text", "text": f"Imported {n_ir_m} records."}]})
+
+            elif name == "mnemonics_text_stats":
+                ts_ns = args.get("ns")
+                ts_stats = _get_store().text_stats(ts_ns)
+                ts_ns_label = repr(ts_ns) if ts_ns is not None else "(all)"
+                lines_ts = [f"Text stats for ns={ts_ns_label}:"]
+                for k, v in ts_stats.items():
+                    lines_ts.append(f"  {k:<14}: {v}")
+                ok({"content": [{"type": "text", "text": "\n".join(lines_ts)}]})
 
             elif name == "mnemonics_touch":
                 tc_id_m = args.get("id")

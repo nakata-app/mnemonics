@@ -769,6 +769,76 @@ class Store:
             self._db.commit()
         return cur.rowcount
 
+    def import_records(
+        self,
+        records: list[dict],
+        *,
+        ns_override: str | None = None,
+        vecs: "list | None" = None,
+    ) -> int:
+        """Import records produced by :meth:`export_ns` (or hand-crafted dicts).
+
+        Each record must have at least ``text``.  Optional keys: ``ns``,
+        ``summary``, ``meta``, ``tier``.  If *ns_override* is given it
+        overrides the ``ns`` field in every record.  If *vecs* is given it
+        must be a list of numpy arrays (one per record); otherwise records
+        are stored with a zero vector (suitable for keyword-only import).
+
+        Returns the count of successfully imported records.
+        """
+        import numpy as np
+
+        zero = np.zeros(self.dim, dtype=np.float32)
+        imported = 0
+        for i, rec in enumerate(records):
+            text = rec.get("text")
+            if not text:
+                continue
+            ns_val = ns_override or rec.get("ns", "default")
+            summary = rec.get("summary")
+            meta_raw = rec.get("meta", {})
+            meta_dict = meta_raw if isinstance(meta_raw, dict) else {}
+            tier = int(rec.get("tier", 1))
+            vec = vecs[i] if vecs is not None else zero
+            self.add([text], [vec], ns=ns_val, meta=[meta_dict],
+                     summaries=[summary], tier=tier)
+            imported += 1
+        return imported
+
+    def text_stats(self, ns: str | None = "default") -> dict:
+        """Return text-length and word-count statistics for a namespace.
+
+        Keys: ``count``, ``total_chars``, ``avg_chars``, ``min_chars``,
+        ``max_chars``, ``total_words``, ``avg_words``.  *ns=None* spans
+        all namespaces.  Returns zeroed stats for an empty namespace.
+        """
+        import re as _re_ts
+
+        if ns is not None:
+            rows = self._db.execute(
+                "SELECT text FROM memories WHERE ns=?", (ns,)
+            ).fetchall()
+        else:
+            rows = self._db.execute("SELECT text FROM memories").fetchall()
+
+        texts = [r[0] for r in rows if r[0]]
+        if not texts:
+            return {"count": 0, "total_chars": 0, "avg_chars": 0.0,
+                    "min_chars": 0, "max_chars": 0, "total_words": 0, "avg_words": 0.0}
+
+        char_lengths = [len(t) for t in texts]
+        word_counts = [len(_re_ts.split(r"\s+", t.strip())) for t in texts]
+        n = len(texts)
+        return {
+            "count": n,
+            "total_chars": sum(char_lengths),
+            "avg_chars": round(sum(char_lengths) / n, 2),
+            "min_chars": min(char_lengths),
+            "max_chars": max(char_lengths),
+            "total_words": sum(word_counts),
+            "avg_words": round(sum(word_counts) / n, 2),
+        }
+
     def touch(self, memory_id: int) -> bool:
         """Update ``last_accessed`` to the current UTC time without changing ``access_count``.
 

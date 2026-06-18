@@ -2959,3 +2959,68 @@ def test_count_by_tier_all_ns(populated_store):
 def test_count_by_tier_empty_ns(tmp_store):
     """count_by_tier returns empty dict for namespace with no memories."""
     assert tmp_store.count_by_tier("ghost") == {}
+
+
+# ── import_records ────────────────────────────────────────────────────────────
+
+def test_import_records_basic(tmp_store):
+    """import_records stores records and returns count."""
+    records = [
+        {"text": "first memory", "ns": "import-test", "tier": 1},
+        {"text": "second memory", "ns": "import-test", "tier": 2},
+    ]
+    n = tmp_store.import_records(records)
+    assert n == 2
+    rows = tmp_store._db.execute("SELECT text FROM memories WHERE ns='import-test'").fetchall()
+    assert len(rows) == 2
+
+
+def test_import_records_ns_override(tmp_store):
+    """ns_override supersedes record's own ns field."""
+    records = [{"text": "override me", "ns": "original"}]
+    tmp_store.import_records(records, ns_override="forced-ns")
+    row = tmp_store._db.execute("SELECT ns FROM memories WHERE text='override me'").fetchone()
+    assert row[0] == "forced-ns"
+
+
+def test_import_records_skips_empty_text(tmp_store):
+    """Records without 'text' are silently skipped."""
+    records = [{"text": ""}, {"ns": "x"}, {"text": "valid"}]
+    n = tmp_store.import_records(records)
+    assert n == 1
+
+
+def test_import_records_empty_list(tmp_store):
+    """import_records returns 0 for an empty list."""
+    assert tmp_store.import_records([]) == 0
+
+
+# ── text_stats ────────────────────────────────────────────────────────────────
+
+def test_text_stats_returns_keys(populated_store):
+    """text_stats returns all expected keys."""
+    store, docs, vecs = populated_store
+    stats = store.text_stats("default")
+    expected = {"count", "total_chars", "avg_chars", "min_chars", "max_chars", "total_words", "avg_words"}
+    assert expected.issubset(stats.keys())
+
+
+def test_text_stats_count_matches(populated_store):
+    """text_stats count matches number of memories in namespace."""
+    store, docs, vecs = populated_store
+    stats = store.text_stats("default")
+    assert stats["count"] == len(docs)
+
+
+def test_text_stats_all_ns(populated_store):
+    """text_stats ns=None spans all namespaces."""
+    store, docs, vecs = populated_store
+    stats = store.text_stats(None)
+    assert stats["count"] >= len(docs)
+
+
+def test_text_stats_empty_ns(tmp_store):
+    """text_stats returns zeroed dict for empty namespace."""
+    stats = tmp_store.text_stats("ghost")
+    assert stats["count"] == 0
+    assert stats["total_chars"] == 0

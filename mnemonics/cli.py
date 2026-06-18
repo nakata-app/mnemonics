@@ -80,6 +80,19 @@ def main() -> None:
     ts.add_argument("--json", dest="json_out", action="store_true", help="Output results as JSON array")
     ts.add_argument("--path", default="~/.mnemonics")
 
+    # import-records
+    irec = sub.add_parser("import-records", help="Import memories from a JSON file (produced by export-ns)")
+    irec.add_argument("file", help="JSON file path (or '-' for stdin)")
+    irec.add_argument("--ns", default=None, help="Override namespace for all records")
+    irec.add_argument("--path", default="~/.mnemonics")
+
+    # text-stats
+    tst = sub.add_parser("text-stats", help="Show text length and word count stats for a namespace")
+    tst.add_argument("--ns", default="default")
+    tst.add_argument("--all-ns", action="store_true")
+    tst.add_argument("--json", action="store_true", dest="as_json")
+    tst.add_argument("--path", default="~/.mnemonics")
+
     # touch
     tc = sub.add_parser("touch", help="Update last_accessed without incrementing access_count")
     tc.add_argument("id", type=int, help="Memory ID")
@@ -621,6 +634,30 @@ def main() -> None:
                 print(line)
                 if r.get("summary"):
                     print(f"           summary: {r['summary']}")
+
+    elif args.cmd == "import-records":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        if args.file == "-":
+            records = json.load(sys.stdin)
+        else:
+            with open(args.file, encoding="utf-8") as fh:
+                records = json.load(fh)
+        n = store.import_records(records, ns_override=args.ns)
+        print(f"Imported {n} records.")
+
+    elif args.cmd == "text-stats":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        ns_q = None if args.all_ns else args.ns
+        stats = store.text_stats(ns_q)
+        if args.as_json:
+            print(json.dumps(stats))
+        else:
+            ns_label = repr(ns_q) if ns_q is not None else "(all)"
+            print(f"Text stats for ns={ns_label}:")
+            for k, v in stats.items():
+                print(f"  {k:<14}: {v}")
 
     elif args.cmd == "touch":
         from mnemonics.store import Store

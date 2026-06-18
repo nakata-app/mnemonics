@@ -644,6 +644,8 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_touch",
         "mnemonics_bulk_untag",
         "mnemonics_count_by_tier",
+        "mnemonics_import_records",
+        "mnemonics_text_stats",
     }
 
 
@@ -4078,3 +4080,83 @@ def test_mcp_count_by_tier_empty(tmp_store):
     })[0]
     assert "result" in r
     assert "(empty)" in r["result"]["content"][0]["text"]
+
+
+# ── import-records / text-stats REST + MCP ────────────────────────────────────
+
+def test_http_import_records_ok(tmp_store):
+    """POST /import-records stores records and returns count."""
+    records = [{"text": "imported 1", "ns": "test"}, {"text": "imported 2", "ns": "test"}]
+    code, data = http_call(tmp_store, "POST", "/import-records", {"records": records})
+    assert code == 200
+    assert data["imported"] == 2
+
+
+def test_http_import_records_with_ns(tmp_store):
+    """POST /import-records with ns override applies it."""
+    records = [{"text": "hello"}]
+    code, data = http_call(tmp_store, "POST", "/import-records", {"records": records, "ns": "override-ns"})
+    assert code == 200
+
+
+def test_http_import_records_missing_param(tmp_store):
+    """POST /import-records without records returns 400."""
+    code, data = http_call(tmp_store, "POST", "/import-records", {"ns": "test"})
+    assert code == 400
+
+
+def test_http_text_stats_ok(populated_store):
+    """GET /text-stats?ns=default returns all stat keys."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/text-stats?ns=default", {})
+    assert code == 200
+    assert data["count"] == len(docs)
+
+
+def test_http_text_stats_all_ns(populated_store):
+    """GET /text-stats without ns spans all namespaces."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/text-stats", {})
+    assert code == 200
+    assert data["count"] >= len(docs)
+
+
+def test_mcp_import_records_ok(tmp_store):
+    """MCP mnemonics_import_records stores records."""
+    records = [{"text": "mcp import", "ns": "mcp-test"}]
+    r = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_import_records", "arguments": {"records": records}},
+    })[0]
+    assert "result" in r
+    assert "1" in r["result"]["content"][0]["text"]
+
+
+def test_mcp_import_records_missing_arg(tmp_store):
+    """MCP mnemonics_import_records without records returns error."""
+    r = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_import_records", "arguments": {}},
+    })[0]
+    assert "error" in r
+
+
+def test_mcp_text_stats_ok(populated_store):
+    """MCP mnemonics_text_stats returns count and stats."""
+    store, docs, vecs = populated_store
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_text_stats", "arguments": {"ns": "default"}},
+    })[0]
+    assert "result" in r
+    assert "count" in r["result"]["content"][0]["text"]
+
+
+def test_mcp_text_stats_all_ns(populated_store):
+    """MCP mnemonics_text_stats without ns spans all namespaces."""
+    store, docs, vecs = populated_store
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_text_stats", "arguments": {}},
+    })[0]
+    assert "result" in r

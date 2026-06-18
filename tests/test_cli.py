@@ -3317,3 +3317,80 @@ def test_cli_count_by_tier_all_ns(tmp_path, capsys):
     ):
         main()
     mock_store.count_by_tier.assert_called_once_with(None)
+
+
+# ── import-records CLI ────────────────────────────────────────────────────────
+
+def test_cli_import_records_from_file(tmp_path, capsys):
+    """import-records loads JSON from file and prints count."""
+    import json as _j
+    data_file = tmp_path / "records.json"
+    data_file.write_text(_j.dumps([{"text": "hello"}, {"text": "world"}]))
+    mock_store = MagicMock()
+    mock_store.import_records.return_value = 2
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "import-records", str(data_file), "--path", str(tmp_path)]),
+    ):
+        main()
+    assert "2" in capsys.readouterr().out
+
+
+# ── text-stats CLI ────────────────────────────────────────────────────────────
+
+def test_cli_text_stats_ok(tmp_path, capsys):
+    """text-stats prints human-readable stats."""
+    mock_store = MagicMock()
+    mock_store.text_stats.return_value = {
+        "count": 3, "total_chars": 60, "avg_chars": 20.0,
+        "min_chars": 10, "max_chars": 30, "total_words": 9, "avg_words": 3.0,
+    }
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "text-stats", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "count" in out
+
+
+def test_cli_text_stats_json(tmp_path, capsys):
+    """text-stats --json outputs raw JSON."""
+    mock_store = MagicMock()
+    mock_store.text_stats.return_value = {"count": 1, "total_chars": 5,
+        "avg_chars": 5.0, "min_chars": 5, "max_chars": 5, "total_words": 1, "avg_words": 1.0}
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "text-stats", "--json", "--path", str(tmp_path)]),
+    ):
+        main()
+    parsed = json.loads(capsys.readouterr().out)
+    assert parsed["count"] == 1
+
+
+def test_cli_text_stats_all_ns(tmp_path, capsys):
+    """text-stats --all-ns passes ns=None to store."""
+    mock_store = MagicMock()
+    mock_store.text_stats.return_value = {"count": 0, "total_chars": 0,
+        "avg_chars": 0.0, "min_chars": 0, "max_chars": 0, "total_words": 0, "avg_words": 0.0}
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "text-stats", "--all-ns", "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.text_stats.assert_called_once_with(None)
+
+
+def test_cli_import_records_from_stdin(tmp_path, capsys):
+    """import-records reads JSON from stdin when file is '-'."""
+    import io, json as _j
+    mock_store = MagicMock()
+    mock_store.import_records.return_value = 1
+    stdin_data = _j.dumps([{"text": "stdin record"}])
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "import-records", "-", "--path", str(tmp_path)]),
+        patch("sys.stdin", io.StringIO(stdin_data)),
+    ):
+        main()
+    assert "1" in capsys.readouterr().out
