@@ -361,3 +361,47 @@ def test_get_rerank_ce_cache_hit(monkeypatch):
 
     result = _get_rerank_ce("test-model")
     assert result is sentinel
+
+
+# ── _get_rerank_ce adaptmem and import-error paths ────────────────────────────
+
+def test_get_rerank_ce_adaptmem_with_rerank(monkeypatch):
+    """adaptmem available + has rerank → return AdaptMem instance."""
+    import sys
+    from unittest.mock import MagicMock
+    from mnemonics import retrieve as _ret
+
+    mock_am = MagicMock()
+    mock_am.rerank = lambda q, t: []
+    mock_adaptmem_mod = MagicMock()
+    mock_adaptmem_mod.AdaptMem.return_value = mock_am
+
+    monkeypatch.setitem(sys.modules, "adaptmem", mock_adaptmem_mod)
+    _ret._rerank_ce = None
+    _ret._rerank_model_name = None
+
+    result = _ret._get_rerank_ce("dummy-model")
+    assert result is mock_am
+    _ret._rerank_ce = None
+    _ret._rerank_model_name = None
+
+
+def test_get_rerank_ce_missing_sentence_transformers(monkeypatch):
+    """If sentence_transformers is missing and adaptmem fails → RuntimeError."""
+    import sys
+    from unittest.mock import MagicMock
+    from mnemonics import retrieve as _ret
+
+    # Make adaptmem import fail
+    monkeypatch.setitem(sys.modules, "adaptmem", None)
+    # Make sentence_transformers import fail
+    monkeypatch.setitem(sys.modules, "sentence_transformers", None)
+    _ret._rerank_ce = None
+    _ret._rerank_model_name = None
+
+    import pytest
+    with pytest.raises(RuntimeError, match="sentence-transformers"):
+        _ret._get_rerank_ce("no-model")
+
+    _ret._rerank_ce = None
+    _ret._rerank_model_name = None
