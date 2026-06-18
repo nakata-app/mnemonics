@@ -249,6 +249,18 @@ class _Handler(BaseHTTPRequestHandler):
                     "amb": tiers.get(2, 0),
                 })
             self._json(200, {"namespaces": result})
+        elif path == "/memories":
+            qs = self.path.split("?", 1)[1] if "?" in self.path else ""
+            params: dict[str, str] = {}
+            for part in qs.split("&"):
+                if "=" in part:
+                    k, v = part.split("=", 1)
+                    params[k] = v
+            ns_val = params.get("ns", "default")
+            limit = min(int(params.get("limit", "20")), 100)
+            offset = int(params.get("offset", "0"))
+            rows = _get_store().list_memories(ns=ns_val, limit=limit, offset=offset)
+            self._json(200, {"ns": ns_val, "offset": offset, "count": len(rows), "rows": rows})
         elif path.startswith("/memory/"):
             try:
                 mid = int(path.split("/memory/")[1])
@@ -339,6 +351,18 @@ def _mcp_loop() -> None:
                             "rerank": {"type": "boolean", "description": "Cross-encoder rerank via AdaptMem over the candidate band (default false)"},
                         },
                         "required": ["query"],
+                    },
+                },
+                {
+                    "name": "mnemonics_list",
+                    "description": "Browse memories in a namespace, newest first. Returns id, text (first 200 chars), tier, summary, and timestamps. Useful for 'what's in this namespace?' audits without semantic search.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ns": {"type": "string", "description": "Namespace to list (default: 'default')"},
+                            "limit": {"type": "integer", "description": "Max rows to return (default: 20, max: 100)"},
+                            "offset": {"type": "integer", "description": "Pagination offset (default: 0)"},
+                        },
                     },
                 },
                 {
@@ -511,6 +535,25 @@ def _mcp_loop() -> None:
                     else:
                         lines.append(f"{header} {r['text'][:200]}")
                 ok({"content": [{"type": "text", "text": "\n".join(lines)}]})
+
+            elif name == "mnemonics_list":
+                ns_val = args.get("ns", "default")
+                limit = min(int(args.get("limit", 20)), 100)
+                offset = int(args.get("offset", 0))
+                rows = _get_store().list_memories(ns=ns_val, limit=limit, offset=offset)
+                if not rows:
+                    ok({"content": [{"type": "text", "text": f"No memories in ns={ns_val!r} (offset={offset})."}]})
+                else:
+                    lines = []
+                    for r in rows:
+                        snippet = (r["text"] or "")[:200].replace("\n", " ")
+                        summary = f"  summary: {r['summary'][:80]}" if r["summary"] else ""
+                        lines.append(
+                            f"[{r['id']}] tier={r['tier']} created={r['created']}\n"
+                            f"  {snippet}{summary}"
+                        )
+                    header = f"ns={ns_val!r} — showing {len(rows)} row(s) (offset={offset})"
+                    ok({"content": [{"type": "text", "text": header + "\n\n" + "\n\n".join(lines)}]})
 
             elif name == "mnemonics_get":
                 mid = args.get("id")

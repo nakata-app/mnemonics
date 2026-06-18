@@ -126,6 +126,31 @@ def test_http_get_memory_invalid_id(tmp_store):
     assert code == 400
 
 
+# ── GET /memories ─────────────────────────────────────────────────────────────
+
+def test_http_list_memories_empty(tmp_store):
+    code, data = http_call(tmp_store, "GET", "/memories?ns=default")
+    assert code == 200
+    assert data["rows"] == []
+    assert data["count"] == 0
+
+
+def test_http_list_memories(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/memories?ns=default&limit=5")
+    assert code == 200
+    assert data["count"] > 0
+    row = data["rows"][0]
+    assert "id" in row and "text" in row and "tier" in row
+
+
+def test_http_list_memories_limit_cap(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/memories?ns=default&limit=999")
+    assert code == 200
+    assert data["count"] <= 100
+
+
 # ── GET /stats ────────────────────────────────────────────────────────────────
 
 def test_http_stats_empty(tmp_store):
@@ -466,10 +491,10 @@ def test_mcp_tools_list(tmp_store):
     resp = _mcp(tmp_store, {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
     names = {t["name"] for t in resp[0]["result"]["tools"]}
     assert names == {
-        "mnemonics_ingest", "mnemonics_retrieve", "mnemonics_get",
-        "mnemonics_forget", "mnemonics_forget_ns", "mnemonics_rebuild_index",
-        "mnemonics_pin", "mnemonics_tier", "mnemonics_gc", "mnemonics_stats",
-        "mnemonics_health", "mnemonics_repair",
+        "mnemonics_ingest", "mnemonics_retrieve", "mnemonics_list",
+        "mnemonics_get", "mnemonics_forget", "mnemonics_forget_ns",
+        "mnemonics_rebuild_index", "mnemonics_pin", "mnemonics_tier",
+        "mnemonics_gc", "mnemonics_stats", "mnemonics_health", "mnemonics_repair",
     }
 
 
@@ -572,6 +597,28 @@ def test_mcp_repair(tmp_store):
     assert "orphan_vectors_fixed" in report
     assert "orphan_indexes_removed" in report
     assert "missing_vectors_reported" in report
+
+
+def test_mcp_list_empty(tmp_store):
+    resp = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 90,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_list", "arguments": {"ns": "default"}},
+    })
+    text = resp[0]["result"]["content"][0]["text"]
+    assert "No memories" in text
+
+
+def test_mcp_list_returns_rows(populated_store):
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 91,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_list", "arguments": {"ns": "default", "limit": 5}},
+    })
+    text = resp[0]["result"]["content"][0]["text"]
+    assert "ns='default'" in text
+    assert "tier=" in text
 
 
 def test_mcp_stats_empty(tmp_store):

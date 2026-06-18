@@ -419,6 +419,23 @@ class Store:
         row = self._db.execute("SELECT COUNT(*) FROM memories WHERE ns=?", (ns,)).fetchone()
         return row[0] if row else 0
 
+    def list_memories(
+        self, ns: str = "default", limit: int = 20, offset: int = 0
+    ) -> list[dict]:
+        rows = self._db.execute(
+            "SELECT id, ns, text, summary, tier, created, last_accessed, access_count "
+            "FROM memories WHERE ns=? ORDER BY id DESC LIMIT ? OFFSET ?",
+            (ns, limit, offset),
+        ).fetchall()
+        return [
+            {
+                "id": r[0], "ns": r[1], "text": r[2], "summary": r[3],
+                "tier": r[4], "created": r[5], "last_accessed": r[6],
+                "access_count": r[7],
+            }
+            for r in rows
+        ]
+
     def get(self, memory_id: int) -> dict | None:
         row = self._db.execute(
             "SELECT id, ns, text, summary, tier, created, last_accessed, access_count "
