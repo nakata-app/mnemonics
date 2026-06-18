@@ -1072,3 +1072,49 @@ def test_forget_no_candidates_with_tier(tmp_path, capsys):
         except SystemExit:
             pass
     assert "tier=2" in capsys.readouterr().out
+
+
+# ── eval command ──────────────────────────────────────────────────────────────
+
+def test_eval_basic(tmp_path, capsys):
+    fake_result = {
+        "encoder": "minilm",
+        "method": "vector",
+        "mrr": 0.8,
+        "r1": 0.7,
+        "r5": 0.9,
+        "ndcg10": 0.85,
+    }
+    with (
+        patch("mnemonics.eval.run_eval", return_value=fake_result),
+        patch("mnemonics.eval.compare_table", return_value="eval table here"),
+        patch("sys.argv", [
+            "mnemonics", "eval",
+            "--corpus", str(tmp_path / "corpus.jsonl"),
+            "--queries", str(tmp_path / "queries.jsonl"),
+        ]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "eval table here" in out
+    assert "[eval] encoder=minilm method=vector" in out
+
+
+def test_eval_with_out_dir(tmp_path, capsys):
+    out_dir = tmp_path / "results"
+    fake_result = {"encoder": "minilm", "method": "vector", "mrr": 0.5}
+    import json as _json
+    with (
+        patch("mnemonics.eval.run_eval", return_value=fake_result),
+        patch("mnemonics.eval.compare_table", return_value="table"),
+        patch("builtins.open", MagicMock()),
+        patch("json.dump"),
+        patch("sys.argv", [
+            "mnemonics", "eval",
+            "--corpus", str(tmp_path / "c.jsonl"),
+            "--queries", str(tmp_path / "q.jsonl"),
+            "--out", str(out_dir),
+        ]),
+    ):
+        main()
+    assert "table" in capsys.readouterr().out
