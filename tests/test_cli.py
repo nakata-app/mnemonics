@@ -2262,3 +2262,33 @@ def test_cli_top_accessed_empty(tmp_path, capsys):
     ):
         main()
     assert "No memories" in capsys.readouterr().out
+
+
+# ── copy-ns ────────────────────────────────────────────────────────────────────
+
+def test_cli_copy_ns_basic(tmp_path, capsys):
+    mock_store = MagicMock()
+    mock_store.copy_ns.return_value = 7
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "copy-ns", "default", "backup",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.copy_ns.assert_called_once_with("default", "backup")
+    out = capsys.readouterr().out
+    assert "7" in out
+    assert "backup" in out
+
+
+def test_cli_copy_ns_conflict(tmp_path, capsys):
+    mock_store = MagicMock()
+    mock_store.copy_ns.side_effect = ValueError("already has")
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "copy-ns", "default", "backup",
+                           "--path", str(tmp_path)]),
+    ):
+        with pytest.raises(SystemExit) as exc:
+            main()
+    assert exc.value.code == 1

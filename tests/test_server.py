@@ -618,7 +618,7 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_pin", "mnemonics_tier", "mnemonics_gc", "mnemonics_stats",
         "mnemonics_health", "mnemonics_repair",
         "mnemonics_search_by_meta", "mnemonics_delete_many", "mnemonics_update_meta",
-        "mnemonics_export", "mnemonics_import", "mnemonics_text_search", "mnemonics_rename_ns", "mnemonics_namespaces", "mnemonics_bulk_tier", "mnemonics_count", "mnemonics_recent", "mnemonics_top_accessed", "mnemonics_get_many",
+        "mnemonics_export", "mnemonics_import", "mnemonics_text_search", "mnemonics_rename_ns", "mnemonics_namespaces", "mnemonics_bulk_tier", "mnemonics_copy_ns", "mnemonics_count", "mnemonics_recent", "mnemonics_top_accessed", "mnemonics_get_many",
     }
 
 
@@ -2572,3 +2572,63 @@ def test_mcp_top_accessed_in_tools_list(tmp_store):
         "jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {},
     })[0]
     assert "mnemonics_top_accessed" in {t["name"] for t in resp["result"]["tools"]}
+
+
+# ── POST /copy-ns ─────────────────────────────────────────────────────────────
+
+def test_http_copy_ns_basic(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/copy-ns", {"src_ns": "default", "dst_ns": "bk"})
+    assert code == 200
+    assert data["copied"] == len(docs)
+    assert store.count("default") == len(docs)
+    assert store.count("bk") == len(docs)
+
+
+def test_http_copy_ns_missing_fields(tmp_store):
+    code, data = http_call(tmp_store, "POST", "/copy-ns", {"src_ns": "x"})
+    assert code == 400
+
+
+def test_http_copy_ns_conflict(populated_store):
+    store, docs, vecs = populated_store
+    store.copy_ns("default", "bk2")
+    code, data = http_call(store, "POST", "/copy-ns", {"src_ns": "default", "dst_ns": "bk2"})
+    assert code == 409
+
+
+# ── MCP mnemonics_copy_ns ─────────────────────────────────────────────────────
+
+def test_mcp_copy_ns_basic(populated_store):
+    store, docs, vecs = populated_store
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_copy_ns", "arguments": {"src_ns": "default", "dst_ns": "bkcopy"}},
+    })[0]
+    assert "result" in r
+    assert "copied" in r["result"]["content"][0]["text"]
+
+
+def test_mcp_copy_ns_missing_args(tmp_store):
+    r = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_copy_ns", "arguments": {"src_ns": "x"}},
+    })[0]
+    assert "error" in r
+
+
+def test_mcp_copy_ns_conflict(populated_store):
+    store, docs, vecs = populated_store
+    store.copy_ns("default", "bkco2")
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_copy_ns", "arguments": {"src_ns": "default", "dst_ns": "bkco2"}},
+    })[0]
+    assert "error" in r
+
+
+def test_mcp_copy_ns_in_tools_list(tmp_store):
+    resp = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {},
+    })[0]
+    assert "mnemonics_copy_ns" in {t["name"] for t in resp["result"]["tools"]}

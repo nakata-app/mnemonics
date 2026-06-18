@@ -254,6 +254,11 @@ def main() -> None:
     bt.add_argument("--path", default="~/.mnemonics", help="Store directory")
 
     # rename-ns
+    cn = sub.add_parser("copy-ns", help="Copy all memories from one namespace into a new (empty) namespace")
+    cn.add_argument("src_ns", help="Source namespace to copy from")
+    cn.add_argument("dst_ns", help="Destination namespace (must not exist)")
+    cn.add_argument("--path", default="~/.mnemonics", help="Store directory")
+
     rn = sub.add_parser("rename-ns", help="Rename a namespace (moves all memories + renames index file)")
     rn.add_argument("old_ns", help="Current namespace name")
     rn.add_argument("new_ns", help="New namespace name")
@@ -915,6 +920,16 @@ def main() -> None:
             sys.exit(1)
         tier_label = {0: "pinned", 1: "default", 2: "ambient"}
         print(f"Updated {updated} memory/memories to tier {args.tier} ({tier_label[args.tier]}).")
+
+    elif args.cmd == "copy-ns":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        try:
+            copied = store.copy_ns(args.src_ns, args.dst_ns)
+        except ValueError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+        print(f"Copied {args.src_ns!r} → {args.dst_ns!r}: {copied} memories.")
 
     elif args.cmd == "rename-ns":
         from mnemonics.store import Store

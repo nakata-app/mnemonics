@@ -957,6 +957,39 @@ class Store:
             self._index_mtime[new_ns] = self._index_mtime.pop(old_ns)
         return count
 
+    def copy_ns(self, src_ns: str, dst_ns: str) -> int:
+        """Copy all memories from *src_ns* into *dst_ns*, preserving text/meta/tier/summary.
+
+        Unlike rename_ns, the source namespace is left intact.
+        access_count and last_accessed are reset to 0/NULL on the copies.
+        Returns the number of rows copied (0 if src_ns is empty).
+        Raises ValueError if dst_ns already exists.
+        """
+        count = self._db.execute(
+            "SELECT COUNT(*) FROM memories WHERE ns=?", (src_ns,)
+        ).fetchone()[0]
+        if count == 0:
+            return 0
+        existing = self._db.execute(
+            "SELECT COUNT(*) FROM memories WHERE ns=?", (dst_ns,)
+        ).fetchone()[0]
+        if existing:
+            raise ValueError(
+                f"copy_ns: target namespace {dst_ns!r} already has {existing} memories; "
+                "use forget() first or choose a different name"
+            )
+        rows = self._db.execute(
+            "SELECT text, summary, meta, created, tier FROM memories WHERE ns=?", (src_ns,)
+        ).fetchall()
+        with self._lock:
+            self._db.executemany(
+                "INSERT INTO memories (ns, text, summary, meta, created, tier) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                [(dst_ns, r[0], r[1], r[2], r[3], r[4]) for r in rows],
+            )
+            self._db.commit()
+        return count
+
     def health_check(self) -> dict[str, Any]:
         """Return a health report: DB integrity, WAL size, per-ns index counts, orphan indexes."""
         report: dict[str, Any] = {}

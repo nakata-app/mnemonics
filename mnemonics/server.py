@@ -203,6 +203,19 @@ class _Handler(BaseHTTPRequestHandler):
                 return
             self._json(200, {"old_ns": old_ns, "new_ns": new_ns, "moved": moved})
 
+        elif self.path == "/copy-ns":
+            src_ns = body.get("src_ns", "").strip()
+            dst_ns = body.get("dst_ns", "").strip()
+            if not src_ns or not dst_ns:
+                self._json(400, {"error": "'src_ns' and 'dst_ns' are required"})
+                return
+            try:
+                copied = _get_store().copy_ns(src_ns, dst_ns)
+            except ValueError as e:
+                self._json(409, {"error": str(e)})
+                return
+            self._json(200, {"src_ns": src_ns, "dst_ns": dst_ns, "copied": copied})
+
         elif self.path == "/search-bm25":
             query = body.get("query", "").strip()
             if not query:
@@ -862,6 +875,18 @@ def _mcp_loop() -> None:
                     "inputSchema": {"type": "object", "properties": {}},
                 },
                 {
+                    "name": "mnemonics_copy_ns",
+                    "description": "Copy all memories from one namespace into a new namespace, leaving the source intact. access_count and last_accessed are reset on the copies. Fails if the destination namespace already exists.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "src_ns": {"type": "string", "description": "Source namespace to copy from"},
+                            "dst_ns": {"type": "string", "description": "Destination namespace to copy into (must not exist)"},
+                        },
+                        "required": ["src_ns", "dst_ns"],
+                    },
+                },
+                {
                     "name": "mnemonics_rename_ns",
                     "description": "Rename a namespace — moves all its memories and renames the vector index file. Fails with an error if the target namespace already exists (prevents silent merges).",
                     "inputSchema": {
@@ -1284,6 +1309,19 @@ def _mcp_loop() -> None:
                     ok({"content": [{"type": "text", "text": "\n".join(ns_list)}]})
                 else:
                     ok({"content": [{"type": "text", "text": "(no namespaces)"}]})
+
+            elif name == "mnemonics_copy_ns":
+                src_ns_c = args.get("src_ns", "").strip()
+                dst_ns_c = args.get("dst_ns", "").strip()
+                if not src_ns_c or not dst_ns_c:
+                    err("mnemonics_copy_ns: 'src_ns' and 'dst_ns' are required")
+                    continue
+                try:
+                    copied_c = _get_store().copy_ns(src_ns_c, dst_ns_c)
+                except ValueError as e:
+                    err(str(e))
+                    continue
+                ok({"content": [{"type": "text", "text": f"Copied {src_ns_c!r} → {dst_ns_c!r}: {copied_c} memories copied."}]})
 
             elif name == "mnemonics_rename_ns":
                 old_ns = args.get("old_ns", "").strip()

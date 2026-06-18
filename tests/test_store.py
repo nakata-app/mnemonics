@@ -1587,3 +1587,48 @@ def test_top_accessed_all_ns(populated_store):
     store.add(["ns2 doc"], v[None], ns="ns2")
     hits = store.top_accessed(ns=None)
     assert {h["ns"] for h in hits} >= {"default", "ns2"}
+
+
+# ── copy_ns ───────────────────────────────────────────────────────────────────
+
+def test_copy_ns_basic(populated_store):
+    """copy_ns duplicates all rows into a new ns, leaving source intact."""
+    store, docs, vecs = populated_store
+    copied = store.copy_ns("default", "backup")
+    assert copied == len(docs)
+    assert store.count("default") == len(docs)
+    assert store.count("backup") == len(docs)
+
+
+def test_copy_ns_content_preserved(populated_store):
+    """copy_ns preserves text and tier."""
+    store, docs, vecs = populated_store
+    store.copy_ns("default", "backup2")
+    src_texts = {r["text"] for r in store.text_search("", ns="default", limit=100)}
+    dst_texts = {r["text"] for r in store.text_search("", ns="backup2", limit=100)}
+    assert src_texts == dst_texts
+
+
+def test_copy_ns_empty_source(tmp_store):
+    """copy_ns on empty source returns 0 without creating destination."""
+    assert tmp_store.copy_ns("nonexistent", "dst") == 0
+    assert tmp_store.count("dst") == 0
+
+
+def test_copy_ns_conflict_raises(populated_store):
+    """copy_ns raises ValueError if destination already exists."""
+    store, docs, vecs = populated_store
+    store.copy_ns("default", "backup3")
+    with pytest.raises(ValueError, match="already has"):
+        store.copy_ns("default", "backup3")
+
+
+def test_copy_ns_access_count_reset(populated_store):
+    """copy_ns sets access_count=0 on the copies."""
+    store, docs, vecs = populated_store
+    ids = [r[0] for r in store._db.execute("SELECT id FROM memories").fetchall()]
+    store._db.execute("UPDATE memories SET access_count=5 WHERE id=?", (ids[0],))
+    store._db.commit()
+    store.copy_ns("default", "backup4")
+    counts = [r["access_count"] for r in store.top_accessed(ns="backup4")]
+    assert all(c == 0 for c in counts)
