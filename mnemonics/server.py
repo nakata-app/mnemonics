@@ -289,8 +289,12 @@ class _Handler(BaseHTTPRequestHandler):
         elif path == "/namespaces":
             self._json(200, {"namespaces": _get_store().list_namespaces()})
         elif path == "/count":
-            ns = (self.path.split("ns=")[-1] if "ns=" in self.path else "default")
-            self._json(200, {"ns": ns, "count": _get_store().count(ns)})
+            from urllib.parse import urlparse, parse_qs, unquote_plus
+            qs = parse_qs(urlparse(self.path).query)
+            ns_raw = qs.get("ns", [None])[0]
+            ns = unquote_plus(ns_raw) if ns_raw is not None else None
+            count = _get_store().count(ns)
+            self._json(200, {"ns": ns, "count": count})
         elif path == "/stats":
             store = _get_store()
             rows = store._db.execute(

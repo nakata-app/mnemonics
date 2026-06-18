@@ -1619,3 +1619,24 @@ def test_http_search_bm25_tier_filter(populated_store):
     assert code == 200
     call_kwargs = mock_bm25.call_args[1]
     assert call_kwargs["min_tier"] == 1
+
+
+# ── GET /count ────────────────────────────────────────────────────────────────
+
+def test_http_count_all_ns(populated_store):
+    """GET /count with no ns param returns total count (ns=None)."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/count")
+    assert code == 200
+    assert "count" in data
+    assert data["count"] == store.count(None)
+    assert data["ns"] is None
+
+
+def test_http_count_specific_ns(populated_store):
+    """GET /count?ns=default returns count for that namespace."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/count?ns=default")
+    assert code == 200
+    assert data["ns"] == "default"
+    assert data["count"] == store.count("default")
