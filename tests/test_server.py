@@ -1707,3 +1707,102 @@ def test_http_list_memories_since_future(populated_store):
     code, data = http_call(store, "GET", "/memories?ns=default&since=2099-01-01")
     assert code == 200
     assert data["count"] == 0
+
+
+# ── GET /export-jsonl ─────────────────────────────────────────────────────────
+
+def _get_export(store, path: str) -> tuple[int, list[dict]]:
+    """GET /export-jsonl and parse the NDJSON response body."""
+    import io as _io
+    import json as _json
+
+    wfile = _io.BytesIO()
+    with patch("mnemonics.server._get_store", return_value=store):
+        handler = srv._Handler.__new__(srv._Handler)
+        handler.rfile = _io.BufferedReader(_io.BytesIO(b""))
+        handler.wfile = wfile
+        handler.server = MagicMock()
+        handler.client_address = ("127.0.0.1", 0)
+        handler.request_version = "HTTP/1.1"
+        handler.requestline = f"GET {path} HTTP/1.1"
+        handler.command = "GET"
+        handler.path = path
+        handler.headers = {}
+        handler.responses = {}
+
+        sent_status = {}
+        sent_headers: dict[str, str] = {}
+
+        def fake_send_response(code, msg=None):
+            sent_status["code"] = code
+
+        def fake_send_header(k, v):
+            sent_headers[k] = v
+
+        def fake_end_headers():
+            pass
+
+        handler.send_response = fake_send_response
+        handler.send_header = fake_send_header
+        handler.end_headers = fake_end_headers
+
+        captured_json = {"code": None, "data": None}
+
+        def fake_json(code, data):
+            captured_json["code"] = code
+            captured_json["data"] = data
+
+        handler._json = fake_json
+        handler.do_GET()
+
+    # If _json was called (e.g. for a 404 fallback), return that
+    if captured_json["code"] is not None:
+        return captured_json["code"], captured_json["data"]
+
+    body = wfile.getvalue()
+    rows = [_json.loads(line) for line in body.decode().splitlines() if line.strip()]
+    return sent_status.get("code", 200), rows
+
+
+def test_http_export_jsonl_all(populated_store):
+    """GET /export-jsonl returns all memories as NDJSON."""
+    store, docs, vecs = populated_store
+    code, rows = _get_export(store, "/export-jsonl")
+    assert code == 200
+    assert len(rows) == len(docs)
+    assert all("id" in r and "text" in r and "tier" in r for r in rows)
+
+
+def test_http_export_jsonl_ns_filter(populated_store):
+    """GET /export-jsonl?ns=default filters by namespace."""
+    store, docs, vecs = populated_store
+    code, rows = _get_export(store, "/export-jsonl?ns=default")
+    assert code == 200
+    assert all(r["ns"] == "default" for r in rows)
+
+
+def test_http_export_jsonl_tier_filter(populated_store):
+    """GET /export-jsonl?tier=0 returns only pinned memories."""
+    store, docs, vecs = populated_store
+    first_id = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    store.pin(first_id)
+    code, rows = _get_export(store, "/export-jsonl?tier=0")
+    assert code == 200
+    assert len(rows) == 1
+    assert rows[0]["id"] == first_id
+    assert rows[0]["tier"] == 0
+
+
+def test_http_export_jsonl_since_filter(populated_store):
+    """GET /export-jsonl?since=2099-01-01 returns nothing (future date)."""
+    store, docs, vecs = populated_store
+    code, rows = _get_export(store, "/export-jsonl?since=2099-01-01")
+    assert code == 200
+    assert rows == []
+
+
+def test_http_export_jsonl_empty_store(tmp_store):
+    """GET /export-jsonl on an empty store returns zero rows."""
+    code, rows = _get_export(tmp_store, "/export-jsonl")
+    assert code == 200
+    assert rows == []

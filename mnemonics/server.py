@@ -347,6 +347,43 @@ class _Handler(BaseHTTPRequestHandler):
                 self._json(404, {"error": f"memory {mid} not found"})
             else:
                 self._json(200, row)
+        elif path == "/export-jsonl":
+            from urllib.parse import urlparse, parse_qs, unquote_plus
+            import json as _json
+            qs_parsed = parse_qs(urlparse(self.path).query)
+            ns_raw = qs_parsed.get("ns", [None])[0]
+            tier_raw = qs_parsed.get("tier", [None])[0]
+            since_raw = qs_parsed.get("since", [None])[0]
+            where_parts = ["1=1"]
+            params: list = []
+            if ns_raw is not None:
+                where_parts.append("ns = ?")
+                params.append(unquote_plus(ns_raw))
+            if tier_raw is not None:
+                where_parts.append("tier = ?")
+                params.append(int(tier_raw))
+            if since_raw is not None:
+                where_parts.append("created >= ?")
+                params.append(unquote_plus(since_raw))
+            where = " AND ".join(where_parts)
+            rows = _get_store()._db.execute(
+                f"SELECT id, ns, text, summary, meta, created, tier, last_accessed, access_count "
+                f"FROM memories WHERE {where} ORDER BY id",
+                params,
+            ).fetchall()
+            lines = []
+            for r in rows:
+                lines.append(_json.dumps({
+                    "id": r[0], "ns": r[1], "text": r[2], "summary": r[3],
+                    "meta": _json.loads(r[4]), "created": r[5], "tier": r[6],
+                    "last_accessed": r[7], "access_count": r[8],
+                }, ensure_ascii=False))
+            body_bytes = ("\n".join(lines) + ("\n" if lines else "")).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
+            self.send_header("Content-Length", str(len(body_bytes)))
+            self.end_headers()
+            self.wfile.write(body_bytes)
         else:
             self._json(404, {"error": "not found"})
 
