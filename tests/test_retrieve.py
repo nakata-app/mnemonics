@@ -349,3 +349,15 @@ def test_retrieve_boost_signals_no_match_is_noop(populated_store, mock_enc):
     base = retrieve("nothing matches here", store, top_k=5, hybrid=False, decay=False, boost_signals=False)
     boosted = retrieve("nothing 'xyz' matches", store, top_k=5, hybrid=False, decay=False, boost_signals=True)
     assert [r["id"] for r in base["results"]] == [r["id"] for r in boosted["results"]]
+
+
+def test_get_rerank_ce_cache_hit(monkeypatch):
+    """_get_rerank_ce returns cached instance without re-creating when model matches."""
+    from mnemonics.retrieve import _get_rerank_ce
+
+    sentinel = object()
+    monkeypatch.setattr("mnemonics.retrieve._rerank_ce", sentinel)
+    monkeypatch.setattr("mnemonics.retrieve._rerank_model_name", "test-model")
+
+    result = _get_rerank_ce("test-model")
+    assert result is sentinel
