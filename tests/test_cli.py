@@ -2141,3 +2141,35 @@ def test_cli_namespaces_empty(tmp_path, capsys):
         main()
     out = capsys.readouterr().out
     assert "no namespaces" in out
+
+
+# ── bulk-tier ──────────────────────────────────────────────────────────────────
+
+def test_cli_bulk_tier_basic(tmp_path, capsys):
+    """bulk-tier updates memories and prints confirmation."""
+    mock_store = MagicMock()
+    mock_store.set_tier_many.return_value = 3
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "bulk-tier", "0", "1", "2", "3",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.set_tier_many.assert_called_once_with([1, 2, 3], 0)
+    out = capsys.readouterr().out
+    assert "3" in out
+    assert "pinned" in out
+
+
+def test_cli_bulk_tier_invalid_tier_error(tmp_path, capsys):
+    """bulk-tier with invalid tier exits with code 1."""
+    mock_store = MagicMock()
+    mock_store.set_tier_many.side_effect = ValueError("tier must be 0, 1, or 2")
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "bulk-tier", "0", "99",
+                           "--path", str(tmp_path)]),
+    ):
+        with pytest.raises(SystemExit) as exc:
+            main()
+    assert exc.value.code == 1

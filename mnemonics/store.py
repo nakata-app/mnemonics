@@ -445,6 +445,24 @@ class Store:
     def pin(self, memory_id: int) -> bool:
         return self.set_tier(memory_id, 0)
 
+    def set_tier_many(self, memory_ids: list[int], tier: int) -> int:
+        """Set tier for multiple memories in a single transaction.
+
+        Returns the number of rows actually updated (missing IDs are skipped).
+        """
+        if tier not in (0, 1, 2):
+            raise ValueError("tier must be 0 (pinned), 1 (default), or 2 (ambient)")
+        if not memory_ids:
+            return 0
+        placeholders = ",".join("?" * len(memory_ids))
+        with self._lock:
+            cur = self._db.execute(
+                f"UPDATE memories SET tier=? WHERE id IN ({placeholders})",
+                [tier, *memory_ids],
+            )
+            self._db.commit()
+        return cur.rowcount
+
     def list_namespaces(self) -> list[str]:
         rows = self._db.execute("SELECT DISTINCT ns FROM memories ORDER BY ns").fetchall()
         return [r[0] for r in rows]

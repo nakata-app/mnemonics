@@ -1463,3 +1463,36 @@ def test_rename_ns_renames_bin_file(populated_store, tmp_path):
     new_bin = store.root / "index_moved.bin"
     assert not old_bin.exists()
     assert new_bin.exists()
+
+
+# ── set_tier_many ─────────────────────────────────────────────────────────────
+
+def test_set_tier_many_basic(populated_store):
+    """set_tier_many updates all given IDs to the target tier."""
+    store, docs, vecs = populated_store
+    ids = [r[0] for r in store._db.execute("SELECT id FROM memories").fetchall()]
+    updated = store.set_tier_many(ids[:3], 2)
+    assert updated == 3
+    for mid in ids[:3]:
+        assert store.get(mid)["tier"] == 2
+
+
+def test_set_tier_many_empty_list(populated_store):
+    """set_tier_many with empty list returns 0."""
+    store, docs, vecs = populated_store
+    assert store.set_tier_many([], 1) == 0
+
+
+def test_set_tier_many_invalid_tier(populated_store):
+    """set_tier_many with invalid tier raises ValueError."""
+    store, docs, vecs = populated_store
+    ids = [store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]]
+    with pytest.raises(ValueError, match="tier must be"):
+        store.set_tier_many(ids, 99)
+
+
+def test_set_tier_many_missing_ids_ignored(populated_store):
+    """set_tier_many silently skips non-existent IDs."""
+    store, docs, vecs = populated_store
+    updated = store.set_tier_many([99999, 99998], 0)
+    assert updated == 0

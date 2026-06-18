@@ -177,6 +177,19 @@ class _Handler(BaseHTTPRequestHandler):
                 n = store.forget(ns=ns, before=before, tier=tier_filter)
                 self._json(200, {"deleted": n, "dry_run": False})
 
+        elif self.path == "/bulk-tier":
+            ids_arg = body.get("ids")
+            tier_arg = body.get("tier")
+            if not isinstance(ids_arg, list) or tier_arg is None:
+                self._json(400, {"error": "'ids' (list) and 'tier' (0/1/2) are required"})
+                return
+            try:
+                updated = _get_store().set_tier_many([int(i) for i in ids_arg], int(tier_arg))
+            except ValueError as e:
+                self._json(400, {"error": str(e)})
+                return
+            self._json(200, {"updated": updated, "tier": int(tier_arg)})
+
         elif self.path == "/rename-ns":
             old_ns = body.get("old_ns", "").strip()
             new_ns = body.get("new_ns", "").strip()
@@ -737,6 +750,18 @@ def _mcp_loop() -> None:
                     },
                 },
                 {
+                    "name": "mnemonics_bulk_tier",
+                    "description": "Set tier for multiple memories in a single operation. Useful for bulk-pinning or bulk-archiving a set of results. Returns how many rows were actually updated.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ids": {"type": "array", "items": {"type": "integer"}, "description": "Memory IDs to update"},
+                            "tier": {"type": "integer", "enum": [0, 1, 2], "description": "Target tier (0=pinned, 1=default, 2=ambient)"},
+                        },
+                        "required": ["ids", "tier"],
+                    },
+                },
+                {
                     "name": "mnemonics_count",
                     "description": "Count memories in a namespace. Omit ns (or pass null) to count across all namespaces.",
                     "inputSchema": {
@@ -1134,6 +1159,19 @@ def _mcp_loop() -> None:
                     }, ensure_ascii=False))
                 result_text = "\n".join(lines) if lines else "(no memories matched)"
                 ok({"content": [{"type": "text", "text": result_text}]})
+
+            elif name == "mnemonics_bulk_tier":
+                ids_arg = args.get("ids", [])
+                tier_arg = args.get("tier")
+                if not isinstance(ids_arg, list) or tier_arg is None:
+                    err("mnemonics_bulk_tier: 'ids' (list) and 'tier' (0/1/2) are required")
+                    continue
+                try:
+                    updated = _get_store().set_tier_many([int(i) for i in ids_arg], int(tier_arg))
+                except ValueError as e:
+                    err(str(e))
+                    continue
+                ok({"content": [{"type": "text", "text": f"Updated {updated} memory/memories to tier {tier_arg}."}]})
 
             elif name == "mnemonics_count":
                 ns_arg = args.get("ns", "default")

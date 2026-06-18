@@ -231,6 +231,12 @@ def main() -> None:
     nsc = sub.add_parser("namespaces", help="List all namespaces in the store")
     nsc.add_argument("--path", default="~/.mnemonics", help="Store directory")
 
+    # bulk-tier
+    bt = sub.add_parser("bulk-tier", help="Set tier for multiple memories in one operation")
+    bt.add_argument("tier", type=int, choices=[0, 1, 2], help="Target tier: 0=pin, 1=default, 2=ambient")
+    bt.add_argument("ids", type=int, nargs="+", help="Memory IDs to update")
+    bt.add_argument("--path", default="~/.mnemonics", help="Store directory")
+
     # rename-ns
     rn = sub.add_parser("rename-ns", help="Rename a namespace (moves all memories + renames index file)")
     rn.add_argument("old_ns", help="Current namespace name")
@@ -849,6 +855,17 @@ def main() -> None:
             for ns_name in ns_list:
                 cnt = store.count(ns_name)
                 print(f"  {ns_name}  ({cnt})")
+
+    elif args.cmd == "bulk-tier":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        try:
+            updated = store.set_tier_many(args.ids, args.tier)
+        except ValueError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+        tier_label = {0: "pinned", 1: "default", 2: "ambient"}
+        print(f"Updated {updated} memory/memories to tier {args.tier} ({tier_label[args.tier]}).")
 
     elif args.cmd == "rename-ns":
         from mnemonics.store import Store

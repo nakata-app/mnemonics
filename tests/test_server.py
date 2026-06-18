@@ -618,7 +618,7 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_pin", "mnemonics_tier", "mnemonics_gc", "mnemonics_stats",
         "mnemonics_health", "mnemonics_repair",
         "mnemonics_search_by_meta", "mnemonics_delete_many", "mnemonics_update_meta",
-        "mnemonics_export", "mnemonics_import", "mnemonics_text_search", "mnemonics_rename_ns", "mnemonics_namespaces", "mnemonics_count", "mnemonics_get_many",
+        "mnemonics_export", "mnemonics_import", "mnemonics_text_search", "mnemonics_rename_ns", "mnemonics_namespaces", "mnemonics_bulk_tier", "mnemonics_count", "mnemonics_get_many",
     }
 
 
@@ -2400,3 +2400,73 @@ def test_mcp_get_many_in_tools_list(tmp_store):
         "jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {},
     })[0]
     assert "mnemonics_get_many" in {t["name"] for t in resp["result"]["tools"]}
+
+
+# ── POST /bulk-tier ───────────────────────────────────────────────────────────
+
+def test_http_bulk_tier_basic(populated_store):
+    """POST /bulk-tier updates all requested IDs."""
+    store, docs, vecs = populated_store
+    ids = [r[0] for r in store._db.execute("SELECT id FROM memories LIMIT 2").fetchall()]
+    code, data = http_call(store, "POST", "/bulk-tier", {"ids": ids, "tier": 2})
+    assert code == 200
+    assert data["updated"] == 2
+    for mid in ids:
+        assert store.get(mid)["tier"] == 2
+
+
+def test_http_bulk_tier_missing_fields(tmp_store):
+    """POST /bulk-tier without required fields returns 400."""
+    code, data = http_call(tmp_store, "POST", "/bulk-tier", {"ids": [1]})
+    assert code == 400
+
+
+def test_http_bulk_tier_invalid_tier(populated_store):
+    """POST /bulk-tier with invalid tier returns 400."""
+    store, docs, vecs = populated_store
+    ids = [store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]]
+    code, data = http_call(store, "POST", "/bulk-tier", {"ids": ids, "tier": 99})
+    assert code == 400
+
+
+# ── MCP mnemonics_bulk_tier ───────────────────────────────────────────────────
+
+def test_mcp_bulk_tier_basic(populated_store):
+    """mnemonics_bulk_tier updates all requested IDs."""
+    store, docs, vecs = populated_store
+    ids = [r[0] for r in store._db.execute("SELECT id FROM memories LIMIT 2").fetchall()]
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_bulk_tier", "arguments": {"ids": ids, "tier": 0}},
+    })[0]
+    assert "result" in r
+    assert "2" in r["result"]["content"][0]["text"]
+    for mid in ids:
+        assert store.get(mid)["tier"] == 0
+
+
+def test_mcp_bulk_tier_missing_args(tmp_store):
+    """mnemonics_bulk_tier without required args returns error."""
+    r = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_bulk_tier", "arguments": {"ids": [1]}},
+    })[0]
+    assert "error" in r
+
+
+def test_mcp_bulk_tier_invalid_tier(populated_store):
+    """mnemonics_bulk_tier with invalid tier returns error."""
+    store, docs, vecs = populated_store
+    ids = [store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]]
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_bulk_tier", "arguments": {"ids": ids, "tier": 99}},
+    })[0]
+    assert "error" in r
+
+
+def test_mcp_bulk_tier_in_tools_list(tmp_store):
+    resp = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {},
+    })[0]
+    assert "mnemonics_bulk_tier" in {t["name"] for t in resp["result"]["tools"]}
