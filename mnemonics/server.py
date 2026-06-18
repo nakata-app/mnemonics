@@ -620,6 +620,8 @@ def _mcp_loop() -> None:
                         snippet = (r["text"] or "")[:200].replace("\n", " ")
                         tl = tier_label.get(r["tier"], "?")
                         lines.append(f"[{r['score']:.3f}] [{tl}] id={r['id']}  {snippet}")
+                        if r.get("summary"):
+                            lines.append(f"           summary: {r['summary'][:120]}")
                     ok({"content": [{"type": "text", "text": "\n".join(lines)}]})
 
             elif name == "mnemonics_update_summary":
