@@ -165,6 +165,7 @@ Tools exposed:
 - `mnemonics_ingest`
 - `mnemonics_retrieve` (decay-aware, supports `decay: false` for raw cosine)
 - `mnemonics_forget` (delete by id)
+- `mnemonics_forget_ns` (bulk delete a namespace; dry-run by default)
 - `mnemonics_pin`
 - `mnemonics_tier`
 - `mnemonics_gc` (supports `tier: 1` for default-tier rows)

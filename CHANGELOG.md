@@ -39,6 +39,9 @@ All notable changes to mnemonics. Format follows [Keep a Changelog](https://keep
 - **`POST /repair` REST endpoint** calls `Store.repair()` and returns a JSON
   summary of what was fixed (orphan vectors rebuilt, orphan .bin files
   removed, missing vectors reported). Matches `mnemonics_repair` MCP tool.
+- **`mnemonics_forget_ns` MCP tool** bulk-deletes a namespace from AI agents.
+  Accepts `ns` (required), `before`, `tier`, `dry_run` (default true).
+  Complements `mnemonics_forget` (single-id) and `mnemonics_gc` (age-based).
 - **`POST /gc` and `POST /forget` REST endpoints** enable programmatic
   cleanup without the CLI. Both default to `dry_run: true`. `/gc` accepts
   `ns`, `age_days`, `tier` (1 or 2). `/forget` accepts `ns` (required),
