@@ -2144,3 +2144,41 @@ def test_expire_min_age_days(populated_store):
     # min_age_days=365: only demote if created more than a year ago
     n = store.expire(age_days=1, min_age_days=365)
     assert n == 0  # all were created recently (in this test session)
+
+
+# ── bulk_update_summary ───────────────────────────────────────────────────────
+
+def test_bulk_update_summary_sets_summaries(populated_store):
+    """bulk_update_summary sets summaries for multiple IDs at once."""
+    store, docs, vecs = populated_store
+    ids = [r[0] for r in store._db.execute("SELECT id FROM memories ORDER BY id").fetchall()]
+    updates = {ids[0]: "Summary A", ids[1]: "Summary B", ids[2]: None}
+    n = store.bulk_update_summary(updates)
+    assert n == 3
+    assert store.get(ids[0])["summary"] == "Summary A"
+    assert store.get(ids[1])["summary"] == "Summary B"
+    assert store.get(ids[2])["summary"] is None
+
+
+def test_bulk_update_summary_skips_missing(populated_store):
+    """bulk_update_summary silently skips IDs that don't exist."""
+    store, docs, vecs = populated_store
+    ids = [r[0] for r in store._db.execute("SELECT id FROM memories ORDER BY id").fetchall()]
+    n = store.bulk_update_summary({ids[0]: "X", 999999: "ghost"})
+    assert n == 1
+
+
+def test_bulk_update_summary_empty(populated_store):
+    """bulk_update_summary with empty dict returns 0."""
+    store, docs, vecs = populated_store
+    assert store.bulk_update_summary({}) == 0
+
+
+def test_bulk_update_summary_clears(populated_store):
+    """bulk_update_summary with None value clears an existing summary."""
+    store, docs, vecs = populated_store
+    mid = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    store.update_summary(mid, "old summary")
+    n = store.bulk_update_summary({mid: None})
+    assert n == 1
+    assert store.get(mid)["summary"] is None

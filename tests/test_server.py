@@ -622,6 +622,7 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_hybrid_search",
         "mnemonics_similar_to",
         "mnemonics_expire",
+        "mnemonics_bulk_update_summary",
     }
 
 
@@ -3063,3 +3064,45 @@ def test_mcp_expire_ok(populated_store):
     })[0]
     assert "result" in r
     assert "Demoted" in r["result"]["content"][0]["text"]
+
+
+# ── bulk-update-summary REST + MCP ────────────────────────────────────────────
+
+def test_http_bulk_update_summary_ok(populated_store):
+    """POST /bulk-update-summary updates summaries for multiple IDs."""
+    store, docs, vecs = populated_store
+    ids = [r[0] for r in store._db.execute("SELECT id FROM memories ORDER BY id").fetchall()]
+    code, data = http_call(store, "POST", "/bulk-update-summary",
+                           {"updates": {str(ids[0]): "Summary A", str(ids[1]): "Summary B"}})
+    assert code == 200
+    assert data["updated"] == 2
+
+
+def test_http_bulk_update_summary_missing_param(populated_store):
+    """POST /bulk-update-summary without updates returns 400."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/bulk-update-summary", {"foo": "bar"})
+    assert code == 400
+
+
+def test_mcp_bulk_update_summary_ok(populated_store):
+    """MCP mnemonics_bulk_update_summary updates summaries."""
+    store, docs, vecs = populated_store
+    ids = [r[0] for r in store._db.execute("SELECT id FROM memories ORDER BY id").fetchall()]
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_bulk_update_summary",
+                   "arguments": {"updates": {str(ids[0]): "New summary"}}},
+    })[0]
+    assert "result" in r
+    assert "Updated" in r["result"]["content"][0]["text"]
+
+
+def test_mcp_bulk_update_summary_missing_arg(populated_store):
+    """MCP mnemonics_bulk_update_summary without updates returns error."""
+    store, docs, vecs = populated_store
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_bulk_update_summary", "arguments": {}},
+    })[0]
+    assert "error" in r

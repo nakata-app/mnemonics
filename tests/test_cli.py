@@ -2526,3 +2526,46 @@ def test_cli_expire_with_ns(tmp_path, capsys):
     ):
         main()
     mock_store.expire.assert_called_once_with(ns="proj:test", age_days=7, min_age_days=None)
+
+
+# ── bulk-update-summary CLI ───────────────────────────────────────────────────
+
+def test_cli_bulk_update_summary_ok(tmp_path, capsys):
+    """bulk-update-summary parses id:summary pairs and calls store."""
+    mock_store = MagicMock()
+    mock_store.bulk_update_summary.return_value = 2
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "bulk-update-summary",
+                           "1:Summary one", "2:Summary two",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.bulk_update_summary.assert_called_once_with({1: "Summary one", 2: "Summary two"})
+    assert "2" in capsys.readouterr().out
+
+
+def test_cli_bulk_update_summary_clear(tmp_path, capsys):
+    """bulk-update-summary with 'id:' (empty summary) passes None."""
+    mock_store = MagicMock()
+    mock_store.bulk_update_summary.return_value = 1
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "bulk-update-summary", "5:",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.bulk_update_summary.assert_called_once_with({5: None})
+
+
+def test_cli_bulk_update_summary_bad_format(tmp_path, capsys):
+    """bulk-update-summary with pair missing ':' prints error and exits 1."""
+    mock_store = MagicMock()
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "bulk-update-summary", "bad_pair",
+                           "--path", str(tmp_path)]),
+    ):
+        with pytest.raises(SystemExit) as exc:
+            main()
+    assert exc.value.code == 1

@@ -694,6 +694,25 @@ class Store:
             self._db.commit()
         return cur.rowcount > 0
 
+    def bulk_update_summary(self, updates: dict[int, str | None]) -> int:
+        """Update summary for multiple memories in one transaction.
+
+        ``updates`` maps memory_id → summary (str or None to clear).
+        Returns the count of rows actually updated (missing IDs are silently
+        skipped).
+        """
+        if not updates:
+            return 0
+        updated = 0
+        with self._lock:
+            for mid, summary in updates.items():
+                cur = self._db.execute(
+                    "UPDATE memories SET summary=? WHERE id=?", (summary, int(mid))
+                )
+                updated += cur.rowcount
+            self._db.commit()
+        return updated
+
     def search_by_meta(
         self,
         filters: dict,

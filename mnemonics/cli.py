@@ -80,6 +80,14 @@ def main() -> None:
     ts.add_argument("--json", dest="json_out", action="store_true", help="Output results as JSON array")
     ts.add_argument("--path", default="~/.mnemonics")
 
+    # bulk-update-summary
+    bus = sub.add_parser("bulk-update-summary",
+                         help="Update summaries for multiple memories (id:summary pairs)")
+    bus.add_argument("updates", nargs="+",
+                     metavar="ID:SUMMARY",
+                     help="Pairs of id:summary (use 'id:' to clear a summary)")
+    bus.add_argument("--path", default="~/.mnemonics")
+
     # expire
     exp = sub.add_parser("expire", help="Demote stale tier-1 memories to tier-2 (ambient)")
     exp.add_argument("--ns", default=None, help="Target namespace (default: all)")
@@ -476,6 +484,19 @@ def main() -> None:
                 print(line)
                 if r.get("summary"):
                     print(f"           summary: {r['summary']}")
+
+    elif args.cmd == "bulk-update-summary":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        updates: dict[int, str | None] = {}
+        for pair in args.updates:
+            if ":" not in pair:
+                print(f"Error: expected ID:SUMMARY format, got: {pair!r}", file=__import__("sys").stderr)
+                raise SystemExit(1)
+            raw_id, _, summary = pair.partition(":")
+            updates[int(raw_id)] = summary if summary else None
+        n = store.bulk_update_summary(updates)
+        print(f"Updated summaries for {n} memories.")
 
     elif args.cmd == "expire":
         from mnemonics.store import Store

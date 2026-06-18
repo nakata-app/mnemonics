@@ -426,6 +426,17 @@ class _Handler(BaseHTTPRequestHandler):
             changed = _get_store().update_meta(int(mid), meta)
             self._json(200, {"id": int(mid), "changed": changed})
 
+        elif self.path == "/bulk-update-summary":
+            raw_updates = body.get("updates")
+            if not isinstance(raw_updates, dict):
+                self._json(400, {"error": "'updates' (object mapping id→summary) is required"})
+                return
+            updates: dict[int, str | None] = {}
+            for k, v in raw_updates.items():
+                updates[int(k)] = v if isinstance(v, str) else None
+            n = _get_store().bulk_update_summary(updates)
+            self._json(200, {"updated": n})
+
         else:
             self._json(404, {"error": "not found"})
 
@@ -762,6 +773,21 @@ def _mcp_loop() -> None:
                     },
                 },
                 {
+                    "name": "mnemonics_bulk_update_summary",
+                    "description": "Update (or clear) summaries for multiple memories in a single transaction. Pass a dict mapping memory_id (as string or int) to a summary string or null to clear. Returns the count of rows actually updated — missing IDs are silently skipped.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "updates": {
+                                "type": "object",
+                                "description": "Map of memory_id → summary string (or null to clear). Keys can be integers or string representations of integers.",
+                                "additionalProperties": {"type": ["string", "null"]},
+                            },
+                        },
+                        "required": ["updates"],
+                    },
+                },
+                {
                     "name": "mnemonics_update_summary",
                     "description": "Set or clear the summary field of an existing memory. The summary is a short gist indexed by BM25 alongside the raw text. Pass summary=null to clear. Returns error if the id doesn't exist.",
                     "inputSchema": {
@@ -983,18 +1009,6 @@ def _mcp_loop() -> None:
                             "ids": {"type": "array", "items": {"type": "integer"}, "description": "Memory IDs to fetch"},
                         },
                         "required": ["ids"],
-                    },
-                },
-                {
-                    "name": "mnemonics_update_meta",
-                    "description": "Replace the metadata dict of a single memory. Returns changed=true if the ID was found.",
-                    "inputSchema": {
-                        "type": "object",
-                        "properties": {
-                            "id": {"type": "integer", "description": "Memory ID"},
-                            "meta": {"type": "object", "description": "New metadata to store"},
-                        },
-                        "required": ["id", "meta"],
                     },
                 },
                 {
@@ -1274,6 +1288,17 @@ def _mcp_loop() -> None:
                         if r.get("summary"):
                             lines_hs.append(f"           summary: {r['summary'][:120]}")
                     ok({"content": [{"type": "text", "text": "\n".join(lines_hs)}]})
+
+            elif name == "mnemonics_bulk_update_summary":
+                raw_upd = args.get("updates")
+                if not isinstance(raw_upd, dict):
+                    err("mnemonics_bulk_update_summary: 'updates' (object) is required")
+                    continue
+                upd: dict[int, str | None] = {}
+                for k, v in raw_upd.items():
+                    upd[int(k)] = v if isinstance(v, str) else None
+                n_bus = _get_store().bulk_update_summary(upd)
+                ok({"content": [{"type": "text", "text": f"Updated summaries for {n_bus} memories."}]})
 
             elif name == "mnemonics_update_summary":
                 mid = args.get("id")
