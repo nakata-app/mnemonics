@@ -1421,3 +1421,45 @@ def test_text_search_summary_match(populated_store):
     store.update_summary(first_id, "unique_summary_keyword_xyz")
     hits = store.text_search("unique_summary_keyword_xyz")
     assert any(h["id"] == first_id for h in hits)
+
+
+# ── rename_ns ─────────────────────────────────────────────────────────────────
+
+def test_rename_ns_moves_rows(populated_store):
+    store, docs, vecs = populated_store
+    n = store.count("default")
+    moved = store.rename_ns("default", "renamed")
+    assert moved == n
+    assert store.count("renamed") == n
+    assert store.count("default") == 0
+
+
+def test_rename_ns_zero_returns_zero(tmp_store):
+    moved = tmp_store.rename_ns("nonexistent", "new")
+    assert moved == 0
+
+
+def test_rename_ns_same_name_zero(populated_store):
+    store, docs, vecs = populated_store
+    moved = store.rename_ns("default", "default")
+    assert moved == 0
+    assert store.count("default") == len(docs)
+
+
+def test_rename_ns_conflict_raises(populated_store):
+    store, docs, vecs = populated_store
+    import numpy as np
+    v = np.random.rand(384).astype("float32")
+    v /= np.linalg.norm(v)
+    store.add(["row in other"], v[None], ns="other")
+    with pytest.raises(ValueError, match="already has"):
+        store.rename_ns("default", "other")
+
+
+def test_rename_ns_renames_bin_file(populated_store, tmp_path):
+    store, docs, vecs = populated_store
+    store.rename_ns("default", "moved")
+    old_bin = store.root / "index_default.bin"
+    new_bin = store.root / "index_moved.bin"
+    assert not old_bin.exists()
+    assert new_bin.exists()

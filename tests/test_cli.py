@@ -2069,3 +2069,45 @@ def test_cli_text_search_summary_shown(tmp_path, capsys):
         main()
     out = capsys.readouterr().out
     assert "city in France" in out
+
+
+# ── rename-ns ─────────────────────────────────────────────────────────────────
+
+def test_cli_rename_ns_basic(tmp_path, capsys):
+    """rename-ns moves memories and prints confirmation."""
+    mock_store = MagicMock()
+    mock_store.rename_ns.return_value = 3
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "rename-ns", "old", "new", "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.rename_ns.assert_called_once_with("old", "new")
+    out = capsys.readouterr().out
+    assert "3 memories" in out
+
+
+def test_cli_rename_ns_zero(tmp_path, capsys):
+    """rename-ns with empty source namespace prints warning."""
+    mock_store = MagicMock()
+    mock_store.rename_ns.return_value = 0
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "rename-ns", "ghost", "new", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "nothing to rename" in out
+
+
+def test_cli_rename_ns_conflict_exits(tmp_path, capsys):
+    """rename-ns with a ValueError exits with code 1."""
+    mock_store = MagicMock()
+    mock_store.rename_ns.side_effect = ValueError("already has 2 memories")
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "rename-ns", "src", "dst", "--path", str(tmp_path)]),
+    ):
+        with pytest.raises(SystemExit) as exc:
+            main()
+    assert exc.value.code == 1

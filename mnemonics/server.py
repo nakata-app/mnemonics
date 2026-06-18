@@ -177,6 +177,19 @@ class _Handler(BaseHTTPRequestHandler):
                 n = store.forget(ns=ns, before=before, tier=tier_filter)
                 self._json(200, {"deleted": n, "dry_run": False})
 
+        elif self.path == "/rename-ns":
+            old_ns = body.get("old_ns", "").strip()
+            new_ns = body.get("new_ns", "").strip()
+            if not old_ns or not new_ns:
+                self._json(400, {"error": "'old_ns' and 'new_ns' are required"})
+                return
+            try:
+                moved = _get_store().rename_ns(old_ns, new_ns)
+            except ValueError as e:
+                self._json(409, {"error": str(e)})
+                return
+            self._json(200, {"old_ns": old_ns, "new_ns": new_ns, "moved": moved})
+
         elif self.path == "/search-bm25":
             query = body.get("query", "").strip()
             if not query:
@@ -750,6 +763,18 @@ def _mcp_loop() -> None:
                     },
                 },
                 {
+                    "name": "mnemonics_rename_ns",
+                    "description": "Rename a namespace — moves all its memories and renames the vector index file. Fails with an error if the target namespace already exists (prevents silent merges).",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "old_ns": {"type": "string", "description": "Current namespace name"},
+                            "new_ns": {"type": "string", "description": "New namespace name"},
+                        },
+                        "required": ["old_ns", "new_ns"],
+                    },
+                },
+                {
                     "name": "mnemonics_text_search",
                     "description": "Case-insensitive substring search over memory text and summary. Faster than vector search for exact keyword lookups. Returns rows newest-first.",
                     "inputSchema": {
@@ -1083,6 +1108,19 @@ def _mcp_loop() -> None:
                     }, ensure_ascii=False))
                 result_text = "\n".join(lines) if lines else "(no memories matched)"
                 ok({"content": [{"type": "text", "text": result_text}]})
+
+            elif name == "mnemonics_rename_ns":
+                old_ns = args.get("old_ns", "").strip()
+                new_ns = args.get("new_ns", "").strip()
+                if not old_ns or not new_ns:
+                    err("mnemonics_rename_ns: 'old_ns' and 'new_ns' are required")
+                    continue
+                try:
+                    moved = _get_store().rename_ns(old_ns, new_ns)
+                except ValueError as e:
+                    err(str(e))
+                    continue
+                ok({"content": [{"type": "text", "text": f"Renamed {old_ns!r} → {new_ns!r}: {moved} memories moved."}]})
 
             elif name == "mnemonics_text_search":
                 q = args.get("query", "").strip()

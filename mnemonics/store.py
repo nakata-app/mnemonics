@@ -829,6 +829,43 @@ class Store:
                 pass
         return len(ids)
 
+    def rename_ns(self, old_ns: str, new_ns: str) -> int:
+        """Rename namespace *old_ns* to *new_ns*.
+
+        Updates all rows in SQL and renames the hnswlib .bin index file.
+        Returns the number of rows moved. If *old_ns* does not exist, returns 0.
+        Raises ValueError if *new_ns* already exists to prevent silent merges.
+        """
+        if old_ns == new_ns:
+            return 0
+        count = self._db.execute(
+            "SELECT COUNT(*) FROM memories WHERE ns=?", (old_ns,)
+        ).fetchone()[0]
+        if count == 0:
+            return 0
+        existing = self._db.execute(
+            "SELECT COUNT(*) FROM memories WHERE ns=?", (new_ns,)
+        ).fetchone()[0]
+        if existing:
+            raise ValueError(
+                f"rename_ns: target namespace {new_ns!r} already has {existing} memories; "
+                "use forget() first or choose a different name"
+            )
+        with self._lock:
+            self._db.execute(
+                "UPDATE memories SET ns=? WHERE ns=?", (new_ns, old_ns)
+            )
+            self._db.commit()
+        old_bin = self.root / f"index_{old_ns}.bin"
+        new_bin = self.root / f"index_{new_ns}.bin"
+        if old_bin.exists():
+            old_bin.rename(new_bin)
+        if old_ns in self._index:
+            self._index[new_ns] = self._index.pop(old_ns)
+        if old_ns in self._index_mtime:
+            self._index_mtime[new_ns] = self._index_mtime.pop(old_ns)
+        return count
+
     def health_check(self) -> dict[str, Any]:
         """Return a health report: DB integrity, WAL size, per-ns index counts, orphan indexes."""
         report: dict[str, Any] = {}

@@ -618,7 +618,7 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_pin", "mnemonics_tier", "mnemonics_gc", "mnemonics_stats",
         "mnemonics_health", "mnemonics_repair",
         "mnemonics_search_by_meta", "mnemonics_delete_many", "mnemonics_update_meta",
-        "mnemonics_export", "mnemonics_import", "mnemonics_text_search",
+        "mnemonics_export", "mnemonics_import", "mnemonics_text_search", "mnemonics_rename_ns",
     }
 
 
@@ -2214,3 +2214,81 @@ def test_mcp_text_search_in_tools_list(tmp_store):
     })[0]
     names = {t["name"] for t in resp["result"]["tools"]}
     assert "mnemonics_text_search" in names
+
+
+# ── POST /rename-ns ───────────────────────────────────────────────────────────
+
+def test_http_rename_ns_basic(populated_store):
+    """POST /rename-ns moves all rows to the new namespace."""
+    store, docs, vecs = populated_store
+    n = store.count("default")
+    code, data = http_call(store, "POST", "/rename-ns",
+                           {"old_ns": "default", "new_ns": "renamed"})
+    assert code == 200
+    assert data["moved"] == n
+    assert store.count("renamed") == n
+
+
+def test_http_rename_ns_missing_fields(tmp_store):
+    """POST /rename-ns without old_ns/new_ns returns 400."""
+    code, data = http_call(tmp_store, "POST", "/rename-ns", {"old_ns": "x"})
+    assert code == 400
+
+
+def test_http_rename_ns_conflict(populated_store):
+    """POST /rename-ns when target ns exists returns 409."""
+    import numpy as np
+    store, docs, vecs = populated_store
+    v = np.random.rand(384).astype("float32"); v /= np.linalg.norm(v)
+    store.add(["other row"], v[None], ns="other")
+    code, data = http_call(store, "POST", "/rename-ns",
+                           {"old_ns": "default", "new_ns": "other"})
+    assert code == 409
+
+
+# ── MCP mnemonics_rename_ns ────────────────────────────────────────────────────
+
+def _mcp_rename(store, old_ns, new_ns):
+    return _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_rename_ns",
+                   "arguments": {"old_ns": old_ns, "new_ns": new_ns}},
+    })[0]
+
+
+def test_mcp_rename_ns_basic(populated_store):
+    """mnemonics_rename_ns moves memories and reports count."""
+    store, docs, vecs = populated_store
+    n = store.count("default")
+    r = _mcp_rename(store, "default", "renamed_ns")
+    assert "result" in r
+    assert f"{n} memories" in r["result"]["content"][0]["text"]
+    assert store.count("renamed_ns") == n
+
+
+def test_mcp_rename_ns_missing_args(tmp_store):
+    """mnemonics_rename_ns without required args returns error."""
+    r = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_rename_ns", "arguments": {"old_ns": ""}},
+    })[0]
+    assert "error" in r
+
+
+def test_mcp_rename_ns_conflict(populated_store):
+    """mnemonics_rename_ns when target exists returns error."""
+    import numpy as np
+    store, docs, vecs = populated_store
+    v = np.random.rand(384).astype("float32"); v /= np.linalg.norm(v)
+    store.add(["other"], v[None], ns="other")
+    r = _mcp_rename(store, "default", "other")
+    assert "error" in r
+
+
+def test_mcp_rename_ns_in_tools_list(tmp_store):
+    """mnemonics_rename_ns appears in the MCP tools list."""
+    resp = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {},
+    })[0]
+    names = {t["name"] for t in resp["result"]["tools"]}
+    assert "mnemonics_rename_ns" in names

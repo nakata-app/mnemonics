@@ -227,6 +227,12 @@ def main() -> None:
     ij.add_argument("--dry-run", action="store_true", help="Parse and validate without writing to store")
     ij.add_argument("--path", default="~/.mnemonics", help="Store directory")
 
+    # rename-ns
+    rn = sub.add_parser("rename-ns", help="Rename a namespace (moves all memories + renames index file)")
+    rn.add_argument("old_ns", help="Current namespace name")
+    rn.add_argument("new_ns", help="New namespace name")
+    rn.add_argument("--path", default="~/.mnemonics", help="Store directory")
+
     # restore
     rs = sub.add_parser("restore", help="Extract a backup archive into a store directory")
     rs.add_argument("archive", help="Path to the .tar.gz produced by `mnemonics backup`")
@@ -828,6 +834,19 @@ def main() -> None:
             print(f"  warning: {err}", file=sys.stderr)
         label = "(dry-run) would import" if args.dry_run else "Imported"
         print(f"{label} {imported} chunk(s), skipped {skipped} invalid row(s).")
+
+    elif args.cmd == "rename-ns":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        try:
+            moved = store.rename_ns(args.old_ns, args.new_ns)
+        except ValueError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+        if moved == 0:
+            print(f"Namespace {args.old_ns!r} has no memories, nothing to rename.")
+        else:
+            print(f"Renamed {args.old_ns!r} → {args.new_ns!r}: {moved} memories moved.")
 
     elif args.cmd == "backup":
         from mnemonics.backup import backup
