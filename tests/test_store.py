@@ -3272,3 +3272,115 @@ def test_search_by_summary_all_ns(tmp_store):
     tmp_store.add(["ns2"], v2, ns="ns2", summaries=["target word"])
     hits = tmp_store.search_by_summary("target", ns=None)
     assert len(hits) == 2
+
+
+# ── set_tier_by_tag ────────────────────────────────────────────────────────────
+
+def test_set_tier_by_tag_updates_matching(tmp_store):
+    """set_tier_by_tag updates tier only for memories with the tag."""
+    import numpy as np
+    vecs = np.random.rand(3, 384).astype(np.float32)
+    ids = tmp_store.add(["a", "b", "c"], vecs, ns="default",
+                        meta=[{"tags": ["important"]}, {"tags": ["other"]}, {"tags": ["important"]}])
+    n = tmp_store.set_tier_by_tag("important", 0, ns="default")
+    assert n == 2
+    for mid in [ids[0], ids[2]]:
+        row = tmp_store._db.execute("SELECT tier FROM memories WHERE id=?", (mid,)).fetchone()
+        assert row[0] == 0
+
+
+def test_set_tier_by_tag_no_match(tmp_store):
+    """set_tier_by_tag returns 0 when tag not found."""
+    import numpy as np
+    vecs = np.random.rand(1, 384).astype(np.float32)
+    tmp_store.add(["doc"], vecs, ns="default", meta=[{"tags": ["other"]}])
+    n = tmp_store.set_tier_by_tag("missing", 0, ns="default")
+    assert n == 0
+
+
+def test_set_tier_by_tag_all_ns(tmp_store):
+    """set_tier_by_tag ns=None spans all namespaces."""
+    import numpy as np
+    v1 = np.random.rand(1, 384).astype(np.float32)
+    v2 = np.random.rand(1, 384).astype(np.float32)
+    tmp_store.add(["ns1"], v1, ns="ns1", meta=[{"tags": ["flag"]}])
+    tmp_store.add(["ns2"], v2, ns="ns2", meta=[{"tags": ["flag"]}])
+    n = tmp_store.set_tier_by_tag("flag", 0, ns=None)
+    assert n == 2
+
+
+# ── rotate_ns ──────────────────────────────────────────────────────────────────
+
+def test_rotate_ns_moves_oldest(tmp_store):
+    """rotate_ns moves the oldest memories to dst_ns."""
+    import numpy as np
+    vecs = np.random.rand(5, 384).astype(np.float32)
+    tmp_store.add(["a", "b", "c", "d", "e"], vecs, ns="default")
+    n = tmp_store.rotate_ns("default", "archive", limit=3)
+    assert n == 3
+    remaining = tmp_store._db.execute("SELECT count(*) FROM memories WHERE ns='default'").fetchone()[0]
+    archived = tmp_store._db.execute("SELECT count(*) FROM memories WHERE ns='archive'").fetchone()[0]
+    assert remaining == 2
+    assert archived == 3
+
+
+def test_rotate_ns_empty_source(tmp_store):
+    """rotate_ns returns 0 when src_ns is empty."""
+    n = tmp_store.rotate_ns("empty", "archive")
+    assert n == 0
+
+
+def test_rotate_ns_by_tier(tmp_store):
+    """rotate_ns tier param filters by tier."""
+    import numpy as np
+    vecs = np.random.rand(3, 384).astype(np.float32)
+    ids = tmp_store.add(["a", "b", "c"], vecs, ns="default")
+    tmp_store.pin(ids[0])  # tier=0
+    n = tmp_store.rotate_ns("default", "archive", tier=1)  # only tier=1
+    assert n == 2
+
+
+# ── compact_meta ──────────────────────────────────────────────────────────────
+
+def test_compact_meta_strips_all(tmp_store):
+    """compact_meta with keep_keys=None strips all meta fields."""
+    import json, numpy as np
+    vecs = np.random.rand(2, 384).astype(np.float32)
+    tmp_store.add(["a", "b"], vecs, ns="default",
+                  meta=[{"important": "yes", "noise": "x"}, {"tags": ["t"]}])
+    n = tmp_store.compact_meta(ns="default", keep_keys=None)
+    assert n == 2
+    rows = tmp_store._db.execute("SELECT meta FROM memories WHERE ns='default'").fetchall()
+    for r in rows:
+        assert json.loads(r[0]) == {}
+
+
+def test_compact_meta_keeps_specified(tmp_store):
+    """compact_meta with keep_keys retains only those keys."""
+    import json, numpy as np
+    vecs = np.random.rand(1, 384).astype(np.float32)
+    tmp_store.add(["doc"], vecs, ns="default", meta=[{"a": 1, "b": 2, "c": 3}])
+    n = tmp_store.compact_meta(ns="default", keep_keys=["a"])
+    assert n == 1
+    row = tmp_store._db.execute("SELECT meta FROM memories WHERE ns='default'").fetchone()
+    assert json.loads(row[0]) == {"a": 1}
+
+
+def test_compact_meta_all_ns(tmp_store):
+    """compact_meta ns=None spans all namespaces."""
+    import numpy as np
+    v1 = np.random.rand(1, 384).astype(np.float32)
+    v2 = np.random.rand(1, 384).astype(np.float32)
+    tmp_store.add(["ns1"], v1, ns="ns1", meta=[{"x": 1}])
+    tmp_store.add(["ns2"], v2, ns="ns2", meta=[{"y": 2}])
+    n = tmp_store.compact_meta(ns=None, keep_keys=None)
+    assert n == 2
+
+
+def test_compact_meta_no_change_when_keys_match(tmp_store):
+    """compact_meta returns 0 when all meta already matches keep_keys."""
+    import numpy as np
+    vecs = np.random.rand(1, 384).astype(np.float32)
+    tmp_store.add(["doc"], vecs, ns="default", meta=[{"a": 1}])
+    n = tmp_store.compact_meta(ns="default", keep_keys=["a"])
+    assert n == 0

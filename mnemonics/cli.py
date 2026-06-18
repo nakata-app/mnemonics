@@ -80,6 +80,29 @@ def main() -> None:
     ts.add_argument("--json", dest="json_out", action="store_true", help="Output results as JSON array")
     ts.add_argument("--path", default="~/.mnemonics")
 
+    # set-tier-by-tag
+    stbt = sub.add_parser("set-tier-by-tag", help="Set tier on all memories with a given tag")
+    stbt.add_argument("tag", help="Tag to match in meta.tags")
+    stbt.add_argument("tier", type=int, help="Target tier: 0=pinned, 1=default, 2=ambient")
+    stbt.add_argument("--ns", default="default")
+    stbt.add_argument("--all-ns", action="store_true")
+    stbt.add_argument("--path", default="~/.mnemonics")
+
+    # rotate-ns
+    rotatens = sub.add_parser("rotate-ns", help="Move oldest N memories from src-ns to dst-ns")
+    rotatens.add_argument("src_ns", help="Source namespace")
+    rotatens.add_argument("dst_ns", help="Destination namespace")
+    rotatens.add_argument("--limit", type=int, default=100)
+    rotatens.add_argument("--tier", type=int, default=None)
+    rotatens.add_argument("--path", default="~/.mnemonics")
+
+    # compact-meta
+    cmpct = sub.add_parser("compact-meta", help="Strip all meta keys except those in keep-keys")
+    cmpct.add_argument("--ns", default="default")
+    cmpct.add_argument("--all-ns", action="store_true")
+    cmpct.add_argument("--keep-keys", nargs="*", default=None, metavar="KEY")
+    cmpct.add_argument("--path", default="~/.mnemonics")
+
     # pinned-memories
     pm = sub.add_parser("pinned-memories", help="List all pinned (tier=0) memories")
     pm.add_argument("--ns", default="default")
@@ -680,6 +703,29 @@ def main() -> None:
                 print(line)
                 if r.get("summary"):
                     print(f"           summary: {r['summary']}")
+
+    elif args.cmd == "set-tier-by-tag":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        ns_q = None if args.all_ns else args.ns
+        n = store.set_tier_by_tag(args.tag, args.tier, ns=ns_q)
+        ns_label = repr(ns_q) if ns_q is not None else "(all)"
+        print(f"Updated tier={args.tier} for {n} memories with tag={args.tag!r} (ns={ns_label}).")
+
+    elif args.cmd == "rotate-ns":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        n = store.rotate_ns(args.src_ns, args.dst_ns, limit=args.limit, tier=args.tier)
+        print(f"Moved {n} memories from {args.src_ns!r} → {args.dst_ns!r}.")
+
+    elif args.cmd == "compact-meta":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        ns_q = None if args.all_ns else args.ns
+        n = store.compact_meta(ns=ns_q, keep_keys=args.keep_keys if args.keep_keys else None)
+        ns_label = repr(ns_q) if ns_q is not None else "(all)"
+        keep_label = repr(args.keep_keys) if args.keep_keys else "(none)"
+        print(f"Stripped meta from {n} memories (ns={ns_label}, kept keys: {keep_label}).")
 
     elif args.cmd == "pinned-memories":
         from mnemonics.store import Store

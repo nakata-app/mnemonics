@@ -3708,3 +3708,105 @@ def test_cli_pinned_memories_nonempty(tmp_path, capsys):
         main()
     out = capsys.readouterr().out
     assert "[7]" in out
+
+
+# ── set-tier-by-tag CLI ────────────────────────────────────────────────────────
+
+def test_cli_set_tier_by_tag(tmp_path, capsys):
+    """set-tier-by-tag calls store method with correct args."""
+    mock_store = MagicMock()
+    mock_store.set_tier_by_tag.return_value = 3
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "set-tier-by-tag", "vip", "0",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.set_tier_by_tag.assert_called_once_with("vip", 0, ns="default")
+    out = capsys.readouterr().out
+    assert "3" in out
+
+
+def test_cli_set_tier_by_tag_all_ns(tmp_path, capsys):
+    """set-tier-by-tag --all-ns passes ns=None."""
+    mock_store = MagicMock()
+    mock_store.set_tier_by_tag.return_value = 0
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "set-tier-by-tag", "t", "1",
+                           "--all-ns", "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.set_tier_by_tag.assert_called_once_with("t", 1, ns=None)
+
+
+# ── rotate-ns CLI ──────────────────────────────────────────────────────────────
+
+def test_cli_rotate_ns(tmp_path, capsys):
+    """rotate-ns calls store method and prints count."""
+    mock_store = MagicMock()
+    mock_store.rotate_ns.return_value = 5
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "rotate-ns", "src", "dst",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.rotate_ns.assert_called_once_with("src", "dst", limit=100, tier=None)
+    out = capsys.readouterr().out
+    assert "5" in out
+
+
+def test_cli_rotate_ns_with_tier(tmp_path, capsys):
+    """rotate-ns --tier passes tier to store."""
+    mock_store = MagicMock()
+    mock_store.rotate_ns.return_value = 2
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "rotate-ns", "src", "dst", "--tier", "2",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.rotate_ns.assert_called_once_with("src", "dst", limit=100, tier=2)
+
+
+# ── compact-meta CLI ───────────────────────────────────────────────────────────
+
+def test_cli_compact_meta(tmp_path, capsys):
+    """compact-meta calls store method and prints count."""
+    mock_store = MagicMock()
+    mock_store.compact_meta.return_value = 4
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "compact-meta", "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.compact_meta.assert_called_once_with(ns="default", keep_keys=None)
+    out = capsys.readouterr().out
+    assert "4" in out
+
+
+def test_cli_compact_meta_with_keep(tmp_path, capsys):
+    """compact-meta --keep-keys passes keep_keys."""
+    mock_store = MagicMock()
+    mock_store.compact_meta.return_value = 1
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "compact-meta", "--keep-keys", "a", "b",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.compact_meta.assert_called_once_with(ns="default", keep_keys=["a", "b"])
+
+
+def test_cli_compact_meta_all_ns(tmp_path, capsys):
+    """compact-meta --all-ns passes ns=None."""
+    mock_store = MagicMock()
+    mock_store.compact_meta.return_value = 0
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "compact-meta", "--all-ns",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.compact_meta.assert_called_once_with(ns=None, keep_keys=None)

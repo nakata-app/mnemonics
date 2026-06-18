@@ -832,6 +832,119 @@ class Store:
             self._db.commit()
         return True
 
+    def set_tier_by_tag(
+        self,
+        tag: str,
+        tier: int,
+        ns: str | None = "default",
+    ) -> int:
+        """Set *tier* on every memory whose meta.tags list contains *tag*.
+
+        *ns=None* spans all namespaces.  Returns the number of rows updated.
+        The tag match uses SQLite ``json_each`` so partial tag names are
+        *not* matched.
+        """
+        if ns is not None:
+            cur = self._db.execute(
+                "UPDATE memories SET tier=? "
+                "WHERE ns=? AND EXISTS ("
+                "  SELECT 1 FROM json_each(json_extract(meta,'$.tags')) "
+                "  WHERE value=?)",
+                (tier, ns, tag),
+            )
+        else:
+            cur = self._db.execute(
+                "UPDATE memories SET tier=? "
+                "WHERE EXISTS ("
+                "  SELECT 1 FROM json_each(json_extract(meta,'$.tags')) "
+                "  WHERE value=?)",
+                (tier, tag),
+            )
+        n = cur.rowcount
+        with self._lock:
+            self._db.commit()
+        return n
+
+    def rotate_ns(
+        self,
+        src_ns: str,
+        dst_ns: str,
+        limit: int = 100,
+        tier: int | None = None,
+    ) -> int:
+        """Move the oldest *limit* memories from *src_ns* to *dst_ns*.
+
+        Optionally filter by *tier*.  Returns the number of rows moved.
+        This is a pure SQL operation — the hnswlib index is NOT updated for
+        rotated memories (they remain searchable in the old index until
+        ``reindex_all`` is called).
+        """
+        import json as _j_rns
+
+        if tier is not None:
+            rows = self._db.execute(
+                "SELECT id FROM memories WHERE ns=? AND tier=? ORDER BY created ASC LIMIT ?",
+                (src_ns, tier, limit),
+            ).fetchall()
+        else:
+            rows = self._db.execute(
+                "SELECT id FROM memories WHERE ns=? ORDER BY created ASC LIMIT ?",
+                (src_ns, limit),
+            ).fetchall()
+
+        if not rows:
+            return 0
+
+        ids = [r[0] for r in rows]
+        placeholders = ",".join("?" * len(ids))
+        with self._lock:
+            self._db.execute(
+                f"UPDATE memories SET ns=? WHERE id IN ({placeholders})",
+                (dst_ns, *ids),
+            )
+            self._db.commit()
+        return len(ids)
+
+    def compact_meta(
+        self,
+        ns: str | None = "default",
+        keep_keys: list[str] | None = None,
+    ) -> int:
+        """Remove all meta keys except those in *keep_keys* (or all if None).
+
+        *ns=None* spans all namespaces.  *keep_keys=None* strips meta
+        entirely (sets to ``{}``).  Returns the number of rows updated.
+        Useful for reducing storage after bulk imports that carried
+        unwanted meta fields.
+        """
+        import json as _j_cm
+
+        if ns is not None:
+            rows = self._db.execute(
+                "SELECT id, meta FROM memories WHERE ns=?", (ns,)
+            ).fetchall()
+        else:
+            rows = self._db.execute(
+                "SELECT id, meta FROM memories"
+            ).fetchall()
+
+        updated = 0
+        with self._lock:
+            for row_id, raw_meta in rows:
+                meta = _j_cm.loads(raw_meta) if raw_meta else {}
+                if keep_keys is None:
+                    new_meta: dict = {}
+                else:
+                    new_meta = {k: v for k, v in meta.items() if k in keep_keys}
+                if new_meta != meta:
+                    self._db.execute(
+                        "UPDATE memories SET meta=? WHERE id=?",
+                        (_j_cm.dumps(new_meta, ensure_ascii=False), row_id),
+                    )
+                    updated += 1
+            self._db.commit()
+        return updated
+
     def search_by_summary(
         self,
         query: str,

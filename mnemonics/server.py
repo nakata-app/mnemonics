@@ -590,6 +590,44 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(200, _get_store().health_check())
         elif path == "/namespaces":
             self._json(200, {"namespaces": _get_store().list_namespaces()})
+        elif path.startswith("/set-tier-by-tag"):
+            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_stbt
+            qs_stbt = parse_qs(urlparse(self.path).query)
+            tag_stbt = (qs_stbt.get("tag") or [None])[0]
+            tier_stbt_raw = (qs_stbt.get("tier") or [None])[0]
+            if not tag_stbt or tier_stbt_raw is None:
+                self._json(400, {"error": "'tag' and 'tier' query params are required"})
+                return
+            ns_stbt_raw = qs_stbt.get("ns", [None])[0]
+            ns_stbt = _uqp_stbt(ns_stbt_raw) if ns_stbt_raw is not None else None
+            n_stbt = _get_store().set_tier_by_tag(
+                _uqp_stbt(tag_stbt), int(tier_stbt_raw), ns=ns_stbt
+            )
+            self._json(200, {"tag": tag_stbt, "tier": int(tier_stbt_raw), "updated": n_stbt})
+        elif path.startswith("/rotate-ns"):
+            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_rns
+            qs_rns = parse_qs(urlparse(self.path).query)
+            src_rns = (qs_rns.get("src") or [None])[0]
+            dst_rns = (qs_rns.get("dst") or [None])[0]
+            if not src_rns or not dst_rns:
+                self._json(400, {"error": "'src' and 'dst' query params are required"})
+                return
+            limit_rns = int((qs_rns.get("limit") or ["100"])[0])
+            tier_rns_raw = (qs_rns.get("tier") or [None])[0]
+            tier_rns = int(tier_rns_raw) if tier_rns_raw is not None else None
+            n_rns = _get_store().rotate_ns(
+                _uqp_rns(src_rns), _uqp_rns(dst_rns), limit=limit_rns, tier=tier_rns
+            )
+            self._json(200, {"src": src_rns, "dst": dst_rns, "moved": n_rns})
+        elif path.startswith("/compact-meta"):
+            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_cmpct
+            qs_cmpct = parse_qs(urlparse(self.path).query)
+            ns_cmpct_raw = qs_cmpct.get("ns", [None])[0]
+            ns_cmpct = _uqp_cmpct(ns_cmpct_raw) if ns_cmpct_raw is not None else None
+            keep_raw = qs_cmpct.get("keep")
+            keep_cmpct = keep_raw if keep_raw else None
+            n_cmpct = _get_store().compact_meta(ns=ns_cmpct, keep_keys=keep_cmpct)
+            self._json(200, {"ns": ns_cmpct, "updated": n_cmpct})
         elif path.startswith("/pinned-memories"):
             from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_pm
             qs_pm = parse_qs(urlparse(self.path).query)
@@ -1043,6 +1081,44 @@ def _mcp_loop() -> None:
                             "max_tier": {"type": "integer", "description": "Only return memories with tier <= this value"},
                         },
                         "required": ["query", "vector"],
+                    },
+                },
+                {
+                    "name": "mnemonics_set_tier_by_tag",
+                    "description": "Bulk-update the tier of all memories whose meta.tags list contains 'tag'. Omit ns to span all namespaces. Returns the count of updated rows.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "tag": {"type": "string"},
+                            "tier": {"type": "integer", "description": "0=pinned, 1=default, 2=ambient"},
+                            "ns": {"type": "string"},
+                        },
+                        "required": ["tag", "tier"],
+                    },
+                },
+                {
+                    "name": "mnemonics_rotate_ns",
+                    "description": "Move the oldest N memories from src_ns to dst_ns (by created ASC). Optionally filter by tier. Returns count moved.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "src_ns": {"type": "string"},
+                            "dst_ns": {"type": "string"},
+                            "limit": {"type": "integer", "default": 100},
+                            "tier": {"type": "integer"},
+                        },
+                        "required": ["src_ns", "dst_ns"],
+                    },
+                },
+                {
+                    "name": "mnemonics_compact_meta",
+                    "description": "Strip meta fields not in keep_keys (or all fields if keep_keys omitted) from memories in ns. Omit ns for all namespaces. Returns count of rows changed.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ns": {"type": "string"},
+                            "keep_keys": {"type": "array", "items": {"type": "string"}},
+                        },
                     },
                 },
                 {
@@ -1886,6 +1962,37 @@ def _mcp_loop() -> None:
                         if r.get("summary"):
                             lines_hs.append(f"           summary: {r['summary'][:120]}")
                     ok({"content": [{"type": "text", "text": "\n".join(lines_hs)}]})
+
+            elif name == "mnemonics_set_tier_by_tag":
+                stbt_tag_m = args.get("tag", "").strip()
+                stbt_tier_m = args.get("tier")
+                if not stbt_tag_m or stbt_tier_m is None:
+                    err("mnemonics_set_tier_by_tag: 'tag' and 'tier' are required")
+                    continue
+                stbt_ns_m = args.get("ns")
+                n_stbt_m = _get_store().set_tier_by_tag(stbt_tag_m, int(stbt_tier_m), ns=stbt_ns_m)
+                ok({"content": [{"type": "text", "text":
+                    f"Updated tier to {stbt_tier_m} for {n_stbt_m} memories with tag={stbt_tag_m!r}."}]})
+
+            elif name == "mnemonics_rotate_ns":
+                src_rns_m = args.get("src_ns", "").strip()
+                dst_rns_m = args.get("dst_ns", "").strip()
+                if not src_rns_m or not dst_rns_m:
+                    err("mnemonics_rotate_ns: 'src_ns' and 'dst_ns' are required")
+                    continue
+                limit_rns_m = int(args.get("limit", 100))
+                tier_rns_m = args.get("tier")
+                tier_rns_int = int(tier_rns_m) if tier_rns_m is not None else None
+                n_rns_m = _get_store().rotate_ns(src_rns_m, dst_rns_m, limit=limit_rns_m, tier=tier_rns_int)
+                ok({"content": [{"type": "text", "text":
+                    f"Moved {n_rns_m} memories from ns={src_rns_m!r} to ns={dst_rns_m!r}."}]})
+
+            elif name == "mnemonics_compact_meta":
+                ns_cmpct_m = args.get("ns")
+                keep_m = args.get("keep_keys")
+                n_cmpct_m = _get_store().compact_meta(ns=ns_cmpct_m, keep_keys=keep_m)
+                ok({"content": [{"type": "text", "text":
+                    f"Stripped meta from {n_cmpct_m} memories (ns={repr(ns_cmpct_m)}, keep={keep_m!r})."}]})
 
             elif name == "mnemonics_pinned_memories":
                 pm_ns_m = args.get("ns")

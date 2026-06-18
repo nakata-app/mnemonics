@@ -654,6 +654,9 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_pinned_memories",
         "mnemonics_update_meta_key",
         "mnemonics_search_by_summary",
+        "mnemonics_set_tier_by_tag",
+        "mnemonics_rotate_ns",
+        "mnemonics_compact_meta",
     }
 
 
@@ -4533,3 +4536,138 @@ def test_mcp_search_by_summary_missing_query(tmp_path):
                          "params": {"name": "mnemonics_search_by_summary",
                                     "arguments": {}}})[0]
     assert "error" in resp
+
+
+# ── set-tier-by-tag REST ────────────────────────────────────────────────────────
+
+def test_http_set_tier_by_tag_success(tmp_path):
+    """GET /set-tier-by-tag updates memories and returns updated count."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(2, DIM).astype(np.float32)
+    store.add(["a", "b"], vecs, ns="default",
+              meta=[{"tags": ["vip"]}, {"tags": ["other"]}])
+    code, data = http_call(store, "GET", "/set-tier-by-tag?tag=vip&tier=0&ns=default")
+    assert code == 200
+    assert data["updated"] == 1
+
+
+def test_http_set_tier_by_tag_missing_params(tmp_path):
+    """GET /set-tier-by-tag returns 400 when tag or tier missing."""
+    store = Store(tmp_path)
+    code, data = http_call(store, "GET", "/set-tier-by-tag?tag=vip")
+    assert code == 400
+
+
+# ── rotate-ns REST ─────────────────────────────────────────────────────────────
+
+def test_http_rotate_ns_moves_memories(tmp_path):
+    """GET /rotate-ns moves oldest memories to dst."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(3, DIM).astype(np.float32)
+    store.add(["x", "y", "z"], vecs, ns="src")
+    code, data = http_call(store, "GET", "/rotate-ns?src=src&dst=dst&limit=2")
+    assert code == 200
+    assert data["moved"] == 2
+
+
+def test_http_rotate_ns_missing_params(tmp_path):
+    """GET /rotate-ns returns 400 when src or dst missing."""
+    store = Store(tmp_path)
+    code, data = http_call(store, "GET", "/rotate-ns?src=only-src")
+    assert code == 400
+
+
+def test_http_rotate_ns_with_tier(tmp_path):
+    """GET /rotate-ns?tier= filters by tier."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(2, DIM).astype(np.float32)
+    ids = store.add(["a", "b"], vecs, ns="src")
+    store.pin(ids[0])
+    code, data = http_call(store, "GET", "/rotate-ns?src=src&dst=dst&tier=1")
+    assert code == 200
+    assert data["moved"] == 1
+
+
+# ── compact-meta REST ──────────────────────────────────────────────────────────
+
+def test_http_compact_meta_strips_all(tmp_path):
+    """GET /compact-meta with no keep param strips all meta."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(1, DIM).astype(np.float32)
+    store.add(["doc"], vecs, ns="default", meta=[{"noise": "x"}])
+    code, data = http_call(store, "GET", "/compact-meta?ns=default")
+    assert code == 200
+    assert data["updated"] == 1
+
+
+def test_http_compact_meta_keeps_keys(tmp_path):
+    """GET /compact-meta?keep= keeps specified keys."""
+    import numpy as np, json
+    store = Store(tmp_path)
+    vecs = np.random.rand(1, DIM).astype(np.float32)
+    store.add(["doc"], vecs, ns="default", meta=[{"keep": 1, "drop": 2}])
+    code, data = http_call(store, "GET", "/compact-meta?ns=default&keep=keep")
+    assert code == 200
+
+
+# ── MCP: set_tier_by_tag, rotate_ns, compact_meta ─────────────────────────────
+
+def test_mcp_set_tier_by_tag(tmp_path):
+    """MCP mnemonics_set_tier_by_tag returns update count."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(1, DIM).astype(np.float32)
+    store.add(["doc"], vecs, ns="default", meta=[{"tags": ["vip"]}])
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_set_tier_by_tag",
+                                    "arguments": {"tag": "vip", "tier": 0, "ns": "default"}}})[0]
+    text = resp["result"]["content"][0]["text"]
+    assert "1" in text
+
+
+def test_mcp_set_tier_by_tag_missing(tmp_path):
+    """MCP mnemonics_set_tier_by_tag returns error when tag missing."""
+    store = Store(tmp_path)
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_set_tier_by_tag",
+                                    "arguments": {"tier": 0}}})[0]
+    assert "error" in resp
+
+
+def test_mcp_rotate_ns(tmp_path):
+    """MCP mnemonics_rotate_ns moves memories."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(2, DIM).astype(np.float32)
+    store.add(["a", "b"], vecs, ns="src")
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_rotate_ns",
+                                    "arguments": {"src_ns": "src", "dst_ns": "dst"}}})[0]
+    text = resp["result"]["content"][0]["text"]
+    assert "2" in text
+
+
+def test_mcp_rotate_ns_missing(tmp_path):
+    """MCP mnemonics_rotate_ns returns error when src missing."""
+    store = Store(tmp_path)
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_rotate_ns",
+                                    "arguments": {"dst_ns": "dst"}}})[0]
+    assert "error" in resp
+
+
+def test_mcp_compact_meta(tmp_path):
+    """MCP mnemonics_compact_meta strips meta."""
+    import numpy as np
+    store = Store(tmp_path)
+    vecs = np.random.rand(1, DIM).astype(np.float32)
+    store.add(["doc"], vecs, ns="default", meta=[{"noise": "x"}])
+    resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "mnemonics_compact_meta",
+                                    "arguments": {"ns": "default"}}})[0]
+    text = resp["result"]["content"][0]["text"]
+    assert "1" in text
