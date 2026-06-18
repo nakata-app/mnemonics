@@ -770,7 +770,8 @@ def test_delete_mark_deleted_exception_is_swallowed(tmp_store, monkeypatch):
 
 def test_gc_mark_deleted_exception_swallowed(tmp_store, monkeypatch):
     from unittest.mock import MagicMock
-    tmp_store.add(["old"], make_vecs(1))
+    ids = tmp_store.add(["old"], make_vecs(1))
+    tmp_store.set_tier(ids[0], 2)  # make gc-eligible (tier=2 + access_count=0)
     bad_idx = MagicMock()
     bad_idx.mark_deleted.side_effect = Exception("boom")
     bad_idx.save_index.side_effect = Exception("boom")
@@ -779,3 +780,131 @@ def test_gc_mark_deleted_exception_swallowed(tmp_store, monkeypatch):
     assert n >= 0  # didn't raise
 
 
+def test_forget_mark_deleted_exception_swallowed(tmp_store, monkeypatch):
+    from unittest.mock import MagicMock
+    tmp_store.add(["text to forget"], make_vecs(1))
+    bad_idx = MagicMock()
+    bad_idx.mark_deleted.side_effect = Exception("boom")
+    bad_idx.save_index.side_effect = Exception("boom")
+    monkeypatch.setitem(tmp_store._index, "default", bad_idx)
+    n = tmp_store.forget("default")
+    assert n >= 1  # SQL delete succeeded, index exception swallowed
+
+
+def test_index_for_reload_from_disk(tmp_path):
+    """_index_for loads existing .bin from disk (lines 252-254 in store.py)."""
+    vecs = make_vecs(2)
+    s = Store(tmp_path)
+    s.add(["a", "b"], vecs)
+    # Clear in-memory cache so _index_for must reload from disk.
+    # Call _index_for directly (not search, which goes through _reload_if_stale).
+    s._index.clear()
+    s._index_mtime.clear()
+    idx = s._index_for("default")
+    assert idx is not None
+    assert "default" in s._index_mtime
+
+
+def test_repair_rebuild_runtime_error(tmp_path, monkeypatch):
+    """repair() catches RuntimeError from rebuild_ns_index (lines 710-711)."""
+    from unittest.mock import patch as _patch
+    s = Store(tmp_path)
+    s.add(["text"], make_vecs(1))
+    # Force health_check to report soft_deleted > 0 by mocking it
+    fake_report = {
+        "namespaces": [{"ns": "default", "soft_deleted": 1, "missing_vectors": 0, "idx_missing": False}],
+        "orphan_indexes": [],
+        "integrity": "ok",
+        "wal_kb": 0,
+    }
+    with _patch.object(s, "health_check", return_value=fake_report), \
+         _patch.object(s, "rebuild_ns_index", side_effect=RuntimeError("collision")):
+        result = s.repair()
+    errors = [x for x in result["orphan_vectors_fixed"] if "error" in x]
+    assert any("collision" in e["error"] for e in errors)
+
+
+def test_repair_orphan_unlink_exception(tmp_path, monkeypatch):
+    """repair() catches exception from orphan index unlink (lines 725-726)."""
+    from unittest.mock import patch as _patch
+    from pathlib import Path
+    s = Store(tmp_path)
+    orphan_path = str(tmp_path / "index_orphan.bin")
+    fake_report = {
+        "namespaces": [],
+        "orphan_indexes": [{"path": orphan_path}],
+        "integrity": "ok",
+        "wal_kb": 0,
+    }
+    with _patch.object(s, "health_check", return_value=fake_report), \
+         _patch.object(Path, "unlink", side_effect=OSError("locked")):
+        result = s.repair()
+    removed = result["orphan_indexes_removed"]
+    assert any(isinstance(r, dict) and "error" in r for r in removed)
+
+
+def test_ns_file_lock_no_fcntl(tmp_store, monkeypatch):
+    """_ns_file_lock with _HAS_FCNTL=False yields without POSIX lock (lines 212-213)."""
+    import mnemonics.store as _store_mod
+    monkeypatch.setattr(_store_mod, "_HAS_FCNTL", False)
+    with tmp_store._ns_file_lock("default", exclusive=True):
+        # Should yield without error when fcntl is unavailable
+        pass
+
+
+def test_rebuild_ns_index_collision(tmp_path):
+    """rebuild_ns_index raises RuntimeError when index path collides (lines 516-518)."""
+    import os, shutil
+    s = Store(tmp_path)
+    s.add(["a", "b"], make_vecs(2), ns="alpha")
+    # Simulate collision: create 'beta' namespace whose .bin resolves to same path
+    alpha_bin = tmp_path / "index_alpha.bin"
+    beta_bin = tmp_path / "index_beta.bin"
+    # copy so resolve() gives same inode (symlink)
+    beta_bin.symlink_to(alpha_bin)
+    import pytest
+    with pytest.raises(RuntimeError, match="collides"):
+        s.rebuild_ns_index("beta")
+
+
+def test_migrate_adds_missing_columns(tmp_path):
+    """_migrate() adds missing columns when opening an older DB (lines 148, 150, 152)."""
+    import sqlite3 as _sqlite
+    # Create a bare-bones DB without the new columns
+    db_path = tmp_path / "memories.db"
+    conn = _sqlite.connect(str(db_path))
+    conn.execute("""
+        CREATE TABLE memories (
+            id      INTEGER PRIMARY KEY AUTOINCREMENT,
+            ns      TEXT NOT NULL DEFAULT 'default',
+            text    TEXT NOT NULL,
+            meta    TEXT NOT NULL DEFAULT '{}',
+            created TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_ns ON memories(ns)")
+    conn.commit()
+    conn.close()
+    # Store.__init__ should detect missing columns and add them
+    s = Store(tmp_path)
+    cols = {row[1] for row in s._db.execute("PRAGMA table_info(memories)").fetchall()}
+    assert "tier" in cols
+    assert "last_accessed" in cols
+    assert "access_count" in cols
+    assert "summary" in cols
+
+
+def test_migrate_fts_rebuild_when_behind(tmp_path):
+    """_migrate_fts line 201: 'rebuild' when fts_count(existing) < mem_count."""
+    s = Store(tmp_path)
+    s.add(["row one", "row two"], make_vecs(2))
+    # Drop INSERT trigger so next INSERT goes to memories but NOT to FTS
+    s._db.execute("DROP TRIGGER IF EXISTS memories_ai")
+    s._db.execute(
+        "INSERT INTO memories(ns, text, meta) VALUES('default', 'ghost row', '{}')"
+    )
+    s._db.commit()
+    # Now fts_count(2) < mem_count(3) → elif branch (line 201) fires
+    s._migrate_fts()
+    count = s._db.execute("SELECT COUNT(*) FROM memories_fts").fetchone()[0]
+    assert count >= 1
