@@ -2849,3 +2849,58 @@ def test_cli_update_text_not_found(tmp_path, capsys):
         with pytest.raises(SystemExit) as exc:
             main()
     assert exc.value.code == 1
+
+
+# ── access-stats CLI ──────────────────────────────────────────────────────────
+
+def test_cli_access_stats_ok(tmp_path, capsys):
+    """access-stats prints formatted stats."""
+    mock_store = MagicMock()
+    mock_store.access_stats.return_value = {
+        "ns": "default", "total": 10, "total_accesses": 5,
+        "avg_accesses": 0.5, "max_accesses": 3,
+        "never_accessed": 7, "most_recent_access": "2026-06-18T12:00:00",
+    }
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "access-stats", "--ns", "default",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "10" in out and "default" in out
+
+
+def test_cli_access_stats_all_ns(tmp_path, capsys):
+    """access-stats --all-ns passes None to access_stats."""
+    mock_store = MagicMock()
+    mock_store.access_stats.return_value = {
+        "ns": None, "total": 20, "total_accesses": 0,
+        "avg_accesses": 0.0, "max_accesses": 0,
+        "never_accessed": 20, "most_recent_access": None,
+    }
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "access-stats", "--all-ns",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.access_stats.assert_called_once_with(None)
+
+
+def test_cli_access_stats_json(tmp_path, capsys):
+    """access-stats --json outputs valid JSON."""
+    mock_store = MagicMock()
+    mock_store.access_stats.return_value = {
+        "ns": "default", "total": 1, "total_accesses": 0,
+        "avg_accesses": 0.0, "max_accesses": 0,
+        "never_accessed": 1, "most_recent_access": None,
+    }
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "access-stats", "--json",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    parsed = json.loads(capsys.readouterr().out)
+    assert parsed["ns"] == "default"

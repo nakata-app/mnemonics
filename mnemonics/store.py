@@ -769,6 +769,34 @@ class Store:
             self._db.commit()
         return cur.rowcount
 
+    def access_stats(self, ns: str | None = "default") -> dict:
+        """Return access-count and last-accessed statistics for *ns*.
+
+        When *ns* is ``None`` the query spans all namespaces.  The returned
+        dict has the keys ``ns``, ``total``, ``total_accesses``,
+        ``avg_accesses``, ``max_accesses``, ``never_accessed`` (count with
+        access_count == 0), and ``most_recent_access`` (ISO string or None).
+        """
+        clause = "WHERE ns=?" if ns is not None else ""
+        params: tuple = (ns,) if ns is not None else ()
+        row = self._db.execute(
+            f"SELECT COUNT(*), SUM(access_count), AVG(access_count), "
+            f"MAX(access_count), MAX(last_accessed), "
+            f"SUM(CASE WHEN access_count=0 THEN 1 ELSE 0 END) "
+            f"FROM memories {clause}",
+            params,
+        ).fetchone()
+        total = int(row[0]) if row[0] else 0
+        return {
+            "ns": ns,
+            "total": total,
+            "total_accesses": int(row[1]) if row[1] is not None else 0,
+            "avg_accesses": round(float(row[2]), 3) if row[2] is not None else 0.0,
+            "max_accesses": int(row[3]) if row[3] is not None else 0,
+            "most_recent_access": row[4],
+            "never_accessed": int(row[5]) if row[5] is not None else 0,
+        }
+
     def namespace_info(self, ns: str) -> dict | None:
         """Return a summary dict for a single namespace, or None if it doesn't exist.
 

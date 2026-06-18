@@ -80,6 +80,13 @@ def main() -> None:
     ts.add_argument("--json", dest="json_out", action="store_true", help="Output results as JSON array")
     ts.add_argument("--path", default="~/.mnemonics")
 
+    # access-stats
+    acs = sub.add_parser("access-stats", help="Show access-count and last-accessed statistics for a namespace")
+    acs.add_argument("--ns", default="default", help="Namespace (omit for all)")
+    acs.add_argument("--all-ns", action="store_true", help="Query all namespaces")
+    acs.add_argument("--json", dest="json_out", action="store_true")
+    acs.add_argument("--path", default="~/.mnemonics")
+
     # update-text
     utp = sub.add_parser("update-text", help="Replace text of a memory (re-embed via sentence-transformers)")
     utp.add_argument("id", type=int, help="Memory ID to update")
@@ -534,6 +541,22 @@ def main() -> None:
                 print(line)
                 if r.get("summary"):
                     print(f"           summary: {r['summary']}")
+
+    elif args.cmd == "access-stats":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        ns_q = None if args.all_ns else args.ns
+        stats = store.access_stats(ns_q)
+        if args.json_out:
+            print(json.dumps(stats, default=str, ensure_ascii=False))
+        else:
+            print(f"Namespace      : {stats['ns'] or '(all)'}")
+            print(f"Total memories : {stats['total']}")
+            print(f"Total accesses : {stats['total_accesses']}")
+            print(f"Avg accesses   : {stats['avg_accesses']:.3f}")
+            print(f"Max accesses   : {stats['max_accesses']}")
+            print(f"Never accessed : {stats['never_accessed']}")
+            print(f"Most recent    : {stats['most_recent_access'] or 'none'}")
 
     elif args.cmd == "update-text":
         import numpy as _np_cli_ut

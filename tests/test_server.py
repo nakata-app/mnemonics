@@ -631,6 +631,7 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_move_to_ns",
         "mnemonics_clone",
         "mnemonics_update_text",
+        "mnemonics_access_stats",
     }
 
 
@@ -3454,3 +3455,45 @@ def test_mcp_update_text_missing_args(tmp_store):
                    "arguments": {"id": 1, "text": "x"}},
     })[0]
     assert "error" in r
+
+
+# ── access-stats REST + MCP ───────────────────────────────────────────────────
+
+def test_http_access_stats_default_ns(populated_store):
+    """GET /access-stats?ns=default returns access stats."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/access-stats?ns=default", {})
+    assert code == 200
+    assert data["total"] == len(docs)
+    assert "never_accessed" in data
+
+
+def test_http_access_stats_all_ns(populated_store):
+    """GET /access-stats (no ns) returns stats for all namespaces."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/access-stats", {})
+    assert code == 200
+    assert data["ns"] is None
+
+
+def test_mcp_access_stats_with_ns(populated_store):
+    """MCP mnemonics_access_stats with ns returns formatted stats."""
+    store, docs, vecs = populated_store
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_access_stats",
+                   "arguments": {"ns": "default"}},
+    })[0]
+    assert "result" in r
+    text = r["result"]["content"][0]["text"]
+    assert "Total memories" in text
+
+
+def test_mcp_access_stats_all_ns(populated_store):
+    """MCP mnemonics_access_stats without ns returns all-namespace stats."""
+    store, docs, vecs = populated_store
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_access_stats", "arguments": {}},
+    })[0]
+    assert "result" in r

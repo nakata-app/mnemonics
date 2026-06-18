@@ -507,6 +507,12 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(200, _get_store().health_check())
         elif path == "/namespaces":
             self._json(200, {"namespaces": _get_store().list_namespaces()})
+        elif path.startswith("/access-stats"):
+            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_as
+            qs_as = parse_qs(urlparse(self.path).query)
+            ns_as_raw = qs_as.get("ns", [None])[0]
+            ns_as = _uqp_as(ns_as_raw) if ns_as_raw is not None else None
+            self._json(200, _get_store().access_stats(ns_as))
         elif path == "/count":
             from urllib.parse import urlparse, parse_qs, unquote_plus
             qs = parse_qs(urlparse(self.path).query)
@@ -841,6 +847,16 @@ def _mcp_loop() -> None:
                             "max_tier": {"type": "integer", "description": "Only return memories with tier <= this value"},
                         },
                         "required": ["query", "vector"],
+                    },
+                },
+                {
+                    "name": "mnemonics_access_stats",
+                    "description": "Return access-count and last-accessed statistics for a namespace (or all namespaces when ns is omitted). Fields: total, total_accesses, avg_accesses, max_accesses, never_accessed, most_recent_access.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ns": {"type": "string", "description": "Namespace to query (omit to query all namespaces)"},
+                        },
                     },
                 },
                 {
@@ -1437,6 +1453,20 @@ def _mcp_loop() -> None:
                         if r.get("summary"):
                             lines_hs.append(f"           summary: {r['summary'][:120]}")
                     ok({"content": [{"type": "text", "text": "\n".join(lines_hs)}]})
+
+            elif name == "mnemonics_access_stats":
+                ns_as_m = args.get("ns")  # None = all
+                stats_as = _get_store().access_stats(ns_as_m)
+                lines_as = [
+                    f"Namespace        : {stats_as['ns'] or '(all)'}",
+                    f"Total memories   : {stats_as['total']}",
+                    f"Total accesses   : {stats_as['total_accesses']}",
+                    f"Avg accesses     : {stats_as['avg_accesses']:.3f}",
+                    f"Max accesses     : {stats_as['max_accesses']}",
+                    f"Never accessed   : {stats_as['never_accessed']}",
+                    f"Most recent      : {stats_as['most_recent_access'] or 'none'}",
+                ]
+                ok({"content": [{"type": "text", "text": "\n".join(lines_as)}]})
 
             elif name == "mnemonics_update_text":
                 ut_id_m = args.get("id")

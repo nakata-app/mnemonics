@@ -2560,3 +2560,39 @@ def test_update_text_mark_deleted_exception_tolerated(populated_store):
     with patch.object(store, "_index_for", return_value=mock_idx):
         result = store.update_text(src_id, "new text", new_vec)
     assert result is True  # tolerated
+
+
+# ── access_stats ──────────────────────────────────────────────────────────────
+
+def test_access_stats_empty_ns(tmp_store):
+    """access_stats on empty namespace returns zeroed dict."""
+    stats = tmp_store.access_stats("ghost")
+    assert stats["total"] == 0
+    assert stats["total_accesses"] == 0
+    assert stats["never_accessed"] == 0
+
+
+def test_access_stats_counts(populated_store):
+    """access_stats counts total and never_accessed correctly."""
+    store, docs, vecs = populated_store
+    stats = store.access_stats("default")
+    assert stats["total"] == len(docs)
+    assert stats["never_accessed"] == len(docs)  # nobody has accessed them yet
+
+
+def test_access_stats_after_search(populated_store):
+    """access_stats reflects access_count increments from search."""
+    store, docs, vecs = populated_store
+    store.search(vecs[0], top_k=1)  # increments access_count for one result
+    stats = store.access_stats("default")
+    assert stats["total_accesses"] >= 1
+    assert stats["max_accesses"] >= 1
+
+
+def test_access_stats_all_ns(populated_store):
+    """access_stats(None) spans all namespaces."""
+    store, docs, vecs = populated_store
+    store.add(["extra"], vecs[:1], ns="other")
+    stats_all = store.access_stats(None)
+    assert stats_all["total"] == len(docs) + 1
+    assert stats_all["ns"] is None
