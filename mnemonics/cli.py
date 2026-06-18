@@ -128,6 +128,37 @@ def main() -> None:
     trt_p.add_argument("--path", default="~/.mnemonics")
 
     # search-by-access-count
+    # bulk-summarize
+    bs_cli = sub.add_parser("bulk-summarize", help="Update summaries for multiple memories (id:summary pairs)")
+    bs_cli.add_argument("updates", nargs="+", metavar="ID:SUMMARY",
+                        help="Pairs like 1:summary or 2:none (to clear)")
+    bs_cli.add_argument("--path", default="~/.mnemonics")
+
+    # cross-ns-search
+    cns_cli = sub.add_parser("cross-ns-search", help="LIKE search restricted to specific namespaces")
+    cns_cli.add_argument("query", help="Search query")
+    cns_cli.add_argument("--ns", nargs="+", required=True, dest="namespaces",
+                         help="Namespaces to search in")
+    cns_cli.add_argument("--limit", type=int, default=10)
+    cns_cli.add_argument("--json", action="store_true", dest="as_json")
+    cns_cli.add_argument("--path", default="~/.mnemonics")
+
+    # memory-timeline
+    mt_cli = sub.add_parser("memory-timeline", help="Show memories oldest-first with sequence numbers")
+    mt_cli.add_argument("--ns", default="default")
+    mt_cli.add_argument("--all-ns", action="store_true")
+    mt_cli.add_argument("--tier", type=int, default=None)
+    mt_cli.add_argument("--limit", type=int, default=50)
+    mt_cli.add_argument("--json", action="store_true", dest="as_json")
+    mt_cli.add_argument("--path", default="~/.mnemonics")
+
+    # keyword-extract
+    ke_cli = sub.add_parser("keyword-extract", help="Extract top-N keywords from a memory")
+    ke_cli.add_argument("id", type=int, help="Memory ID")
+    ke_cli.add_argument("--top-n", type=int, default=10, dest="top_n")
+    ke_cli.add_argument("--json", action="store_true", dest="as_json")
+    ke_cli.add_argument("--path", default="~/.mnemonics")
+
     # filter-by-text-length
     fbtl_cli = sub.add_parser("filter-by-text-length", help="Find memories by text length range")
     fbtl_cli.add_argument("--min-chars", type=int, default=0, dest="min_chars")
@@ -2180,6 +2211,57 @@ def main() -> None:
                     print(f"[eval] wrote {out_dir / f'{slug}.json'}")
         print()
         print(compare_table(results))
+
+    elif args.cmd == "bulk-summarize":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        updates: dict[int, str | None] = {}
+        for pair in args.updates:
+            if ":" not in pair:
+                print(f"Invalid pair {pair!r}: expected ID:SUMMARY format.")
+                return
+            mid_s, _, summary_s = pair.partition(":")
+            summary_val: str | None = None if summary_s.lower() == "none" else summary_s
+            updates[int(mid_s)] = summary_val
+        n = store.bulk_summarize(updates)
+        print(f"Updated summaries for {n} memories.")
+
+    elif args.cmd == "cross-ns-search":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        hits = store.cross_ns_search(args.query, args.namespaces, limit=args.limit)
+        if args.as_json:
+            print(json.dumps(hits, default=str, ensure_ascii=False))
+        else:
+            print(f"Found {len(hits)} memories matching {args.query!r} in ns={args.namespaces}:")
+            for r in hits:
+                print(f"  [{r['id']}] ns={r['ns']} {r['text'][:80]}")
+
+    elif args.cmd == "memory-timeline":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        ns_q = None if args.all_ns else args.ns
+        tl = store.memory_timeline(ns=ns_q, limit=args.limit, tier=args.tier)
+        if args.as_json:
+            print(json.dumps(tl, default=str, ensure_ascii=False))
+        else:
+            ns_label = repr(ns_q) if ns_q is not None else "(all)"
+            print(f"Timeline for ns={ns_label}: {len(tl)} entries")
+            for e in tl:
+                print(f"  [{e['seq']:3d}] {e['created'][:10]} id={e['id']} {e['text'][:70]}")
+
+    elif args.cmd == "keyword-extract":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        result = store.keyword_extract(args.id, top_n=args.top_n)
+        if result is None:
+            print(f"Memory {args.id} not found.")
+        elif args.as_json:
+            print(json.dumps(result, default=str, ensure_ascii=False))
+        else:
+            print(f"Top {len(result)} keywords for id={args.id}:")
+            for k in result:
+                print(f"  {k['word']:25s} {k['score']:.4f}")
 
     elif args.cmd == "filter-by-text-length":
         from mnemonics.store import Store

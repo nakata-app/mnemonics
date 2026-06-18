@@ -956,6 +956,154 @@ class Store:
             for r in rows
         ]
 
+    def bulk_summarize(
+        self,
+        updates: dict[int, str | None],
+    ) -> int:
+        """Update summaries for multiple memories in a single operation.
+
+        *updates* maps memory ID → summary string (or ``None`` to clear).
+        Silently skips IDs that do not exist.  Returns the count of rows
+        actually updated.
+
+        Functionally equivalent to calling ``update_summary`` in a loop but
+        issued as a single transaction, which is faster for large batches.
+        """
+        if not updates:
+            return 0
+        count = 0
+        with self._lock:
+            for mid, summary in updates.items():
+                cur = self._db.execute(
+                    "UPDATE memories SET summary=? WHERE id=?", (summary, int(mid))
+                )
+                count += cur.rowcount
+            self._db.commit()
+        return count
+
+    def cross_ns_search(
+        self,
+        query: str,
+        namespaces: list[str],
+        limit: int = 10,
+    ) -> list[dict]:
+        """Case-insensitive LIKE search across a specific set of namespaces.
+
+        Unlike ``search_text(ns=None)`` which spans ALL namespaces, this method
+        restricts the search to the given *namespaces* list.  Returns up to
+        *limit* results ordered by created DESC.  Returns empty list when
+        *namespaces* is empty.
+        """
+        if not namespaces:
+            return []
+        ph = ",".join("?" * len(namespaces))
+        rows = self._db.execute(
+            f"SELECT id, ns, text, summary, tier, created FROM memories "
+            f"WHERE ns IN ({ph}) AND text LIKE ? COLLATE NOCASE "
+            f"ORDER BY created DESC LIMIT ?",
+            (*namespaces, f"%{query}%", limit),
+        ).fetchall()
+        return [
+            {"id": r[0], "ns": r[1], "text": r[2], "summary": r[3],
+             "tier": r[4], "created": r[5]}
+            for r in rows
+        ]
+
+    def memory_timeline(
+        self,
+        ns: str | None = "default",
+        limit: int = 50,
+        tier: int | None = None,
+    ) -> list[dict]:
+        """Return memories in chronological order (oldest first) with a running index.
+
+        Useful for reviewing the narrative arc of a namespace.  Each dict
+        includes ``{"seq": int, "id": int, "ns": str, "text": str,
+        "summary": str|None, "tier": int, "created": str}``.
+
+        *ns=None* spans all namespaces.  *tier* optionally filters by tier.
+        """
+        conds = ["1=1"]
+        params: list = []
+        if ns is not None:
+            conds.append("ns=?")
+            params.append(ns)
+        if tier is not None:
+            conds.append("tier=?")
+            params.append(tier)
+        params.append(limit)
+        rows = self._db.execute(
+            f"SELECT id, ns, text, summary, tier, created FROM memories "
+            f"WHERE {' AND '.join(conds)} ORDER BY created ASC LIMIT ?",
+            params,
+        ).fetchall()
+        return [
+            {"seq": i + 1, "id": r[0], "ns": r[1], "text": r[2], "summary": r[3],
+             "tier": r[4], "created": r[5]}
+            for i, r in enumerate(rows)
+        ]
+
+    def keyword_extract(
+        self,
+        memory_id: int,
+        top_n: int = 10,
+    ) -> list[dict] | None:
+        """Extract top-N keywords from a single memory's text using TF-style scoring.
+
+        Uses term-frequency weighted by inverse log-frequency across the entire
+        store.  Returns a list of ``{"word": str, "score": float}`` dicts sorted
+        descending, or ``None`` if *memory_id* does not exist.
+
+        This is a lightweight in-process approximation — no external NLP library
+        required.  Stop-words are filtered.
+        """
+        import math
+        import re
+
+        row = self._db.execute(
+            "SELECT text FROM memories WHERE id=?", (memory_id,)
+        ).fetchone()
+        if row is None:
+            return None
+
+        _STOP = {
+            "a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for",
+            "of", "with", "by", "from", "is", "are", "was", "were", "be", "been",
+            "it", "i", "you", "he", "she", "we", "they", "this", "that", "as",
+            "not", "no", "so", "if", "do", "did", "has", "have", "had", "will",
+            "can", "may", "my", "your", "its", "our", "their", "which", "who",
+        }
+
+        def _tokens(text: str) -> list[str]:
+            return [w for w in re.findall(r"[a-zA-Z]{3,}", text.lower()) if w not in _STOP]
+
+        doc_tokens = _tokens(row[0])
+        if not doc_tokens:
+            return []
+
+        tf: dict[str, int] = {}
+        for w in doc_tokens:
+            tf[w] = tf.get(w, 0) + 1
+
+        total_docs = self._db.execute("SELECT COUNT(*) FROM memories").fetchone()[0] or 1
+        vocab = list(tf)
+        df_rows = self._db.execute(
+            f"SELECT lower(text) FROM memories"
+        ).fetchall()
+        df: dict[str, int] = {}
+        for (text_row,) in df_rows:
+            seen = set(_tokens(text_row))
+            for w in seen:
+                if w in tf:
+                    df[w] = df.get(w, 0) + 1
+
+        results = []
+        for w, freq in tf.items():
+            idf = math.log((total_docs + 1) / (df.get(w, 0) + 1)) + 1
+            results.append({"word": w, "score": round(freq * idf, 4)})
+
+        return sorted(results, key=lambda x: x["score"], reverse=True)[:top_n]
+
     def filter_by_text_length(
         self,
         min_chars: int = 0,

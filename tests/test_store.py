@@ -4395,3 +4395,125 @@ def test_split_memory_no_separator_no_max_chars(tmp_store):
     ids = tmp_store.add(["just one part"], vecs, ns="default")
     result = tmp_store.split_memory(ids[0])
     assert result is None
+
+
+# ─── Batch 7: bulk_summarize, cross_ns_search, memory_timeline, keyword_extract ───
+
+def test_bulk_summarize_basic(tmp_store):
+    import numpy as np
+    vecs = np.zeros((2, 384), dtype=np.float32)
+    ids = tmp_store.add(["a", "b"], vecs, ns="default")
+    n = tmp_store.bulk_summarize({ids[0]: "sum-a", ids[1]: "sum-b"})
+    assert n == 2
+    assert tmp_store.get(ids[0])["summary"] == "sum-a"
+    assert tmp_store.get(ids[1])["summary"] == "sum-b"
+
+
+def test_bulk_summarize_clear(tmp_store):
+    import numpy as np
+    vecs = np.zeros((1, 384), dtype=np.float32)
+    ids = tmp_store.add(["x"], vecs, ns="default", summaries=["s"])
+    n = tmp_store.bulk_summarize({ids[0]: None})
+    assert n == 1
+    assert tmp_store.get(ids[0])["summary"] is None
+
+
+def test_bulk_summarize_empty(tmp_store):
+    n = tmp_store.bulk_summarize({})
+    assert n == 0
+
+
+def test_bulk_summarize_skips_missing(tmp_store):
+    n = tmp_store.bulk_summarize({999999: "ghost"})
+    assert n == 0
+
+
+def test_cross_ns_search_basic(tmp_store):
+    import numpy as np
+    tmp_store.add(["apple pie"], np.zeros((1, 384), dtype=np.float32), ns="ns1")
+    tmp_store.add(["apple cider"], np.zeros((1, 384), dtype=np.float32), ns="ns2")
+    tmp_store.add(["banana bread"], np.zeros((1, 384), dtype=np.float32), ns="ns3")
+    hits = tmp_store.cross_ns_search("apple", ["ns1", "ns2"])
+    assert len(hits) == 2
+    nss = {h["ns"] for h in hits}
+    assert nss == {"ns1", "ns2"}
+
+
+def test_cross_ns_search_empty_ns_list(tmp_store):
+    hits = tmp_store.cross_ns_search("x", [])
+    assert hits == []
+
+
+def test_cross_ns_search_limit(tmp_store):
+    import numpy as np
+    for i in range(5):
+        tmp_store.add([f"hello world {i}"], np.zeros((1, 384), dtype=np.float32), ns="ns1")
+    hits = tmp_store.cross_ns_search("hello", ["ns1"], limit=2)
+    assert len(hits) <= 2
+
+
+def test_memory_timeline_basic(tmp_store):
+    import numpy as np
+    vecs = np.zeros((3, 384), dtype=np.float32)
+    tmp_store.add(["first", "second", "third"], vecs, ns="default")
+    tl = tmp_store.memory_timeline(ns="default")
+    assert len(tl) == 3
+    for i, e in enumerate(tl):
+        assert e["seq"] == i + 1
+
+
+def test_memory_timeline_tier_filter(tmp_store):
+    import numpy as np
+    vecs = np.zeros((2, 384), dtype=np.float32)
+    ids = tmp_store.add(["x", "y"], vecs, ns="default")
+    tmp_store.set_tier(ids[0], 0)
+    tl = tmp_store.memory_timeline(ns="default", tier=0)
+    assert all(e["tier"] == 0 for e in tl)
+
+
+def test_memory_timeline_all_ns(tmp_store):
+    import numpy as np
+    tmp_store.add(["a"], np.zeros((1, 384), dtype=np.float32), ns="ns1")
+    tmp_store.add(["b"], np.zeros((1, 384), dtype=np.float32), ns="ns2")
+    tl = tmp_store.memory_timeline(ns=None, limit=100)
+    nss = {e["ns"] for e in tl}
+    assert "ns1" in nss and "ns2" in nss
+
+
+def test_memory_timeline_limit(tmp_store):
+    import numpy as np
+    vecs = np.zeros((5, 384), dtype=np.float32)
+    tmp_store.add(["a", "b", "c", "d", "e"], vecs, ns="default")
+    tl = tmp_store.memory_timeline(ns="default", limit=2)
+    assert len(tl) <= 2
+
+
+def test_keyword_extract_basic(tmp_store):
+    import numpy as np
+    vecs = np.zeros((1, 384), dtype=np.float32)
+    ids = tmp_store.add(["machine learning models predict outcomes data science"], vecs, ns="default")
+    result = tmp_store.keyword_extract(ids[0])
+    assert isinstance(result, list)
+    assert len(result) > 0
+    assert "word" in result[0] and "score" in result[0]
+
+
+def test_keyword_extract_not_found(tmp_store):
+    result = tmp_store.keyword_extract(999999)
+    assert result is None
+
+
+def test_keyword_extract_empty_text(tmp_store):
+    import numpy as np
+    vecs = np.zeros((1, 384), dtype=np.float32)
+    ids = tmp_store.add(["a a a"], vecs, ns="default")
+    result = tmp_store.keyword_extract(ids[0])
+    assert isinstance(result, list)
+
+
+def test_keyword_extract_top_n(tmp_store):
+    import numpy as np
+    vecs = np.zeros((1, 384), dtype=np.float32)
+    ids = tmp_store.add(["alpha beta gamma delta epsilon zeta eta"], vecs, ns="default")
+    result = tmp_store.keyword_extract(ids[0], top_n=3)
+    assert len(result) <= 3

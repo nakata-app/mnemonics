@@ -262,6 +262,14 @@ class _Handler(BaseHTTPRequestHandler):
             n_mtn = _get_store().move_to_ns([int(i) for i in mtn_ids], mtn_ns)
             self._json(200, {"moved": n_mtn, "target_ns": mtn_ns})
 
+        elif self.path == "/bulk-summarize":
+            bs_updates = body.get("updates")
+            if not isinstance(bs_updates, dict):
+                self._json(400, {"error": "'updates' must be a dict mapping id→summary"})
+                return
+            n_bs = _get_store().bulk_summarize({int(k): v for k, v in bs_updates.items()})
+            self._json(200, {"updated": n_bs})
+
         elif self.path == "/multi-tag-filter":
             mtf_tags = body.get("tags")
             if not isinstance(mtf_tags, list) or not mtf_tags:
@@ -768,6 +776,46 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(200, _get_store().health_check())
         elif path == "/namespaces":
             self._json(200, {"namespaces": _get_store().list_namespaces()})
+        elif path.startswith("/memory-timeline"):
+            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_mt
+            qs_mt = parse_qs(urlparse(self.path).query)
+            ns_mt_raw = (qs_mt.get("ns") or [None])[0]
+            ns_mt = _uqp_mt(ns_mt_raw) if ns_mt_raw is not None else None
+            limit_mt = int((qs_mt.get("limit") or ["50"])[0])
+            tier_mt_raw = (qs_mt.get("tier") or [None])[0]
+            tier_mt = int(tier_mt_raw) if tier_mt_raw is not None else None
+            tl = _get_store().memory_timeline(ns=ns_mt, limit=limit_mt, tier=tier_mt)
+            self._json(200, {"count": len(tl), "timeline": tl})
+
+        elif path.startswith("/keyword-extract"):
+            from urllib.parse import urlparse, parse_qs
+            qs_ke = parse_qs(urlparse(self.path).query)
+            mid_ke = (qs_ke.get("id") or [None])[0]
+            if not mid_ke:
+                self._json(400, {"error": "'id' query param is required"})
+                return
+            top_n_ke = int((qs_ke.get("top_n") or ["10"])[0])
+            result_ke = _get_store().keyword_extract(int(mid_ke), top_n=top_n_ke)
+            if result_ke is None:
+                self._json(404, {"error": f"Memory {mid_ke} not found"})
+                return
+            self._json(200, {"id": int(mid_ke), "keywords": result_ke})
+
+        elif path.startswith("/cross-ns-search"):
+            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_cns
+            qs_cns = parse_qs(urlparse(self.path).query)
+            q_cns = (qs_cns.get("query") or [None])[0]
+            if not q_cns:
+                self._json(400, {"error": "'query' param is required"})
+                return
+            raw_ns_list = qs_cns.get("ns") or []
+            ns_list_cns = [_uqp_cns(n) for n in raw_ns_list]
+            lim_cns = int((qs_cns.get("limit") or ["10"])[0])
+            hits_cns = _get_store().cross_ns_search(
+                _uqp_cns(q_cns), ns_list_cns, limit=lim_cns
+            )
+            self._json(200, {"query": q_cns, "count": len(hits_cns), "results": hits_cns})
+
         elif path.startswith("/filter-by-text-length"):
             from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_fbtl
             qs_fbtl = parse_qs(urlparse(self.path).query)
@@ -1396,6 +1444,54 @@ def _mcp_loop() -> None:
                             "max_tier": {"type": "integer", "description": "Only return memories with tier <= this value"},
                         },
                         "required": ["query", "vector"],
+                    },
+                },
+                {
+                    "name": "mnemonics_bulk_summarize",
+                    "description": "Update summaries for multiple memories at once. Pass updates as {id: summary_string_or_null}.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "updates": {"type": "object", "additionalProperties": {"type": ["string", "null"]}},
+                        },
+                        "required": ["updates"],
+                    },
+                },
+                {
+                    "name": "mnemonics_cross_ns_search",
+                    "description": "LIKE search restricted to a specific list of namespaces (unlike search_text ns=None which searches all).",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string"},
+                            "namespaces": {"type": "array", "items": {"type": "string"}},
+                            "limit": {"type": "integer", "default": 10},
+                        },
+                        "required": ["query", "namespaces"],
+                    },
+                },
+                {
+                    "name": "mnemonics_memory_timeline",
+                    "description": "Return memories oldest-first with a running sequence number. Good for reviewing narrative arc.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ns": {"type": "string"},
+                            "limit": {"type": "integer", "default": 50},
+                            "tier": {"type": "integer"},
+                        },
+                    },
+                },
+                {
+                    "name": "mnemonics_keyword_extract",
+                    "description": "Extract top-N TF-IDF-style keywords from a single memory. No external NLP needed.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer"},
+                            "top_n": {"type": "integer", "default": 10},
+                        },
+                        "required": ["id"],
                     },
                 },
                 {
@@ -3637,6 +3733,61 @@ def _mcp_loop() -> None:
                     amb = tiers.get(2, 0)
                     lines.append(f"  {ns_name}: {total} chunks  (pin={pin} def={def_} amb={amb})")
                 ok({"content": [{"type": "text", "text": "\n".join(lines) or "(empty)"}]})
+
+            elif name == "mnemonics_bulk_summarize":
+                bs_upd_m = args.get("updates")
+                if not isinstance(bs_upd_m, dict):
+                    err("mnemonics_bulk_summarize: 'updates' (object) is required")
+                    continue
+                n_bs_m = _get_store().bulk_summarize({int(k): v for k, v in bs_upd_m.items()})
+                ok({"content": [{"type": "text", "text": f"Updated summaries for {n_bs_m} memories."}]})
+
+            elif name == "mnemonics_cross_ns_search":
+                cns_q_m = args.get("query", "").strip()
+                cns_ns_m = args.get("namespaces")
+                if not cns_q_m or not isinstance(cns_ns_m, list):
+                    err("mnemonics_cross_ns_search: 'query' and 'namespaces' (list) are required")
+                    continue
+                cns_lim_m = int(args.get("limit", 10))
+                cns_hits = _get_store().cross_ns_search(cns_q_m, cns_ns_m, limit=cns_lim_m)
+                ok({"content": [{"type": "text", "text":
+                    f"Found {len(cns_hits)} memories matching {cns_q_m!r} in ns={cns_ns_m}.\n" +
+                    "\n".join(f"  [{h['id']}] ns={h['ns']} {h['text'][:80]}" for h in cns_hits)}]})
+
+            elif name == "mnemonics_memory_timeline":
+                mt_ns_m = args.get("ns")
+                mt_lim_m = int(args.get("limit", 50))
+                mt_tier_m = args.get("tier")
+                if mt_tier_m is not None:
+                    mt_tier_m = int(mt_tier_m)
+                tl_m = _get_store().memory_timeline(ns=mt_ns_m, limit=mt_lim_m, tier=mt_tier_m)
+                if not tl_m:
+                    ok({"content": [{"type": "text", "text": "(no memories)"}]})
+                else:
+                    lines_tl = [f"Timeline for ns={mt_ns_m!r} ({len(tl_m)} entries):"]
+                    for e in tl_m[:20]:
+                        lines_tl.append(
+                            f"  [{e['seq']}] {e['created'][:10]} id={e['id']} {e['text'][:60]}"
+                        )
+                    ok({"content": [{"type": "text", "text": "\n".join(lines_tl)}]})
+
+            elif name == "mnemonics_keyword_extract":
+                ke_id_m = args.get("id")
+                if ke_id_m is None:
+                    err("mnemonics_keyword_extract: 'id' is required")
+                    continue
+                ke_top_m = int(args.get("top_n", 10))
+                ke_result = _get_store().keyword_extract(int(ke_id_m), top_n=ke_top_m)
+                if ke_result is None:
+                    err(f"mnemonics_keyword_extract: id={ke_id_m!r} not found")
+                    continue
+                if not ke_result:
+                    ok({"content": [{"type": "text", "text": "(no keywords found)"}]})
+                else:
+                    lines_ke = [f"Top {len(ke_result)} keywords for id={ke_id_m}:"]
+                    for k in ke_result:
+                        lines_ke.append(f"  {k['word']:25s} {k['score']:.4f}")
+                    ok({"content": [{"type": "text", "text": "\n".join(lines_ke)}]})
 
             elif name == "mnemonics_filter_by_text_length":
                 fbtl_min = int(args.get("min_chars", 0))

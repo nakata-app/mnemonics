@@ -4857,3 +4857,163 @@ def test_cli_split_memory_delete_original(tmp_path, capsys):
         main()
     kw = mock_store.split_memory.call_args[1]
     assert kw["delete_original"] is True
+
+
+# ─── Batch 7: bulk-summarize, cross-ns-search, memory-timeline, keyword-extract ───
+
+def test_cli_bulk_summarize(tmp_path, capsys):
+    """bulk-summarize parses ID:summary pairs."""
+    mock_store = MagicMock()
+    mock_store.bulk_summarize.return_value = 2
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "bulk-summarize", "1:hello", "2:world",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "2" in out
+
+
+def test_cli_bulk_summarize_clear(tmp_path, capsys):
+    """bulk-summarize accepts 'none' as null sentinel."""
+    mock_store = MagicMock()
+    mock_store.bulk_summarize.return_value = 1
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "bulk-summarize", "5:none",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    kw = mock_store.bulk_summarize.call_args[0][0]
+    assert kw[5] is None
+
+
+def test_cli_bulk_summarize_bad_pair(tmp_path, capsys):
+    """bulk-summarize prints error for bad pair format."""
+    mock_store = MagicMock()
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "bulk-summarize", "badinput",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "invalid pair" in out.lower() or "expected" in out.lower()
+
+
+def test_cli_cross_ns_search_text(tmp_path, capsys):
+    """cross-ns-search prints count."""
+    mock_store = MagicMock()
+    mock_store.cross_ns_search.return_value = [
+        {"id": 1, "ns": "ns1", "text": "hello world", "summary": None, "tier": 1, "created": "2024-01-01"}
+    ]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "cross-ns-search", "hello",
+                           "--ns", "ns1", "ns2", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "1" in out
+
+
+def test_cli_cross_ns_search_json(tmp_path, capsys):
+    """cross-ns-search --json outputs list."""
+    mock_store = MagicMock()
+    mock_store.cross_ns_search.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "cross-ns-search", "x",
+                           "--ns", "ns1", "--json", "--path", str(tmp_path)]),
+    ):
+        main()
+    import json
+    out = capsys.readouterr().out
+    assert json.loads(out) == []
+
+
+def test_cli_memory_timeline_text(tmp_path, capsys):
+    """memory-timeline prints entries with seq numbers."""
+    mock_store = MagicMock()
+    mock_store.memory_timeline.return_value = [
+        {"seq": 1, "id": 10, "ns": "default", "text": "first", "summary": None,
+         "tier": 1, "created": "2024-01-01T00:00:00"}
+    ]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "memory-timeline", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "1" in out
+
+
+def test_cli_memory_timeline_json(tmp_path, capsys):
+    """memory-timeline --json outputs list."""
+    mock_store = MagicMock()
+    mock_store.memory_timeline.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "memory-timeline", "--json",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    import json
+    out = capsys.readouterr().out
+    assert json.loads(out) == []
+
+
+def test_cli_memory_timeline_all_ns(tmp_path, capsys):
+    """memory-timeline --all-ns passes ns=None."""
+    mock_store = MagicMock()
+    mock_store.memory_timeline.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "memory-timeline", "--all-ns",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    kw = mock_store.memory_timeline.call_args[1]
+    assert kw["ns"] is None
+
+
+def test_cli_keyword_extract_text(tmp_path, capsys):
+    """keyword-extract prints keywords."""
+    mock_store = MagicMock()
+    mock_store.keyword_extract.return_value = [{"word": "python", "score": 2.5}]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "keyword-extract", "7", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "python" in out
+
+
+def test_cli_keyword_extract_json(tmp_path, capsys):
+    """keyword-extract --json outputs list."""
+    mock_store = MagicMock()
+    mock_store.keyword_extract.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "keyword-extract", "7", "--json",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    import json
+    out = capsys.readouterr().out
+    assert json.loads(out) == []
+
+
+def test_cli_keyword_extract_not_found(tmp_path, capsys):
+    """keyword-extract prints message for missing memory."""
+    mock_store = MagicMock()
+    mock_store.keyword_extract.return_value = None
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "keyword-extract", "9", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "not found" in out

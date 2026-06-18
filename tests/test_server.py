@@ -685,6 +685,10 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_multi_tag_filter",
         "mnemonics_tag_stats",
         "mnemonics_split_memory",
+        "mnemonics_bulk_summarize",
+        "mnemonics_cross_ns_search",
+        "mnemonics_memory_timeline",
+        "mnemonics_keyword_extract",
     }
 
 
@@ -6004,3 +6008,197 @@ def test_mcp_split_memory_not_found(populated_store):
                    "arguments": {"id": 999999, "separator": "\n\n"}},
     })[0]
     assert "error" in resp
+
+
+# ─── Batch 7: bulk_summarize, cross_ns_search, memory_timeline, keyword_extract ───
+
+def test_rest_bulk_summarize(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/bulk-summarize", {"updates": {"1": "new summary"}})
+    assert code == 200
+    assert "updated" in data
+
+
+def test_rest_bulk_summarize_missing_updates(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/bulk-summarize", {})
+    assert code == 400
+
+
+def test_rest_cross_ns_search(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/cross-ns-search?query=the&ns=default")
+    assert code == 200
+    assert "results" in data
+
+
+def test_rest_cross_ns_search_missing_query(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/cross-ns-search?ns=default")
+    assert code == 400
+
+
+def test_rest_memory_timeline(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/memory-timeline?ns=default&limit=10")
+    assert code == 200
+    assert "timeline" in data
+
+
+def test_rest_memory_timeline_all_ns(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/memory-timeline&limit=5")
+    assert code == 200
+
+
+def test_rest_keyword_extract(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/keyword-extract?id=1&top_n=5")
+    assert code == 200
+    assert "keywords" in data
+
+
+def test_rest_keyword_extract_missing_id(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/keyword-extract")
+    assert code == 400
+
+
+def test_rest_keyword_extract_not_found(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/keyword-extract?id=999999")
+    assert code == 404
+
+
+def test_mcp_bulk_summarize(populated_store):
+    """MCP mnemonics_bulk_summarize updates summaries."""
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 20,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_bulk_summarize",
+                   "arguments": {"updates": {"1": "new summary"}}},
+    })[0]
+    assert "Updated" in resp["result"]["content"][0]["text"]
+
+
+def test_mcp_bulk_summarize_missing_updates(populated_store):
+    """MCP mnemonics_bulk_summarize returns error when updates missing."""
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 21,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_bulk_summarize", "arguments": {}},
+    })[0]
+    assert "error" in resp
+
+
+def test_mcp_cross_ns_search(populated_store):
+    """MCP mnemonics_cross_ns_search returns hits."""
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 22,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_cross_ns_search",
+                   "arguments": {"query": "the", "namespaces": ["default"]}},
+    })[0]
+    assert "Found" in resp["result"]["content"][0]["text"]
+
+
+def test_mcp_cross_ns_search_missing_args(populated_store):
+    """MCP mnemonics_cross_ns_search returns error when args missing."""
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 23,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_cross_ns_search", "arguments": {"query": "x"}},
+    })[0]
+    assert "error" in resp
+
+
+def test_mcp_memory_timeline(populated_store):
+    """MCP mnemonics_memory_timeline returns timeline."""
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 24,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_memory_timeline",
+                   "arguments": {"ns": "default", "limit": 10}},
+    })[0]
+    assert "Timeline" in resp["result"]["content"][0]["text"] or "no memories" in resp["result"]["content"][0]["text"].lower()
+
+
+def test_mcp_memory_timeline_empty(populated_store):
+    """MCP mnemonics_memory_timeline returns (no memories) for empty ns."""
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 25,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_memory_timeline",
+                   "arguments": {"ns": "empty_xyz_ns"}},
+    })[0]
+    assert "no memories" in resp["result"]["content"][0]["text"].lower()
+
+
+def test_mcp_keyword_extract(populated_store):
+    """MCP mnemonics_keyword_extract returns keywords."""
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 26,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_keyword_extract",
+                   "arguments": {"id": 1, "top_n": 5}},
+    })[0]
+    text = resp["result"]["content"][0]["text"]
+    assert "keywords" in text.lower() or "word" in text.lower() or "no keywords" in text.lower()
+
+
+def test_mcp_keyword_extract_not_found(populated_store):
+    """MCP mnemonics_keyword_extract returns error for missing id."""
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 27,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_keyword_extract",
+                   "arguments": {"id": 999999}},
+    })[0]
+    assert "error" in resp
+
+
+def test_mcp_keyword_extract_missing_id(populated_store):
+    """MCP mnemonics_keyword_extract returns error when id omitted."""
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 28,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_keyword_extract", "arguments": {}},
+    })[0]
+    assert "error" in resp
+
+
+def test_mcp_memory_timeline_with_tier(populated_store):
+    """MCP mnemonics_memory_timeline with tier filter."""
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 29,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_memory_timeline",
+                   "arguments": {"ns": "default", "tier": "1"}},
+    })[0]
+    text = resp["result"]["content"][0]["text"]
+    assert "Timeline" in text or "no memories" in text.lower()
+
+
+def test_mcp_keyword_extract_empty_result(populated_store):
+    """MCP mnemonics_keyword_extract handles empty keywords."""
+    store, docs, vecs = populated_store
+    # Add a memory with only stop-words
+    ids = store.add(["a an the and or but"], vecs[:1], ns="default")
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 30,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_keyword_extract",
+                   "arguments": {"id": ids[0], "top_n": 5}},
+    })[0]
+    text = resp["result"]["content"][0]["text"]
+    assert "keywords" in text.lower() or "no keywords" in text.lower() or "word" in text.lower()
