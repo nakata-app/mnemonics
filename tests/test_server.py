@@ -276,6 +276,7 @@ def test_mcp_tools_list(tmp_store):
     assert names == {
         "mnemonics_ingest", "mnemonics_retrieve", "mnemonics_forget",
         "mnemonics_pin", "mnemonics_tier", "mnemonics_gc", "mnemonics_stats",
+        "mnemonics_health",
     }
 
 

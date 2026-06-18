@@ -12,6 +12,11 @@ MCP tools (JSON-RPC over stdio):
   mnemonics_ingest   — store memories
   mnemonics_retrieve — semantic search
   mnemonics_forget   — delete a memory by id
+  mnemonics_pin      — pin a memory (tier=0, never decays)
+  mnemonics_tier     — set memory tier (0/1/2)
+  mnemonics_gc       — garbage-collect old ambient/default memories
+  mnemonics_stats    — list namespaces with chunk counts
+  mnemonics_health   — store health check (DB integrity, index vs SQL counts)
 """
 from __future__ import annotations
 
@@ -240,15 +245,21 @@ def _mcp_loop() -> None:
                 },
                 {
                     "name": "mnemonics_gc",
-                    "description": "Garbage-collect ambient (tier 2) memories never accessed and older than age_days. Default dry_run=true returns candidates only.",
+                    "description": "Garbage-collect memories older than age_days. Default tier=2 targets ambient (never-accessed) rows; tier=1 also sweeps default-tier rows. dry_run=true (default) returns candidates only.",
                     "inputSchema": {
                         "type": "object",
                         "properties": {
                             "ns": {"type": "string", "description": "Limit to one namespace (default: all)"},
                             "age_days": {"type": "integer", "description": "Minimum age in days (default: 30)"},
                             "dry_run": {"type": "boolean", "description": "If true, only list candidates (default: true)"},
+                            "tier": {"type": "integer", "enum": [1, 2], "description": "Target tier (1=default, 2=ambient; default: 2)"},
                         },
                     },
+                },
+                {
+                    "name": "mnemonics_health",
+                    "description": "Store health check: DB integrity, WAL size, per-namespace SQL vs index count (orphan/missing vectors), and orphan index files. Returns a JSON report.",
+                    "inputSchema": {"type": "object", "properties": {}},
                 },
                 {
                     "name": "mnemonics_stats",
@@ -351,16 +362,21 @@ def _mcp_loop() -> None:
                 ns = args.get("ns")
                 age_days = int(args.get("age_days", 30))
                 dry_run = bool(args.get("dry_run", True))
-                cands = store.gc_candidates(ns=ns, age_days=age_days)
+                tier = int(args.get("tier", 2))
+                cands = store.gc_candidates(ns=ns, age_days=age_days, tier=tier)
                 if dry_run:
                     text = (
-                        f"{len(cands)} candidate(s) (dry-run):\n"
+                        f"{len(cands)} candidate(s) (dry-run, tier={tier}):\n"
                         + "\n".join(f"  id={c['id']} ns={c['ns']} age={c['age_days']}d" for c in cands[:30])
                     )
                 else:
-                    n = store.gc(ns=ns, age_days=age_days)
-                    text = f"Deleted {n} row(s)."
+                    n = store.gc(ns=ns, age_days=age_days, tier=tier)
+                    text = f"Deleted {n} row(s) (tier={tier})."
                 ok({"content": [{"type": "text", "text": text}]})
+
+            elif name == "mnemonics_health":
+                report = _get_store().health_check()
+                ok({"content": [{"type": "text", "text": json.dumps(report, indent=2)}]})
 
             elif name == "mnemonics_stats":
                 store = _get_store()
