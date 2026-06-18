@@ -560,3 +560,66 @@ def test_cli_list_shows_rows(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "showing 3 row(s)" in out
     assert "alpha" in out or "beta" in out or "gamma" in out
+
+
+# ── bm25 ──────────────────────────────────────────────────────────────────────
+
+def test_cli_bm25_no_results(tmp_path, capsys):
+    from mnemonics.store import Store
+    Store(tmp_path)
+    with patch("sys.argv", ["mnemonics", "bm25", "xyzzy", "--path", str(tmp_path)]):
+        try:
+            main()
+        except SystemExit:
+            pass
+    out = capsys.readouterr().out
+    assert "No BM25" in out
+
+
+def test_cli_bm25_finds_text(tmp_path, capsys):
+    import numpy as np
+    from mnemonics.store import Store, DIM
+    store = Store(tmp_path)
+    rng = np.random.default_rng(0)
+    vecs = rng.random((1, DIM)).astype("float32")
+    vecs = vecs / np.linalg.norm(vecs, axis=1, keepdims=True)
+    store.add(["unique_keyword_xq7"], vecs, ns="default")
+    with patch("sys.argv", ["mnemonics", "bm25", "unique_keyword_xq7", "--path", str(tmp_path)]):
+        try:
+            main()
+        except SystemExit:
+            pass
+    out = capsys.readouterr().out
+    assert "unique_keyword_xq7" in out
+
+
+# ── get ───────────────────────────────────────────────────────────────────────
+
+def test_cli_get_existing(tmp_path, capsys):
+    import numpy as np
+    from mnemonics.store import Store, DIM
+    store = Store(tmp_path)
+    rng = np.random.default_rng(0)
+    vecs = rng.random((1, DIM)).astype("float32")
+    vecs = vecs / np.linalg.norm(vecs, axis=1, keepdims=True)
+    ids = store.add(["hello world content"], vecs, ns="default")
+    with patch("sys.argv", ["mnemonics", "get", str(ids[0]), "--path", str(tmp_path)]):
+        try:
+            main()
+        except SystemExit:
+            pass
+    out = capsys.readouterr().out
+    assert "hello world content" in out
+    assert f"id={ids[0]}" in out
+
+
+def test_cli_get_not_found(tmp_path, capsys):
+    from mnemonics.store import Store
+    Store(tmp_path)
+    with patch("sys.argv", ["mnemonics", "get", "9999", "--path", str(tmp_path)]):
+        try:
+            main()
+        except SystemExit:
+            pass
+    out = capsys.readouterr().out
+    assert "not found" in out
