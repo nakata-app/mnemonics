@@ -342,9 +342,40 @@ def test_mcp_tools_list(tmp_store):
     names = {t["name"] for t in resp[0]["result"]["tools"]}
     assert names == {
         "mnemonics_ingest", "mnemonics_retrieve", "mnemonics_forget",
-        "mnemonics_pin", "mnemonics_tier", "mnemonics_gc", "mnemonics_stats",
-        "mnemonics_health", "mnemonics_repair",
+        "mnemonics_forget_ns", "mnemonics_pin", "mnemonics_tier",
+        "mnemonics_gc", "mnemonics_stats", "mnemonics_health", "mnemonics_repair",
     }
+
+
+def test_mcp_forget_ns_dry_run(populated_store):
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 50,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_forget_ns", "arguments": {"ns": "default"}},
+    })
+    text = resp[0]["result"]["content"][0]["text"]
+    assert "Would delete" in text or "dry-run" in text.lower()
+
+
+def test_mcp_forget_ns_apply(populated_store):
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 51,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_forget_ns", "arguments": {"ns": "default", "dry_run": False}},
+    })
+    text = resp[0]["result"]["content"][0]["text"]
+    assert "Deleted" in text
+
+
+def test_mcp_forget_ns_missing_ns(tmp_store):
+    resp = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 52,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_forget_ns", "arguments": {}},
+    })
+    assert "error" in resp[0]
 
 
 def test_mcp_repair(tmp_store):

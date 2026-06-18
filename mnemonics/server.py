@@ -15,7 +15,8 @@ Endpoints:
 MCP tools (JSON-RPC over stdio):
   mnemonics_ingest   — store memories
   mnemonics_retrieve — semantic search
-  mnemonics_forget   — delete a memory by id
+  mnemonics_forget    — delete a memory by id
+  mnemonics_forget_ns — bulk delete all memories in a namespace (dry-run by default)
   mnemonics_pin      — pin a memory (tier=0, never decays)
   mnemonics_tier     — set memory tier (0/1/2)
   mnemonics_gc       — garbage-collect old ambient/default memories
@@ -300,6 +301,20 @@ def _mcp_loop() -> None:
                     },
                 },
                 {
+                    "name": "mnemonics_forget_ns",
+                    "description": "Bulk delete all memories in a namespace, optionally filtered by date (before) or tier. Dry-run by default — set dry_run=false to actually delete. Pinned (tier=0) rows are excluded unless tier=0 is explicitly passed.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ns": {"type": "string", "description": "Namespace to clean up (required)"},
+                            "before": {"type": "string", "description": "ISO 8601 date string — only delete rows created before this date"},
+                            "tier": {"type": "integer", "enum": [0, 1, 2], "description": "Filter to a specific tier (omit to delete all non-pinned rows)"},
+                            "dry_run": {"type": "boolean", "description": "If true, return candidate count without deleting (default: true)"},
+                        },
+                        "required": ["ns"],
+                    },
+                },
+                {
                     "name": "mnemonics_health",
                     "description": "Store health check: DB integrity, WAL size, per-namespace SQL vs index count (orphan/missing vectors), and orphan index files. Returns a JSON report.",
                     "inputSchema": {"type": "object", "properties": {}},
@@ -396,6 +411,23 @@ def _mcp_loop() -> None:
             elif name == "mnemonics_forget":
                 deleted = _get_store().delete(int(args["id"]))
                 ok({"content": [{"type": "text", "text": f"Deleted: {deleted}"}]})
+
+            elif name == "mnemonics_forget_ns":
+                ns_val = args.get("ns", "").strip()
+                if not ns_val:
+                    err("mnemonics_forget_ns: 'ns' is required")
+                    continue
+                store = _get_store()
+                before_val = args.get("before") or None
+                tier_val = args.get("tier")
+                tier_int = int(tier_val) if tier_val is not None else None
+                dry_run = bool(args.get("dry_run", True))
+                candidates = store.forget_candidates(ns=ns_val, before=before_val, tier=tier_int)
+                if dry_run:
+                    ok({"content": [{"type": "text", "text": f"Would delete {len(candidates)} row(s) from ns={ns_val!r} (dry-run). Pass dry_run=false to delete."}]})
+                else:
+                    n = store.forget(ns=ns_val, before=before_val, tier=tier_int)
+                    ok({"content": [{"type": "text", "text": f"Deleted {n} row(s) from ns={ns_val!r}."}]})
 
             elif name == "mnemonics_pin":
                 pinned = _get_store().pin(int(args["id"]))
