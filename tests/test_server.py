@@ -276,8 +276,22 @@ def test_mcp_tools_list(tmp_store):
     assert names == {
         "mnemonics_ingest", "mnemonics_retrieve", "mnemonics_forget",
         "mnemonics_pin", "mnemonics_tier", "mnemonics_gc", "mnemonics_stats",
-        "mnemonics_health",
+        "mnemonics_health", "mnemonics_repair",
     }
+
+
+def test_mcp_repair(tmp_store):
+    resp = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 22,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_repair", "arguments": {}},
+    })
+    import json as _json
+    text = resp[0]["result"]["content"][0]["text"]
+    report = _json.loads(text)
+    assert "orphan_vectors_fixed" in report
+    assert "orphan_indexes_removed" in report
+    assert "missing_vectors_reported" in report
 
 
 def test_mcp_ingest(tmp_store):

@@ -17,6 +17,7 @@ MCP tools (JSON-RPC over stdio):
   mnemonics_gc       — garbage-collect old ambient/default memories
   mnemonics_stats    — list namespaces with chunk counts
   mnemonics_health   — store health check (DB integrity, index vs SQL counts)
+  mnemonics_repair   — auto-repair orphan vectors and orphan index files
 """
 from __future__ import annotations
 
@@ -262,6 +263,11 @@ def _mcp_loop() -> None:
                     "inputSchema": {"type": "object", "properties": {}},
                 },
                 {
+                    "name": "mnemonics_repair",
+                    "description": "Auto-repair store issues: rebuild indexes with orphan vectors, delete orphan .bin files. Missing vectors (sql > idx) are reported but not fixed. Returns a JSON summary.",
+                    "inputSchema": {"type": "object", "properties": {}},
+                },
+                {
                     "name": "mnemonics_stats",
                     "description": "List all namespaces with their chunk counts.",
                     "inputSchema": {"type": "object", "properties": {}},
@@ -377,6 +383,10 @@ def _mcp_loop() -> None:
             elif name == "mnemonics_health":
                 report = _get_store().health_check()
                 ok({"content": [{"type": "text", "text": json.dumps(report, indent=2)}]})
+
+            elif name == "mnemonics_repair":
+                fix = _get_store().repair()
+                ok({"content": [{"type": "text", "text": json.dumps(fix, indent=2)}]})
 
             elif name == "mnemonics_stats":
                 store = _get_store()

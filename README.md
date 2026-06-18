@@ -83,6 +83,9 @@ mnem doctor --json                           # JSON output for scripting
 # Repair orphan vectors without re-encoding
 # (Use when doctor shows "orphan vector(s)", loads vectors from old index by ID)
 mnem rebuild-index --ns <ns>
+
+# One-shot auto-repair: fixes all orphan vectors + removes orphan .bin files
+mnem doctor --fix
 ```
 
 ## Raw + summary
@@ -163,6 +166,7 @@ Tools exposed:
 - `mnemonics_gc` (supports `tier: 1` for default-tier rows)
 - `mnemonics_stats`
 - `mnemonics_health` (DB integrity + index health report as JSON)
+- `mnemonics_repair` (auto-fix orphan vectors and orphan index files)
 
 ## Namespaces
 

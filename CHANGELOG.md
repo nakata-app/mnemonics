@@ -6,6 +6,10 @@ All notable changes to mnemonics. Format follows [Keep a Changelog](https://keep
 
 ### Added
 
+- **`mnemonics doctor --fix`** one-shot auto-repair: rebuilds indexes with
+  orphan vectors via `Store.repair()`, deletes orphan `.bin` files, reports
+  missing vectors (sql > idx) that need manual `rebuild-index`.
+- **`mnemonics_repair` MCP tool** exposes `Store.repair()` to AI agents.
 - **`mnemonics rebuild-index --ns <ns>`** repairs orphan vectors without
   re-encoding. Reads vectors for current SQL row IDs from the on-disk
   hnswlib index via `get_items()`, writes a clean index, and returns
