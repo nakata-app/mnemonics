@@ -496,6 +496,78 @@ def test_sync_import_calls_import_store(tmp_path, capsys):
     assert "imported=5" in out
 
 
+# ── export-jsonl ──────────────────────────────────────────────────────────────
+
+def test_export_jsonl_all_ns(tmp_path, capsys):
+    """export-jsonl outputs JSONL to stdout for all namespaces."""
+    import json as _json
+    import numpy as np
+    from mnemonics.store import Store
+    s = Store(tmp_path)
+    v = np.random.rand(384).astype("float32")
+    v /= np.linalg.norm(v)
+    s.add(["hello world"], v.reshape(1, -1), ns="a")
+    s.add(["goodbye world"], v.reshape(1, -1), ns="b")
+    with patch("sys.argv", ["mnemonics", "export-jsonl", "--path", str(tmp_path)]):
+        main()
+    lines = [l for l in capsys.readouterr().out.strip().split("\n") if l]
+    assert len(lines) == 2
+    objs = [_json.loads(l) for l in lines]
+    texts = {o["text"] for o in objs}
+    assert texts == {"hello world", "goodbye world"}
+
+
+def test_export_jsonl_ns_filter(tmp_path, capsys):
+    """export-jsonl --ns filters to one namespace."""
+    import json as _json
+    import numpy as np
+    from mnemonics.store import Store
+    s = Store(tmp_path)
+    v = np.random.rand(384).astype("float32")
+    v /= np.linalg.norm(v)
+    s.add(["keep this"], v.reshape(1, -1), ns="keep")
+    s.add(["skip this"], v.reshape(1, -1), ns="skip")
+    with patch("sys.argv", ["mnemonics", "export-jsonl", "--ns", "keep", "--path", str(tmp_path)]):
+        main()
+    lines = [l for l in capsys.readouterr().out.strip().split("\n") if l]
+    assert len(lines) == 1
+    assert _json.loads(lines[0])["text"] == "keep this"
+
+
+def test_export_jsonl_tier_filter(tmp_path, capsys):
+    """export-jsonl --tier filters to pinned (tier=0) only."""
+    import json as _json
+    import numpy as np
+    from mnemonics.store import Store
+    s = Store(tmp_path)
+    v = np.random.rand(384).astype("float32")
+    v /= np.linalg.norm(v)
+    ids = s.add(["pinned text", "default text"], v.reshape(1, -1).repeat(2, axis=0))
+    s.pin(ids[0])
+    with patch("sys.argv", ["mnemonics", "export-jsonl", "--tier", "0", "--path", str(tmp_path)]):
+        main()
+    lines = [l for l in capsys.readouterr().out.strip().split("\n") if l]
+    assert len(lines) == 1
+    assert _json.loads(lines[0])["text"] == "pinned text"
+
+
+def test_export_jsonl_to_file(tmp_path):
+    """export-jsonl --out writes to file, prints count to stderr."""
+    import json as _json
+    import numpy as np
+    from mnemonics.store import Store
+    s = Store(tmp_path)
+    v = np.random.rand(384).astype("float32")
+    v /= np.linalg.norm(v)
+    s.add(["file export test"], v.reshape(1, -1))
+    out_file = tmp_path / "export.jsonl"
+    with patch("sys.argv", ["mnemonics", "export-jsonl", "--out", str(out_file), "--path", str(tmp_path)]):
+        main()
+    lines = out_file.read_text().strip().split("\n")
+    assert len(lines) == 1
+    assert _json.loads(lines[0])["text"] == "file export test"
+
+
 # ── backup / restore ──────────────────────────────────────────────────────────
 
 def test_backup_calls_backup(tmp_path, capsys):

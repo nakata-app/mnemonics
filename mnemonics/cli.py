@@ -136,6 +136,13 @@ def main() -> None:
     bk.add_argument("--out", default=None, help="Output archive path (default: ~/.mnemonics-backups/YYYY-MM-DD_HHMMSS.tar.gz)")
     bk.add_argument("--path", default="~/.mnemonics", help="Store directory to back up")
 
+    # export-jsonl
+    ej = sub.add_parser("export-jsonl", help="Dump all memories as JSONL (one JSON object per line)")
+    ej.add_argument("--ns", default=None, help="Namespace to export (default: all namespaces)")
+    ej.add_argument("--tier", type=int, choices=[0, 1, 2], default=None, help="Filter by tier")
+    ej.add_argument("--out", default=None, help="Output file path (default: stdout)")
+    ej.add_argument("--path", default="~/.mnemonics", help="Store directory")
+
     # restore
     rs = sub.add_parser("restore", help="Extract a backup archive into a store directory")
     rs.add_argument("archive", help="Path to the .tar.gz produced by `mnemonics backup`")
@@ -498,6 +505,40 @@ def main() -> None:
         else:
             sy.print_help()
             sys.exit(1)
+
+    elif args.cmd == "export-jsonl":
+        from mnemonics.store import Store
+        import sys as _sys
+        store = Store(args.path)
+        where_parts = ["1=1"]
+        params: list = []
+        if args.ns is not None:
+            where_parts.append("ns = ?")
+            params.append(args.ns)
+        if args.tier is not None:
+            where_parts.append("tier = ?")
+            params.append(args.tier)
+        where = " AND ".join(where_parts)
+        rows = store._db.execute(
+            f"SELECT id, ns, text, summary, meta, created, tier, last_accessed, access_count "
+            f"FROM memories WHERE {where} ORDER BY id",
+            params,
+        ).fetchall()
+        out_fd = open(args.out, "w", encoding="utf-8") if args.out else _sys.stdout
+        try:
+            for row in rows:
+                obj = {
+                    "id": row[0], "ns": row[1], "text": row[2],
+                    "summary": row[3], "meta": json.loads(row[4]),
+                    "created": row[5], "tier": row[6],
+                    "last_accessed": row[7], "access_count": row[8],
+                }
+                out_fd.write(json.dumps(obj, ensure_ascii=False) + "\n")
+        finally:
+            if args.out:
+                out_fd.close()
+        if args.out:
+            print(f"Exported {len(rows)} memories to {args.out}", file=_sys.stderr)
 
     elif args.cmd == "backup":
         from mnemonics.backup import backup
