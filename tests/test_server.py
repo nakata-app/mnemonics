@@ -487,6 +487,19 @@ def test_retrieve_empty_query_400(tmp_store):
     assert code == 400
 
 
+def test_retrieve_runtime_error_400(tmp_store):
+    with patch("mnemonics.server._retrieve", side_effect=RuntimeError("index corrupt")):
+        code, data = http_call(tmp_store, "POST", "/retrieve", {"query": "hello"})
+    assert code == 400
+    assert "index corrupt" in data["error"]
+
+
+def test_retrieve_invalid_candidate_k(tmp_store):
+    code, data = http_call(tmp_store, "POST", "/retrieve", {"query": "q", "candidate_k": 0})
+    assert code == 400
+    assert "candidate_k" in data["error"]
+
+
 def test_retrieve_success(tmp_store):
     fake_result = {"results": [], "trust_score": 1.0, "flagged_count": 0, "verified": True}
     with patch("mnemonics.server._retrieve", return_value=fake_result):
