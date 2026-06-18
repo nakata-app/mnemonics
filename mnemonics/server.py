@@ -5,6 +5,8 @@ Endpoints:
   GET  /doctor                 — store health report (DB integrity, index vs SQL, capacity)
   POST /ingest   {"texts": [...], "ns": "default", "meta": [...]}
   POST /retrieve {"query": "...", "ns": "default", "top_k": 5}
+  POST /gc       {"ns": "...", "age_days": 30, "tier": 2, "dry_run": true}
+  POST /forget   {"ns": "...", "before": "2026-01-01", "tier": 1, "dry_run": true}
   POST /repair                 — auto-fix orphan vectors and orphan index files
   GET  /namespaces
   GET  /count?ns=default
@@ -88,6 +90,39 @@ class _Handler(BaseHTTPRequestHandler):
 
         if self.path == "/repair":
             self._json(200, _get_store().repair())
+
+        elif self.path == "/gc":
+            store = _get_store()
+            ns = body.get("ns") or None
+            age_days = int(body.get("age_days", 30))
+            tier = int(body.get("tier", 2))
+            dry_run = bool(body.get("dry_run", True))
+            if tier not in (1, 2):
+                self._json(400, {"error": "tier must be 1 or 2"})
+                return
+            candidates = store.gc_candidates(ns=ns, age_days=age_days, tier=tier)
+            if dry_run:
+                self._json(200, {"candidates": len(candidates), "dry_run": True})
+            else:
+                n = store.gc(ns=ns, age_days=age_days, tier=tier)
+                self._json(200, {"deleted": n, "dry_run": False})
+
+        elif self.path == "/forget":
+            ns = body.get("ns", "").strip()
+            if not ns:
+                self._json(400, {"error": "ns is required"})
+                return
+            store = _get_store()
+            before = body.get("before") or None
+            tier_val = body.get("tier")
+            tier = int(tier_val) if tier_val is not None else None
+            dry_run = bool(body.get("dry_run", True))
+            candidates = store.forget_candidates(ns=ns, before=before, tier=tier)
+            if dry_run:
+                self._json(200, {"candidates": len(candidates), "dry_run": True})
+            else:
+                n = store.forget(ns=ns, before=before, tier=tier)
+                self._json(200, {"deleted": n, "dry_run": False})
 
         elif self.path == "/ingest":
             texts = body.get("texts", [])

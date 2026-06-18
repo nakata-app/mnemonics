@@ -122,6 +122,53 @@ def test_http_repair(tmp_store):
     assert "missing_vectors_reported" in data
 
 
+# ── POST /gc ─────────────────────────────────────────────────────────────────
+
+def test_http_gc_dry_run(tmp_store):
+    code, data = http_call(tmp_store, "POST", "/gc", {"ns": "default", "age_days": 0, "tier": 2})
+    assert code == 200
+    assert "candidates" in data
+    assert data["dry_run"] is True
+
+
+def test_http_gc_invalid_tier(tmp_store):
+    code, data = http_call(tmp_store, "POST", "/gc", {"tier": 0})
+    assert code == 400
+    assert "tier" in data["error"]
+
+
+def test_http_gc_apply(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/gc", {"age_days": 0, "dry_run": False})
+    assert code == 200
+    assert "deleted" in data
+    assert data["dry_run"] is False
+
+
+# ── POST /forget ──────────────────────────────────────────────────────────────
+
+def test_http_forget_dry_run(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/forget", {"ns": "default"})
+    assert code == 200
+    assert data["dry_run"] is True
+    assert data["candidates"] > 0
+
+
+def test_http_forget_missing_ns(tmp_store):
+    code, data = http_call(tmp_store, "POST", "/forget", {})
+    assert code == 400
+    assert "ns" in data["error"]
+
+
+def test_http_forget_apply(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/forget", {"ns": "default", "dry_run": False})
+    assert code == 200
+    assert data["deleted"] > 0
+    assert data["dry_run"] is False
+
+
 # ── GET /namespaces ───────────────────────────────────────────────────────────
 
 def test_namespaces_empty(tmp_store):
