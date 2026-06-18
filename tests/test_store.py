@@ -1105,3 +1105,27 @@ def test_search_max_tier_excludes_ambient(tmp_path):
     result_ids = {r["id"] for r in results}
     assert ids[1] not in result_ids
     assert ids[0] in result_ids
+
+
+def test_get_many_returns_in_request_order(tmp_path):
+    """get_many preserves the order of the requested IDs."""
+    s = Store(tmp_path)
+    ids = s.add(["alpha", "beta", "gamma"], make_vecs(3))
+    # request in reverse order
+    result = s.get_many([ids[2], ids[0], ids[1]])
+    assert [r["text"] for r in result] == ["gamma", "alpha", "beta"]
+
+
+def test_get_many_skips_missing_ids(tmp_path):
+    """get_many silently omits IDs that don't exist."""
+    s = Store(tmp_path)
+    ids = s.add(["only-one"], make_vecs(1))
+    result = s.get_many([ids[0], 99999])
+    assert len(result) == 1
+    assert result[0]["text"] == "only-one"
+
+
+def test_get_many_empty_input(tmp_path):
+    """get_many([]) returns []."""
+    s = Store(tmp_path)
+    assert s.get_many([]) == []

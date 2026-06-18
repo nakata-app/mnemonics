@@ -500,6 +500,25 @@ class Store:
             "access_count": row[7],
         }
 
+    def get_many(self, memory_ids: list[int]) -> list[dict]:
+        if not memory_ids:
+            return []
+        placeholders = ",".join("?" * len(memory_ids))
+        rows = self._db.execute(
+            f"SELECT id, ns, text, summary, tier, created, last_accessed, access_count "
+            f"FROM memories WHERE id IN ({placeholders})",
+            memory_ids,
+        ).fetchall()
+        by_id = {
+            r[0]: {
+                "id": r[0], "ns": r[1], "text": r[2], "summary": r[3],
+                "tier": r[4], "created": r[5], "last_accessed": r[6],
+                "access_count": r[7],
+            }
+            for r in rows
+        }
+        return [by_id[i] for i in memory_ids if i in by_id]
+
     def delete(self, memory_id: int) -> bool:
         with self._lock:
             row = self._db.execute("SELECT ns FROM memories WHERE id=?", (memory_id,)).fetchone()
