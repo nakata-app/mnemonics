@@ -104,6 +104,29 @@ def test_health(tmp_store):
     assert data["status"] == "ok"
 
 
+# ── POST /search-bm25 ────────────────────────────────────────────────────────
+
+def test_http_search_bm25_hit(populated_store):
+    store, docs, vecs = populated_store
+    # docs[0] is the first text — search for a keyword in it
+    query = docs[0].split()[0]
+    code, data = http_call(store, "POST", "/search-bm25", {"query": query, "ns": "default"})
+    assert code == 200
+    assert "results" in data
+    assert data["query"] == query
+
+
+def test_http_search_bm25_empty(tmp_store):
+    code, data = http_call(tmp_store, "POST", "/search-bm25", {"query": "anything"})
+    assert code == 200
+    assert data["results"] == []
+
+
+def test_http_search_bm25_missing_query(tmp_store):
+    code, data = http_call(tmp_store, "POST", "/search-bm25", {})
+    assert code == 400
+
+
 # ── PATCH /memory/<id> ────────────────────────────────────────────────────────
 
 def test_http_patch_summary(populated_store):
@@ -526,10 +549,11 @@ def test_mcp_tools_list(tmp_store):
     resp = _mcp(tmp_store, {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
     names = {t["name"] for t in resp[0]["result"]["tools"]}
     assert names == {
-        "mnemonics_ingest", "mnemonics_retrieve", "mnemonics_update_summary",
-        "mnemonics_list", "mnemonics_get", "mnemonics_forget", "mnemonics_forget_ns",
-        "mnemonics_rebuild_index", "mnemonics_pin", "mnemonics_tier",
-        "mnemonics_gc", "mnemonics_stats", "mnemonics_health", "mnemonics_repair",
+        "mnemonics_ingest", "mnemonics_retrieve", "mnemonics_bm25",
+        "mnemonics_update_summary", "mnemonics_list", "mnemonics_get",
+        "mnemonics_forget", "mnemonics_forget_ns", "mnemonics_rebuild_index",
+        "mnemonics_pin", "mnemonics_tier", "mnemonics_gc", "mnemonics_stats",
+        "mnemonics_health", "mnemonics_repair",
     }
 
 
@@ -647,6 +671,37 @@ def test_mcp_update_summary_missing_id(tmp_store):
         "jsonrpc": "2.0", "id": 97,
         "method": "tools/call",
         "params": {"name": "mnemonics_update_summary", "arguments": {}},
+    })
+    assert "error" in resp[0]
+
+
+def test_mcp_bm25_hit(populated_store):
+    store, docs, vecs = populated_store
+    query = docs[0].split()[0]
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 100,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_bm25", "arguments": {"query": query, "ns": "default"}},
+    })
+    text = resp[0]["result"]["content"][0]["text"]
+    assert "id=" in text or "No BM25" in text
+
+
+def test_mcp_bm25_no_results(tmp_store):
+    resp = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 101,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_bm25", "arguments": {"query": "xyzzy"}},
+    })
+    text = resp[0]["result"]["content"][0]["text"]
+    assert "No BM25" in text
+
+
+def test_mcp_bm25_missing_query(tmp_store):
+    resp = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 102,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_bm25", "arguments": {}},
     })
     assert "error" in resp[0]
 

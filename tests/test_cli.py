@@ -264,35 +264,34 @@ def test_gc_apply_deletes(tmp_path, capsys):
 # ── stats ─────────────────────────────────────────────────────────────────────
 
 def test_stats_lists_namespaces(tmp_path, capsys):
-    mock_store = MagicMock()
-    mock_store.list_namespaces.return_value = ["default", "work"]
-    mock_store.count.side_effect = lambda ns: {"default": 10, "work": 3}[ns]
+    import numpy as np
+    from mnemonics.store import Store, DIM
+    store = Store(tmp_path)
+    rng = np.random.default_rng(0)
+    vecs = rng.random((3, DIM)).astype("float32")
+    vecs = vecs / np.linalg.norm(vecs, axis=1, keepdims=True)
+    store.add(["a", "b", "c"], vecs, ns="default")
+    store.add(["x", "y", "z"], vecs, ns="work")
 
-    with (
-        patch("mnemonics.store.Store", return_value=mock_store),
-        patch("sys.argv", ["mnemonics", "stats", "--path", str(tmp_path)]),
-    ):
+    with patch("sys.argv", ["mnemonics", "stats", "--path", str(tmp_path)]):
         main()
 
     out = capsys.readouterr().out
     assert "default" in out
-    assert "10" in out
     assert "work" in out
     assert "3" in out
+    assert "pin=" in out
 
 
 def test_stats_empty_store(tmp_path, capsys):
-    mock_store = MagicMock()
-    mock_store.list_namespaces.return_value = []
+    from mnemonics.store import Store
+    Store(tmp_path)  # init only
 
-    with (
-        patch("mnemonics.store.Store", return_value=mock_store),
-        patch("sys.argv", ["mnemonics", "stats", "--path", str(tmp_path)]),
-    ):
+    with patch("sys.argv", ["mnemonics", "stats", "--path", str(tmp_path)]):
         main()
 
     out = capsys.readouterr().out
-    assert out == ""
+    assert "(empty)" in out
 
 
 # ── serve ─────────────────────────────────────────────────────────────────────

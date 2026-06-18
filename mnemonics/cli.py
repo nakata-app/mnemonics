@@ -44,6 +44,13 @@ def main() -> None:
     r.add_argument("--rerank", action="store_true", help="Cross-encoder rerank via AdaptMem over the widened candidate band (requires adaptmem)")
     r.add_argument("--path", default="~/.mnemonics")
 
+    # bm25 (pure keyword search)
+    bm = sub.add_parser("bm25", help="Pure BM25 keyword search (no vector encoding)")
+    bm.add_argument("query")
+    bm.add_argument("--ns", default="default")
+    bm.add_argument("--top-k", type=int, default=5)
+    bm.add_argument("--path", default="~/.mnemonics")
+
     # stats
     st = sub.add_parser("stats", help="Show memory stats")
     st.add_argument("--path", default="~/.mnemonics")
@@ -252,6 +259,19 @@ def main() -> None:
             else:
                 print(f"{header} {r['text'][:120]}")
 
+    elif args.cmd == "bm25":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        hits = store.search_bm25(args.query, ns=args.ns, top_k=args.top_k)
+        if not hits:
+            print(f"No BM25 results for {args.query!r} in ns={args.ns!r}")
+        else:
+            tier_label = {0: "pin", 1: "def", 2: "amb"}
+            for r in hits:
+                tl = tier_label.get(r["tier"], "?")
+                snippet = r["text"][:120].replace("\n", " ")
+                print(f"  [{r['score']:.3f}] [{tl}] id={r['id']}  {snippet}")
+
     elif args.cmd == "get":
         from mnemonics.store import Store
         store = Store(args.path)
@@ -294,8 +314,18 @@ def main() -> None:
     elif args.cmd == "stats":
         from mnemonics.store import Store
         store = Store(args.path)
-        for ns in store.list_namespaces():
-            print(f"  {ns}: {store.count(ns)} chunks")
+        rows = store._db.execute(
+            "SELECT ns, tier, COUNT(*) FROM memories GROUP BY ns, tier ORDER BY ns, tier"
+        ).fetchall()
+        ns_data: dict = {}
+        for ns_name, tier, cnt in rows:
+            ns_data.setdefault(ns_name, {})[tier] = cnt
+        if not ns_data:
+            print("  (empty)")
+        for ns_name, tiers in sorted(ns_data.items()):
+            total = sum(tiers.values())
+            pin, def_, amb = tiers.get(0, 0), tiers.get(1, 0), tiers.get(2, 0)
+            print(f"  {ns_name}: {total} chunks  (pin={pin} def={def_} amb={amb})")
 
     elif args.cmd == "pin":
         from mnemonics.store import Store

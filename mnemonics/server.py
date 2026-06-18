@@ -128,6 +128,16 @@ class _Handler(BaseHTTPRequestHandler):
                 n = store.forget(ns=ns, before=before, tier=tier)
                 self._json(200, {"deleted": n, "dry_run": False})
 
+        elif self.path == "/search-bm25":
+            query = body.get("query", "").strip()
+            if not query:
+                self._json(400, {"error": "query is required"})
+                return
+            ns_val = body.get("ns", "default")
+            top_k = int(body.get("top_k", 5))
+            hits = _get_store().search_bm25(query, ns=ns_val, top_k=top_k)
+            self._json(200, {"query": query, "ns": ns_val, "results": hits})
+
         elif self.path == "/forget-ns":
             ns = body.get("ns", "").strip()
             if not ns:
@@ -379,6 +389,19 @@ def _mcp_loop() -> None:
                     },
                 },
                 {
+                    "name": "mnemonics_bm25",
+                    "description": "Pure BM25 keyword search — no vector encoding. Instant, exact-token matching. Best for date strings, IDs, names, or any query where you know the exact words to look for. Returns id, text, tier, score.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string", "description": "Keyword query"},
+                            "ns": {"type": "string", "description": "Namespace to search (default: 'default')"},
+                            "top_k": {"type": "integer", "description": "Max results (default: 5)"},
+                        },
+                        "required": ["query"],
+                    },
+                },
+                {
                     "name": "mnemonics_update_summary",
                     "description": "Set or clear the summary field of an existing memory. The summary is a short gist indexed by BM25 alongside the raw text. Pass summary=null to clear. Returns error if the id doesn't exist.",
                     "inputSchema": {
@@ -573,6 +596,25 @@ def _mcp_loop() -> None:
                     else:
                         lines.append(f"{header} {r['text'][:200]}")
                 ok({"content": [{"type": "text", "text": "\n".join(lines)}]})
+
+            elif name == "mnemonics_bm25":
+                query = args.get("query", "").strip()
+                if not query:
+                    err("mnemonics_bm25: 'query' is required")
+                    continue
+                ns_val = args.get("ns", "default")
+                top_k = int(args.get("top_k", 5))
+                hits = _get_store().search_bm25(query, ns=ns_val, top_k=top_k)
+                if not hits:
+                    ok({"content": [{"type": "text", "text": f"No BM25 results for {query!r} in ns={ns_val!r}."}]})
+                else:
+                    tier_label = {0: "pin", 1: "def", 2: "amb"}
+                    lines = []
+                    for r in hits:
+                        snippet = (r["text"] or "")[:200].replace("\n", " ")
+                        tl = tier_label.get(r["tier"], "?")
+                        lines.append(f"[{r['score']:.3f}] [{tl}] id={r['id']}  {snippet}")
+                    ok({"content": [{"type": "text", "text": "\n".join(lines)}]})
 
             elif name == "mnemonics_update_summary":
                 mid = args.get("id")
