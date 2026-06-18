@@ -61,7 +61,7 @@ def _get_rerank_ce(model: str | None = None) -> Any:
     """Return a cached CrossEncoder instance (via AdaptMem if available, else bare ST)."""
     global _rerank_ce, _rerank_model_name
     name = model or os.environ.get(
-        "MNEMONICS_RERANK_MODEL", "cross-encoder/ms-marco-MiniLM-L-12-v2"
+        "MNEMONICS_RERANK_MODEL", "BAAI/bge-reranker-v2-m3"
     )
     if _rerank_ce is not None and _rerank_model_name == name:
         return _rerank_ce

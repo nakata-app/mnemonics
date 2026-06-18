@@ -2,6 +2,19 @@
 
 All notable changes to mnemonics. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Default cross-encoder reranker upgraded to `BAAI/bge-reranker-v2-m3`.**
+  Previously `cross-encoder/ms-marco-MiniLM-L-12-v2`. The new default aligns
+  with adaptmem's own default (adaptmem/core.py) and with the fine-tuned CE
+  lineage (mn-ce-v2) that achieved R@1 = 0.974 on LongMemEval-S (n=500).
+
+  Override at any time via `MNEMONICS_RERANK_MODEL` env var. The model is
+  downloaded on first use (~550 MB). If adaptmem is installed, it takes
+  priority and may inject a locally fine-tuned CE instead.
+
 ## [0.3.0] - 2026-05-17
 
 ### Changed
