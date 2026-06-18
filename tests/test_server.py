@@ -209,6 +209,18 @@ def test_http_list_memories_limit_cap(populated_store):
     assert data["count"] <= 100
 
 
+def test_http_list_memories_tier_filter(populated_store):
+    store, docs, vecs = populated_store
+    # Pin first row, then filter to tier=0 — only that row should appear
+    first_id = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    store.pin(first_id)
+    code, data = http_call(store, "GET", "/memories?ns=default&tier=0")
+    assert code == 200
+    assert data["count"] == 1
+    assert data["rows"][0]["id"] == first_id
+    assert data["rows"][0]["tier"] == 0
+
+
 # ── GET /stats ────────────────────────────────────────────────────────────────
 
 def test_http_stats_empty(tmp_store):
@@ -351,6 +363,14 @@ def test_http_gc_apply(populated_store):
     assert code == 200
     assert "deleted" in data
     assert data["dry_run"] is False
+
+
+def test_http_gc_tier1(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/gc", {"tier": 1, "age_days": 0})
+    assert code == 200
+    assert data["dry_run"] is True
+    assert "candidates" in data
 
 
 # ── POST /forget ──────────────────────────────────────────────────────────────
