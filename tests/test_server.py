@@ -1588,3 +1588,34 @@ def test_mcp_ingest_meta_non_object(populated_store):
     else:
         text = str(r.get("error", ""))
     assert "error" in text.lower() or "meta" in text.lower()
+
+
+def test_http_retrieve_min_tier_filter(populated_store):
+    """POST /retrieve with min_tier filters low-tier results."""
+    store, docs, vecs = populated_store
+    # Pin first row so it has tier=0, rest have tier=1
+    first_id = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    store.pin(first_id)
+    # min_tier=1 should exclude the pinned row
+    with patch("mnemonics.server._retrieve", return_value={"results": []}) as mock_ret:
+        code, data = http_call(store, "POST", "/retrieve", {
+            "query": "test", "min_tier": 1, "max_tier": 2
+        })
+    assert code == 200
+    call_kwargs = mock_ret.call_args[1]
+    assert call_kwargs["min_tier"] == 1
+    assert call_kwargs["max_tier"] == 2
+
+
+def test_http_search_bm25_tier_filter(populated_store):
+    """POST /search-bm25 with min_tier passes filter to search_bm25."""
+    store, docs, vecs = populated_store
+    query = docs[0].split()[0]
+    with patch.object(store, "search_bm25", return_value=[]) as mock_bm25:
+        with patch("mnemonics.server._get_store", return_value=store):
+            code, data = http_call(store, "POST", "/search-bm25", {
+                "query": query, "min_tier": 1
+            })
+    assert code == 200
+    call_kwargs = mock_bm25.call_args[1]
+    assert call_kwargs["min_tier"] == 1

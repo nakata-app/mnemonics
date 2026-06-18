@@ -141,7 +141,13 @@ class _Handler(BaseHTTPRequestHandler):
                 return
             ns_val = body.get("ns", "default")
             top_k = int(body.get("top_k", 5))
-            hits = _get_store().search_bm25(query, ns=ns_val, top_k=top_k)
+            bmt_min = body.get("min_tier")
+            bmt_max = body.get("max_tier")
+            hits = _get_store().search_bm25(
+                query, ns=ns_val, top_k=top_k,
+                min_tier=int(bmt_min) if bmt_min is not None else None,
+                max_tier=int(bmt_max) if bmt_max is not None else None,
+            )
             self._json(200, {"query": query, "ns": ns_val, "results": hits})
 
         elif self.path == "/forget-ns":
@@ -197,6 +203,8 @@ class _Handler(BaseHTTPRequestHandler):
                 self._json(400, {"error": "candidate_k must be >= 1"})
                 return
             try:
+                mt_min = body.get("min_tier")
+                mt_max = body.get("max_tier")
                 result = _retrieve(
                     query=query,
                     store=_get_store(),
@@ -206,6 +214,8 @@ class _Handler(BaseHTTPRequestHandler):
                     hybrid=hybrid,
                     candidate_k=candidate_k,
                     rerank=bool(body.get("rerank", False)),
+                    min_tier=int(mt_min) if mt_min is not None else None,
+                    max_tier=int(mt_max) if mt_max is not None else None,
                 )
             except RuntimeError as e:
                 self._json(400, {"error": str(e)})
