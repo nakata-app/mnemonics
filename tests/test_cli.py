@@ -879,3 +879,119 @@ def test_doctor_issues_count_exit(tmp_path, capsys):
             main()
     assert exc.value.code == 1
     assert "issue" in capsys.readouterr().out
+
+
+# ── gc >50 candidates ─────────────────────────────────────────────────────────
+
+def test_gc_many_candidates(tmp_path, capsys):
+    mock_store = MagicMock()
+    mock_store.gc_candidates.return_value = [
+        {"id": i, "ns": "default", "age_days": 99, "preview": "x"} for i in range(55)
+    ]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "gc", "--path", str(tmp_path)]),
+    ):
+        try:
+            main()
+        except SystemExit:
+            pass
+    assert "... and 5 more" in capsys.readouterr().out
+
+
+# ── doctor --fix paths ────────────────────────────────────────────────────────
+
+def test_doctor_fix_nothing(tmp_path, capsys):
+    mock_store = MagicMock()
+    mock_store.repair.return_value = {
+        "orphan_vectors_fixed": [],
+        "orphan_indexes_removed": [],
+        "missing_vectors_reported": [],
+    }
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "doctor", "--fix", "--path", str(tmp_path)]),
+    ):
+        try:
+            main()
+        except SystemExit:
+            pass
+    assert "Nothing to fix" in capsys.readouterr().out
+
+
+def test_doctor_fix_orphan_vector_error(tmp_path, capsys):
+    mock_store = MagicMock()
+    mock_store.repair.return_value = {
+        "orphan_vectors_fixed": [{"ns": "bad", "error": "index corrupt"}],
+        "orphan_indexes_removed": [],
+        "missing_vectors_reported": [],
+    }
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "doctor", "--fix", "--path", str(tmp_path)]),
+    ):
+        try:
+            main()
+        except SystemExit:
+            pass
+    assert "index corrupt" in capsys.readouterr().out
+
+
+def test_doctor_fix_orphan_index_removed(tmp_path, capsys):
+    mock_store = MagicMock()
+    mock_store.repair.return_value = {
+        "orphan_vectors_fixed": [{"ns": "ok", "removed": 2}],
+        "orphan_indexes_removed": ["/tmp/orphan.bin"],
+        "missing_vectors_reported": [{"ns": "partial", "missing": 5}],
+    }
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "doctor", "--fix", "--path", str(tmp_path)]),
+    ):
+        try:
+            main()
+        except SystemExit:
+            pass
+    out = capsys.readouterr().out
+    assert "orphan.bin" in out
+    assert "partial" in out
+
+
+def test_doctor_fix_orphan_index_error(tmp_path, capsys):
+    mock_store = MagicMock()
+    mock_store.repair.return_value = {
+        "orphan_vectors_fixed": [],
+        "orphan_indexes_removed": [{"path": "/tmp/bad.bin", "error": "permission denied"}],
+        "missing_vectors_reported": [],
+    }
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "doctor", "--fix", "--path", str(tmp_path)]),
+    ):
+        try:
+            main()
+        except SystemExit:
+            pass
+    assert "permission denied" in capsys.readouterr().out
+
+
+# ── doctor idx_missing (no index) ─────────────────────────────────────────────
+
+def test_doctor_no_index_status(tmp_path, capsys):
+    report = {
+        "db_integrity": "ok",
+        "wal_size": 0,
+        "namespaces": [_make_doctor_ns(idx_missing=True, idx=None)],
+        "orphan_indexes": [],
+    }
+    mock_store = MagicMock()
+    mock_store.health_check.return_value = report
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "doctor", "--path", str(tmp_path)]),
+    ):
+        try:
+            main()
+        except SystemExit:
+            pass
+    assert "no index" in capsys.readouterr().out
