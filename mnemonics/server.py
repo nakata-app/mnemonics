@@ -5,6 +5,8 @@ Endpoints:
   GET  /doctor                 — store health report (DB integrity, index vs SQL, capacity)
   POST /ingest   {"texts": [...], "ns": "default", "meta": [...]}
   POST /retrieve {"query": "...", "ns": "default", "top_k": 5}
+  POST /pin           {"id": N}       — pin a memory (tier=0, never decays)
+  POST /tier          {"id": N, "tier": 0|1|2}
   POST /rebuild-index {"ns": "..."}  — rebuild index from SQL source of truth
   POST /gc       {"ns": "...", "age_days": 30, "tier": 2, "dry_run": true}
   POST /forget   {"ns": "...", "before": "2026-01-01", "tier": 1, "dry_run": true}
@@ -188,6 +190,26 @@ class _Handler(BaseHTTPRequestHandler):
                 self._json(400, {"error": str(e)})
                 return
             self._json(200, result)
+
+        elif self.path == "/pin":
+            mid = body.get("id")
+            if mid is None:
+                self._json(400, {"error": "id is required"})
+                return
+            pinned = _get_store().pin(int(mid))
+            self._json(200, {"id": int(mid), "pinned": pinned})
+
+        elif self.path == "/tier":
+            mid = body.get("id")
+            tier_val = body.get("tier")
+            if mid is None or tier_val is None:
+                self._json(400, {"error": "id and tier are required"})
+                return
+            if int(tier_val) not in (0, 1, 2):
+                self._json(400, {"error": "tier must be 0, 1, or 2"})
+                return
+            changed = _get_store().set_tier(int(mid), int(tier_val))
+            self._json(200, {"id": int(mid), "tier": int(tier_val), "changed": changed})
 
         else:
             self._json(404, {"error": "not found"})

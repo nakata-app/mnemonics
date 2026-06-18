@@ -140,6 +140,43 @@ def test_http_rebuild_index_missing_ns(tmp_store):
     assert "ns" in data["error"]
 
 
+# ── POST /pin and POST /tier ──────────────────────────────────────────────────
+
+def test_http_pin(populated_store):
+    store, docs, vecs = populated_store
+    first_id = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    code, data = http_call(store, "POST", "/pin", {"id": first_id})
+    assert code == 200
+    assert data["id"] == first_id
+    assert "pinned" in data
+
+
+def test_http_pin_missing_id(tmp_store):
+    code, data = http_call(tmp_store, "POST", "/pin", {})
+    assert code == 400
+    assert "id" in data["error"]
+
+
+def test_http_tier(populated_store):
+    store, docs, vecs = populated_store
+    first_id = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    code, data = http_call(store, "POST", "/tier", {"id": first_id, "tier": 2})
+    assert code == 200
+    assert data["tier"] == 2
+    assert data["id"] == first_id
+
+
+def test_http_tier_invalid(tmp_store):
+    code, data = http_call(tmp_store, "POST", "/tier", {"id": 1, "tier": 5})
+    assert code == 400
+    assert "tier" in data["error"]
+
+
+def test_http_tier_missing_fields(tmp_store):
+    code, data = http_call(tmp_store, "POST", "/tier", {"id": 1})
+    assert code == 400
+
+
 # ── POST /gc ─────────────────────────────────────────────────────────────────
 
 def test_http_gc_dry_run(tmp_store):
