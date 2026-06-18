@@ -50,4 +50,31 @@ exclude = ["tests*", "benchmarks*", "claude_hooks*", "dist*"]
 dev = [
     "coverage>=7.13.5",
     "pytest>=9.0.3",
+    "mypy>=1.10",
 ]
+
+[tool.coverage.run]
+source = ["mnemonics"]
+omit = ["mnemonics/migrate.py", "tests/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]
+fail_under = 99
+
+[tool.mypy]
+ignore_missing_imports = true
+files = [
+    "mnemonics/store.py",
+    "mnemonics/retrieve.py",
+    "mnemonics/ingest.py",
+    "mnemonics/server.py",
+    "mnemonics/backup.py",
+    "mnemonics/sync.py",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
