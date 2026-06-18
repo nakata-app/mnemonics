@@ -205,3 +205,32 @@ def test_build_encoder_custom():
     with patch("sentence_transformers.SentenceTransformer") as MockST:
         _build_encoder("some/model", None)
     MockST.assert_called_once_with("some/model")
+
+
+def test_build_encoder_adaptmem_no_path_raises():
+    from mnemonics.eval import _build_encoder
+    import os
+    env = {k: v for k, v in os.environ.items() if k != "MNEMONICS_ADAPTMEM_PATH"}
+    with patch.dict("os.environ", env, clear=True):
+        with pytest.raises(ValueError, match="adaptmem encoder"):
+            _build_encoder("adaptmem", model_path=None)
+
+
+def test_build_encoder_adaptmem_with_path(tmp_path):
+    from mnemonics.eval import _build_encoder
+    (tmp_path / "model").mkdir()  # model subdir exists → use it
+    with patch("sentence_transformers.SentenceTransformer") as MockST:
+        _build_encoder("adaptmem", model_path=str(tmp_path))
+    MockST.assert_called_once_with(str(tmp_path / "model"))
+
+
+def test_bm25_rank_fts_operational_error(tmp_path):
+    from mnemonics.eval import _build_bm25_index, _bm25_rank
+    conn = _build_bm25_index(["some text"])
+    chunk_ids = ["c0"]
+    # Unmatched paren triggers OperationalError → returns []
+    from unittest.mock import MagicMock as MM
+    from mnemonics.store import Store
+    with patch.object(Store, "_fts_sanitize", staticmethod(lambda q: "(((")):
+        result = _bm25_rank(conn, "anything", chunk_ids, top_k=5)
+    assert result == []
