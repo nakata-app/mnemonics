@@ -536,6 +536,7 @@ def _mcp_loop() -> None:
                             "limit": {"type": "integer", "description": "Max rows to return (default: 20, max: 100)"},
                             "offset": {"type": "integer", "description": "Pagination offset (default: 0)"},
                             "tier": {"type": "integer", "enum": [0, 1, 2], "description": "Filter to a specific tier: 0=pinned, 1=default, 2=ambient (omit for all)"},
+                            "since": {"type": "string", "description": "ISO date string (YYYY-MM-DD or YYYY-MM-DD HH:MM:SS). Only return memories created on or after this date."},
                         },
                     },
                 },
@@ -807,7 +808,8 @@ def _mcp_loop() -> None:
                 offset = int(args.get("offset", 0))
                 tier_arg = args.get("tier")
                 tier_filter = int(tier_arg) if tier_arg is not None else None
-                rows = _get_store().list_memories(ns=ns_val, limit=limit, offset=offset, tier=tier_filter)
+                since_arg = args.get("since")
+                rows = _get_store().list_memories(ns=ns_val, limit=limit, offset=offset, tier=tier_filter, since=since_arg)
                 if not rows:
                     ok({"content": [{"type": "text", "text": f"No memories in ns={ns_val!r} (offset={offset})."}]})
                 else:

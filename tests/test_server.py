@@ -1806,3 +1806,30 @@ def test_http_export_jsonl_empty_store(tmp_store):
     code, rows = _get_export(tmp_store, "/export-jsonl")
     assert code == 200
     assert rows == []
+
+
+# ── MCP mnemonics_list --since ─────────────────────────────────────────────────
+
+def test_mcp_list_since_past(populated_store):
+    """mnemonics_list with since=far-past returns all rows."""
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_list",
+                   "arguments": {"ns": "default", "limit": 100, "since": "2000-01-01"}},
+    })
+    text = resp[0]["result"]["content"][0]["text"]
+    assert "showing" in text
+    assert str(len(docs)) in text
+
+
+def test_mcp_list_since_future(populated_store):
+    """mnemonics_list with since=far-future returns no memories."""
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_list",
+                   "arguments": {"ns": "default", "since": "2099-01-01"}},
+    })
+    text = resp[0]["result"]["content"][0]["text"]
+    assert "No memories" in text
