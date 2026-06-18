@@ -686,6 +686,38 @@ class Store:
             row = self._db.execute("SELECT COUNT(*) FROM memories WHERE ns=?", (ns,)).fetchone()
         return row[0] if row else 0
 
+    def sample(
+        self,
+        ns: str = "default",
+        n: int = 5,
+        tier: int | None = None,
+    ) -> list[dict]:
+        """Return up to *n* randomly sampled memories from *ns*.
+
+        Uses SQLite's ``ORDER BY RANDOM()`` — not suitable for large-n stats
+        but perfect for spot-checking a namespace or building random review
+        queues. Pass *tier* to restrict to a specific tier.
+        """
+        where = "ns = ?"
+        params: list = [ns]
+        if tier is not None:
+            where += " AND tier = ?"
+            params.append(tier)
+        params.append(max(1, n))
+        rows = self._db.execute(
+            f"SELECT id, ns, text, summary, tier, created, last_accessed, access_count "
+            f"FROM memories WHERE {where} ORDER BY RANDOM() LIMIT ?",
+            params,
+        ).fetchall()
+        return [
+            {
+                "id": r[0], "ns": r[1], "text": r[2], "summary": r[3],
+                "tier": r[4], "created": r[5], "last_accessed": r[6],
+                "access_count": r[7],
+            }
+            for r in rows
+        ]
+
     def update_summary(self, memory_id: int, summary: str | None) -> bool:
         with self._lock:
             cur = self._db.execute(

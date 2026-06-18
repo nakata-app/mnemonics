@@ -249,6 +249,16 @@ class _Handler(BaseHTTPRequestHandler):
             )
             self._json(200, {"query": query, "ns": ns_val, "results": hits})
 
+        elif self.path == "/sample":
+            smp_ns = body.get("ns", "default")
+            smp_n = min(int(body.get("n", 5)), 100)
+            smp_tier = body.get("tier")
+            hits_smp = _get_store().sample(
+                ns=smp_ns, n=smp_n,
+                tier=int(smp_tier) if smp_tier is not None else None,
+            )
+            self._json(200, {"ns": smp_ns, "n": len(hits_smp), "results": hits_smp})
+
         elif self.path == "/deduplicate":
             ded_ns = body.get("ns", "default")
             ded_threshold = float(body.get("threshold", 0.98))
@@ -783,6 +793,18 @@ def _mcp_loop() -> None:
                     },
                 },
                 {
+                    "name": "mnemonics_sample",
+                    "description": "Return up to n randomly sampled memories from a namespace. Useful for spot-checking, building review queues, or seeding evaluation sets without semantic bias.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ns": {"type": "string", "description": "Namespace to sample from (default: 'default')"},
+                            "n": {"type": "integer", "description": "Number of memories to return (default: 5, max: 100)"},
+                            "tier": {"type": "integer", "enum": [0, 1, 2], "description": "Filter to a specific tier (omit for all tiers)"},
+                        },
+                    },
+                },
+                {
                     "name": "mnemonics_deduplicate",
                     "description": "Find near-duplicate memories in a namespace using cosine similarity on stored vectors. Two memories are duplicates when similarity >= threshold. dry_run=true (default) returns the pairs list without deleting; set dry_run=false to delete. keep='newest' (default) retains the higher ID; keep='oldest' retains the lower ID.",
                     "inputSchema": {
@@ -1311,6 +1333,22 @@ def _mcp_loop() -> None:
                         if r.get("summary"):
                             lines_hs.append(f"           summary: {r['summary'][:120]}")
                     ok({"content": [{"type": "text", "text": "\n".join(lines_hs)}]})
+
+            elif name == "mnemonics_sample":
+                smp_ns_m = args.get("ns", "default")
+                smp_n_m = min(int(args.get("n", 5)), 100)
+                smp_tier_m = args.get("tier")
+                results_smp = _get_store().sample(
+                    ns=smp_ns_m, n=smp_n_m,
+                    tier=int(smp_tier_m) if smp_tier_m is not None else None,
+                )
+                if not results_smp:
+                    ok({"content": [{"type": "text", "text": f"No memories found in ns={smp_ns_m!r}."}]})
+                else:
+                    lines_smp = [f"Sample of {len(results_smp)} from ns={smp_ns_m!r}:"]
+                    for r in results_smp:
+                        lines_smp.append(f"  id={r['id']} tier={r['tier']}  {(r['text'] or '')[:120]}")
+                    ok({"content": [{"type": "text", "text": "\n".join(lines_smp)}]})
 
             elif name == "mnemonics_deduplicate":
                 ded_ns_m = args.get("ns", "default")

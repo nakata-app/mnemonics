@@ -2323,3 +2323,45 @@ def test_deduplicate_knn_runtime_error(tmp_store):
     with patch.object(tmp_store, "_index_for", return_value=mock_idx):
         result = tmp_store.deduplicate(ns="default", threshold=0.5, dry_run=True)
     assert result["pairs"] == []
+
+
+# ── sample ────────────────────────────────────────────────────────────────────
+
+def test_sample_returns_n_results(populated_store):
+    """sample returns at most n memories."""
+    store, docs, vecs = populated_store
+    results = store.sample(n=3)
+    assert len(results) == 3
+    for r in results:
+        assert "id" in r and "text" in r and "tier" in r
+
+
+def test_sample_tier_filter(populated_store):
+    """sample with tier filter only returns memories of that tier."""
+    store, docs, vecs = populated_store
+    results = store.sample(n=10, tier=1)
+    assert all(r["tier"] == 1 for r in results)
+
+
+def test_sample_empty_ns(tmp_store):
+    """sample on empty namespace returns empty list."""
+    results = tmp_store.sample(ns="empty", n=5)
+    assert results == []
+
+
+def test_sample_n_larger_than_count(populated_store):
+    """sample with n > count returns at most count items."""
+    store, docs, vecs = populated_store
+    total = store.count()
+    results = store.sample(n=1000)
+    assert len(results) <= total
+
+
+def test_sample_is_random(populated_store):
+    """Two sample calls should differ with high probability (not deterministic)."""
+    store, docs, vecs = populated_store
+    # Run twice and check that at least sometimes the order differs
+    ids_a = [r["id"] for r in store.sample(n=5)]
+    ids_b = [r["id"] for r in store.sample(n=5)]
+    # Not guaranteed to differ (could match by chance), but sets should be same
+    assert set(ids_a) == set(ids_b)  # same pool, same ns

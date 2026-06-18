@@ -80,6 +80,15 @@ def main() -> None:
     ts.add_argument("--json", dest="json_out", action="store_true", help="Output results as JSON array")
     ts.add_argument("--path", default="~/.mnemonics")
 
+    # sample
+    smp = sub.add_parser("sample", help="Return N randomly sampled memories from a namespace")
+    smp.add_argument("--ns", default="default", help="Namespace to sample from (default: 'default')")
+    smp.add_argument("--n", type=int, default=5, help="Number of memories to return (default: 5)")
+    smp.add_argument("--tier", type=int, choices=[0, 1, 2], default=None,
+                     help="Filter to a specific tier (0=pinned, 1=default, 2=ambient)")
+    smp.add_argument("--json", dest="json_out", action="store_true", help="Output as JSON")
+    smp.add_argument("--path", default="~/.mnemonics")
+
     # deduplicate
     ded = sub.add_parser("deduplicate", help="Find (and optionally remove) near-duplicate memories")
     ded.add_argument("--ns", default="default", help="Namespace to deduplicate (default: 'default')")
@@ -496,6 +505,20 @@ def main() -> None:
                 print(line)
                 if r.get("summary"):
                     print(f"           summary: {r['summary']}")
+
+    elif args.cmd == "sample":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        results = store.sample(ns=args.ns, n=args.n, tier=args.tier)
+        if args.json_out:
+            for r in results:
+                print(json.dumps(r, default=str, ensure_ascii=False))
+        elif not results:
+            print(f"No memories found in ns={args.ns!r}.")
+        else:
+            for r in results:
+                tier_name = {0: "pin", 1: "def", 2: "amb"}.get(r["tier"], "?")
+                print(f"[id={r['id']} {tier_name}] {r['text'][:120]}")
 
     elif args.cmd == "deduplicate":
         from mnemonics.store import Store

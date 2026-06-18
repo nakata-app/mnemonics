@@ -624,6 +624,7 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_expire",
         "mnemonics_bulk_update_summary",
         "mnemonics_deduplicate",
+        "mnemonics_sample",
     }
 
 
@@ -3148,3 +3149,44 @@ def test_mcp_deduplicate_with_pairs(tmp_store):
     assert "result" in r
     text = r["result"]["content"][0]["text"]
     assert "kept=" in text
+
+
+# ── sample REST + MCP ─────────────────────────────────────────────────────────
+
+def test_http_sample_ok(populated_store):
+    """POST /sample returns random results."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/sample", {"n": 3})
+    assert code == 200
+    assert data["n"] == 3
+    assert len(data["results"]) == 3
+
+
+def test_http_sample_empty_ns(tmp_store):
+    """POST /sample on empty namespace returns empty results."""
+    code, data = http_call(tmp_store, "POST", "/sample", {"ns": "ghost", "n": 5})
+    assert code == 200
+    assert data["n"] == 0
+
+
+def test_mcp_sample_ok(populated_store):
+    """MCP mnemonics_sample returns formatted result."""
+    store, docs, vecs = populated_store
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_sample",
+                   "arguments": {"n": 2}},
+    })[0]
+    assert "result" in r
+    assert "Sample" in r["result"]["content"][0]["text"]
+
+
+def test_mcp_sample_empty(tmp_store):
+    """MCP mnemonics_sample on empty ns returns no memories message."""
+    r = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_sample",
+                   "arguments": {"ns": "empty", "n": 3}},
+    })[0]
+    assert "result" in r
+    assert "No memories" in r["result"]["content"][0]["text"]

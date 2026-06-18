@@ -2621,3 +2621,49 @@ def test_cli_deduplicate_json(tmp_path, capsys):
     out = capsys.readouterr().out
     parsed = json.loads(out)
     assert "pairs" in parsed
+
+
+# ── sample CLI ────────────────────────────────────────────────────────────────
+
+def test_cli_sample_ok(tmp_path, capsys):
+    """sample prints memory lines."""
+    mock_store = MagicMock()
+    mock_store.sample.return_value = [
+        {"id": 1, "tier": 1, "text": "hello world", "summary": None}
+    ]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "sample", "--n", "3", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "id=1" in out
+
+
+def test_cli_sample_empty(tmp_path, capsys):
+    """sample prints message when no results."""
+    mock_store = MagicMock()
+    mock_store.sample.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "sample", "--path", str(tmp_path)]),
+    ):
+        main()
+    assert "No memories" in capsys.readouterr().out
+
+
+def test_cli_sample_json(tmp_path, capsys):
+    """sample --json outputs JSON lines."""
+    mock_store = MagicMock()
+    mock_store.sample.return_value = [
+        {"id": 2, "tier": 0, "text": "pinned", "ns": "default",
+         "summary": None, "created": "2026-01-01", "last_accessed": None, "access_count": 0}
+    ]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "sample", "--json", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    parsed = json.loads(out.strip())
+    assert parsed["id"] == 2
