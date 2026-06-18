@@ -51,6 +51,7 @@ dev = [
     "coverage>=7.13.5",
     "pytest>=9.0.3",
     "mypy>=1.10",
+    "hypothesis>=6.155.3",
 ]
 
 [tool.coverage.run]
@@ -78,3 +79,6 @@ files = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+filterwarnings = [
+    "ignore:'mnemonics.cli' found in sys.modules:RuntimeWarning",
+]
