@@ -244,6 +244,148 @@ def test_serve_calls_serve_with_port(tmp_path):
 
 # ── mcp ───────────────────────────────────────────────────────────────────────
 
+# ── doctor ────────────────────────────────────────────────────────────────────
+
+def test_doctor_prints_ok(tmp_path, capsys):
+    mock_store = MagicMock()
+    mock_store.health_check.return_value = {
+        "db_integrity": "ok",
+        "wal_size": 0,
+        "namespaces": [{"ns": "default", "sql_count": 5, "idx_count": 5,
+                        "soft_deleted": 0, "missing_vectors": 0,
+                        "idx_missing": False, "usage_pct": 0.5, "capacity_warning": False}],
+        "orphan_indexes": [],
+    }
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "doctor", "--path", str(tmp_path)]),
+    ):
+        try:
+            main()
+        except SystemExit:
+            pass
+    out = capsys.readouterr().out
+    assert "OK" in out
+    assert "default" in out
+
+
+def test_doctor_json_output(tmp_path, capsys):
+    import json
+    mock_store = MagicMock()
+    mock_store.health_check.return_value = {
+        "db_integrity": "ok", "wal_size": 0, "namespaces": [], "orphan_indexes": []
+    }
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "doctor", "--json", "--path", str(tmp_path)]),
+    ):
+        try:
+            main()
+        except SystemExit:
+            pass
+    report = json.loads(capsys.readouterr().out)
+    assert report["db_integrity"] == "ok"
+
+
+def test_doctor_fix_calls_repair(tmp_path, capsys):
+    mock_store = MagicMock()
+    mock_store.repair.return_value = {
+        "orphan_vectors_fixed": [{"ns": "x", "removed": 3}],
+        "orphan_indexes_removed": [],
+        "missing_vectors_reported": [],
+    }
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "doctor", "--fix", "--path", str(tmp_path)]),
+    ):
+        try:
+            main()
+        except SystemExit:
+            pass
+    mock_store.repair.assert_called_once()
+    out = capsys.readouterr().out
+    assert "orphan" in out.lower() or "removed" in out.lower() or "✓" in out
+
+
+# ── forget ────────────────────────────────────────────────────────────────────
+
+def test_forget_dry_run(tmp_path, capsys):
+    mock_store = MagicMock()
+    mock_store.forget_candidates.return_value = [
+        {"id": 1, "ns": "old", "tier": 1, "created": "2026-01-01 00:00:00", "preview": "stale"},
+    ]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "forget", "--ns", "old", "--path", str(tmp_path)]),
+    ):
+        try:
+            main()
+        except SystemExit:
+            pass
+    mock_store.forget.assert_not_called()
+    out = capsys.readouterr().out
+    assert "dry-run" in out.lower() or "1 row" in out or "apply" in out.lower()
+
+
+def test_forget_apply_deletes(tmp_path, capsys):
+    mock_store = MagicMock()
+    mock_store.forget_candidates.return_value = [
+        {"id": 2, "ns": "old", "tier": 1, "created": "2026-01-01 00:00:00", "preview": "stale"},
+    ]
+    mock_store.forget.return_value = 1
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "forget", "--ns", "old", "--apply", "--path", str(tmp_path)]),
+    ):
+        try:
+            main()
+        except SystemExit:
+            pass
+    mock_store.forget.assert_called_once()
+    out = capsys.readouterr().out
+    assert "1" in out
+
+
+# ── rebuild-index ─────────────────────────────────────────────────────────────
+
+def test_rebuild_index_cli(tmp_path, capsys):
+    mock_store = MagicMock()
+    mock_store.rebuild_ns_index.return_value = (50, 45)
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "rebuild-index", "--ns", "myns", "--path", str(tmp_path)]),
+    ):
+        try:
+            main()
+        except SystemExit:
+            pass
+    mock_store.rebuild_ns_index.assert_called_once_with("myns")
+    out = capsys.readouterr().out
+    assert "50" in out and "45" in out
+
+
+# ── gc tier flag ──────────────────────────────────────────────────────────────
+
+def test_gc_tier1_dry_run(tmp_path, capsys):
+    mock_store = MagicMock()
+    mock_store.gc_candidates.return_value = [
+        {"id": 9, "ns": "sessions", "preview": "old", "age_days": 65},
+    ]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "gc", "--tier", "1", "--age-days", "60", "--path", str(tmp_path)]),
+    ):
+        try:
+            main()
+        except SystemExit:
+            pass
+    mock_store.gc_candidates.assert_called_once()
+    call_kwargs = mock_store.gc_candidates.call_args
+    assert call_kwargs.kwargs.get("tier") == 1 or (call_kwargs.args and 1 in call_kwargs.args)
+
+
+# ── mcp ───────────────────────────────────────────────────────────────────────
+
 def test_mcp_calls_serve_mcp():
     with (
         patch("mnemonics.server.serve") as mock_serve,
