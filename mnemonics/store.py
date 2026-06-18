@@ -481,15 +481,21 @@ class Store:
             else:
                 old_idx = None
 
+            if not ids:
+                # Namespace has no SQL rows — do NOT create an empty .bin file
+                # (that would produce a new orphan). Leave any existing .bin for
+                # health_check / repair to clean up.
+                return old_count, 0
+
             new_idx = hnswlib.Index(space="cosine", dim=self.dim)
             new_idx.init_index(
-                max_elements=max(100_000, len(ids) * 2 or 1),
+                max_elements=max(100_000, len(ids) * 2),
                 ef_construction=200,
                 M=16,
             )
             new_idx.set_ef(64)
 
-            if ids and old_idx is not None:
+            if old_idx is not None:
                 # Retrieve stored vectors in batches; skip IDs absent from index.
                 surviving, vecs = [], []
                 for mid in ids:

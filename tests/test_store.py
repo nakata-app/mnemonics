@@ -310,6 +310,16 @@ def test_rebuild_ns_index_persists(tmp_path):
     assert all(r["id"] != ids[1] for r in results)
 
 
+def test_rebuild_ns_index_empty_ns_no_orphan_bin(tmp_path):
+    """rebuild_ns_index on a namespace with no SQL rows must not create an empty .bin file."""
+    s = Store(tmp_path)
+    # Namespace "ghost" has no SQL rows and no .bin file
+    old_n, new_n = s.rebuild_ns_index("ghost")
+    assert old_n == 0
+    assert new_n == 0
+    assert not (tmp_path / "index_ghost.bin").exists(), "empty .bin would become an orphan"
+
+
 def test_health_check_clean_store(tmp_path):
     vecs = make_vecs(2)
     s = Store(tmp_path)
