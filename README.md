@@ -135,7 +135,9 @@ The server binds to `127.0.0.1` only, no external interface, no telemetry.
 |--------|------|------|
 | POST | `/ingest` | `{"texts": [...], "ns": "default"}` |
 | POST | `/retrieve` | `{"query": "...", "top_k": 5, "decay": true}` |
+| POST | `/repair` |, (auto-fix orphan vectors and index files) |
 | GET | `/health` | |
+| GET | `/doctor` | (DB integrity, index vs SQL counts, capacity) |
 | GET | `/namespaces` | |
 | GET | `/count?ns=default` | |
 | DELETE | `/memory/<id>` | |

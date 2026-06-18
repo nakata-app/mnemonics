@@ -33,6 +33,12 @@ All notable changes to mnemonics. Format follows [Keep a Changelog](https://keep
 - **`mnemonics gc --tier 1`** enables GC for default-tier (tier=1) rows.
   Previously `gc` only targeted tier=2 (ambient). Combine with `--age-days`
   to sweep stale sessions-ns entries without raw SQL.
+- **`GET /doctor` REST endpoint** returns the full `health_check()` report as
+  JSON (DB integrity, WAL size, per-namespace sql/idx counts, capacity
+  warnings, orphan indexes). Matches what `mnemonics doctor --json` prints.
+- **`POST /repair` REST endpoint** calls `Store.repair()` and returns a JSON
+  summary of what was fixed (orphan vectors rebuilt, orphan .bin files
+  removed, missing vectors reported). Matches `mnemonics_repair` MCP tool.
 
 ### Changed
 
