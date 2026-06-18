@@ -425,6 +425,8 @@ def _mcp_loop() -> None:
                             "hybrid": {"type": "boolean", "description": "Fuse vector + BM25 via RRF (default true)"},
                             "candidate_k": {"type": "integer", "description": "Per-channel pool size when hybrid=true (default 50)"},
                             "rerank": {"type": "boolean", "description": "Cross-encoder rerank via AdaptMem over the candidate band (default false)"},
+                            "min_tier": {"type": "integer", "description": "Only return memories with tier >= this value (0=pinned, 1=default, 2=ambient)"},
+                            "max_tier": {"type": "integer", "description": "Only return memories with tier <= this value"},
                         },
                         "required": ["query"],
                     },
@@ -438,6 +440,8 @@ def _mcp_loop() -> None:
                             "query": {"type": "string", "description": "Keyword query"},
                             "ns": {"type": "string", "description": "Namespace to search (default: 'default')"},
                             "top_k": {"type": "integer", "description": "Max results (default: 5)"},
+                            "min_tier": {"type": "integer", "description": "Only return memories with tier >= this value"},
+                            "max_tier": {"type": "integer", "description": "Only return memories with tier <= this value"},
                         },
                         "required": ["query"],
                     },
@@ -643,6 +647,8 @@ def _mcp_loop() -> None:
                     err("candidate_k must be >= 1")
                     continue
                 try:
+                    min_tier_v = args.get("min_tier")
+                    max_tier_v = args.get("max_tier")
                     result = _retrieve(
                         query=args["query"],
                         store=_get_store(),
@@ -652,6 +658,8 @@ def _mcp_loop() -> None:
                         hybrid=bool(args.get("hybrid", True)),
                         candidate_k=candidate_k,
                         rerank=bool(args.get("rerank", False)),
+                        min_tier=int(min_tier_v) if min_tier_v is not None else None,
+                        max_tier=int(max_tier_v) if max_tier_v is not None else None,
                     )
                 except RuntimeError as e:
                     err(str(e))
@@ -681,7 +689,13 @@ def _mcp_loop() -> None:
                     continue
                 ns_val = args.get("ns", "default")
                 top_k = int(args.get("top_k", 5))
-                hits = _get_store().search_bm25(query, ns=ns_val, top_k=top_k)
+                mt_min = args.get("min_tier")
+                mt_max = args.get("max_tier")
+                hits = _get_store().search_bm25(
+                    query, ns=ns_val, top_k=top_k,
+                    min_tier=int(mt_min) if mt_min is not None else None,
+                    max_tier=int(mt_max) if mt_max is not None else None,
+                )
                 if not hits:
                     ok({"content": [{"type": "text", "text": f"No BM25 results for {query!r} in ns={ns_val!r}."}]})
                 else:
