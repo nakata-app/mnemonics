@@ -5,8 +5,10 @@ Endpoints:
   GET  /doctor                 — store health report (DB integrity, index vs SQL, capacity)
   POST /ingest   {"texts": [...], "ns": "default", "meta": [...]}
   POST /retrieve {"query": "...", "ns": "default", "top_k": 5}
+  GET  /stats                  — per-namespace tier breakdown (pin/def/amb counts)
   POST /pin           {"id": N}       — pin a memory (tier=0, never decays)
   POST /tier          {"id": N, "tier": 0|1|2}
+  POST /forget-ns     {"ns": "...", "before": "...", "tier": N, "dry_run": true}
   POST /rebuild-index {"ns": "..."}  — rebuild index from SQL source of truth
   POST /gc       {"ns": "...", "age_days": 30, "tier": 2, "dry_run": true}
   POST /forget   {"ns": "...", "before": "2026-01-01", "tier": 1, "dry_run": true}
@@ -83,6 +85,25 @@ class _Handler(BaseHTTPRequestHandler):
         elif path == "/count":
             ns = (self.path.split("ns=")[-1] if "ns=" in self.path else "default")
             self._json(200, {"ns": ns, "count": _get_store().count(ns)})
+        elif path == "/stats":
+            store = _get_store()
+            rows = store._db.execute(
+                "SELECT ns, tier, COUNT(*) FROM memories GROUP BY ns, tier ORDER BY ns, tier"
+            ).fetchall()
+            ns_data: dict = {}
+            for ns_name, tier, cnt in rows:
+                ns_data.setdefault(ns_name, {})[tier] = cnt
+            result = []
+            for ns_name, tiers in sorted(ns_data.items()):
+                total = sum(tiers.values())
+                result.append({
+                    "ns": ns_name,
+                    "total": total,
+                    "pin": tiers.get(0, 0),
+                    "def": tiers.get(1, 0),
+                    "amb": tiers.get(2, 0),
+                })
+            self._json(200, {"namespaces": result})
         else:
             self._json(404, {"error": "not found"})
 
@@ -139,6 +160,23 @@ class _Handler(BaseHTTPRequestHandler):
             else:
                 n = store.forget(ns=ns, before=before, tier=tier)
                 self._json(200, {"deleted": n, "dry_run": False})
+
+        elif self.path == "/forget-ns":
+            ns = body.get("ns", "").strip()
+            if not ns:
+                self._json(400, {"error": "ns is required"})
+                return
+            store = _get_store()
+            before = body.get("before") or None
+            tier_val = body.get("tier")
+            tier = int(tier_val) if tier_val is not None else None
+            dry_run = bool(body.get("dry_run", True))
+            candidates = store.forget_candidates(ns=ns, before=before, tier=tier)
+            if dry_run:
+                self._json(200, {"ns": ns, "candidates": len(candidates), "dry_run": True})
+            else:
+                n = store.forget(ns=ns, before=before, tier=tier)
+                self._json(200, {"ns": ns, "deleted": n, "dry_run": False})
 
         elif self.path == "/ingest":
             texts = body.get("texts", [])

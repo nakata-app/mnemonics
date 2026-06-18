@@ -102,6 +102,52 @@ def test_health(tmp_store):
     assert data["status"] == "ok"
 
 
+# ── GET /stats ────────────────────────────────────────────────────────────────
+
+def test_http_stats_empty(tmp_store):
+    code, data = http_call(tmp_store, "GET", "/stats")
+    assert code == 200
+    assert data["namespaces"] == []
+
+
+def test_http_stats_tier_breakdown(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/stats")
+    assert code == 200
+    ns_names = [r["ns"] for r in data["namespaces"]]
+    assert "default" in ns_names
+    row = next(r for r in data["namespaces"] if r["ns"] == "default")
+    assert "total" in row
+    assert "pin" in row
+    assert "def" in row
+    assert "amb" in row
+
+
+# ── POST /forget-ns ───────────────────────────────────────────────────────────
+
+def test_http_forget_ns_dry_run(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/forget-ns", {"ns": "default", "dry_run": True})
+    assert code == 200
+    assert data["dry_run"] is True
+    assert "candidates" in data
+    assert data["ns"] == "default"
+
+
+def test_http_forget_ns_apply(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/forget-ns", {"ns": "default", "dry_run": False})
+    assert code == 200
+    assert data["dry_run"] is False
+    assert "deleted" in data
+
+
+def test_http_forget_ns_missing_ns(tmp_store):
+    code, data = http_call(tmp_store, "POST", "/forget-ns", {})
+    assert code == 400
+    assert "ns" in data["error"]
+
+
 # ── GET /doctor ───────────────────────────────────────────────────────────────
 
 def test_http_doctor(tmp_store):
