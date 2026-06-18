@@ -36,7 +36,7 @@ jobs:
           HF_HUB_OFFLINE: "1"
         run: |
           uv run coverage run -m pytest tests/ --ignore=tests/test_encryption.py -q
-          uv run coverage report --include="mnemonics/*.py" --omit="mnemonics/migrate.py" --fail-under=99
+          uv run coverage report --include="mnemonics/*.py" --omit="mnemonics/migrate.py" --fail-under=100
 
       - name: Lint
         run: uv run ruff check mnemonics/
