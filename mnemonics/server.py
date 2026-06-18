@@ -613,6 +613,18 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(body_bytes)))
             self.end_headers()
             self.wfile.write(body_bytes)
+        elif path.startswith("/namespace/"):
+            from urllib.parse import unquote_plus
+            raw_ns = path[len("/namespace/"):]
+            if not raw_ns:
+                self._json(400, {"error": "namespace name is required in path: /namespace/<ns>"})
+                return
+            ns_q = unquote_plus(raw_ns)
+            info = _get_store().namespace_info(ns_q)
+            if info is None:
+                self._json(404, {"error": f"namespace {ns_q!r} not found"})
+            else:
+                self._json(200, info)
         else:
             self._json(404, {"error": "not found"})
 
@@ -794,6 +806,17 @@ def _mcp_loop() -> None:
                             "max_tier": {"type": "integer", "description": "Only return memories with tier <= this value"},
                         },
                         "required": ["query", "vector"],
+                    },
+                },
+                {
+                    "name": "mnemonics_namespace_info",
+                    "description": "Return a detailed summary for a single namespace: total memory count, count per tier, oldest/newest timestamps, average text length, total word count, and count of memories with summaries. Returns an error if the namespace doesn't exist.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ns": {"type": "string", "description": "Namespace to inspect (required)"},
+                        },
+                        "required": ["ns"],
                     },
                 },
                 {
@@ -1342,6 +1365,27 @@ def _mcp_loop() -> None:
                         if r.get("summary"):
                             lines_hs.append(f"           summary: {r['summary'][:120]}")
                     ok({"content": [{"type": "text", "text": "\n".join(lines_hs)}]})
+
+            elif name == "mnemonics_namespace_info":
+                ns_ni = args.get("ns", "").strip()
+                if not ns_ni:
+                    err("mnemonics_namespace_info: 'ns' is required")
+                    continue
+                info_ni = _get_store().namespace_info(ns_ni)
+                if info_ni is None:
+                    err(f"mnemonics_namespace_info: namespace {ns_ni!r} not found")
+                    continue
+                tier_labels = {0: "pinned", 1: "default", 2: "ambient"}
+                lines_ni = [f"Namespace: {ns_ni}"]
+                lines_ni.append(f"  Total memories : {info_ni['total']}")
+                for t, c in sorted(info_ni["by_tier"].items()):
+                    lines_ni.append(f"  {tier_labels.get(t, str(t)):<10}: {c}")
+                lines_ni.append(f"  Oldest         : {info_ni['oldest']}")
+                lines_ni.append(f"  Newest         : {info_ni['newest']}")
+                lines_ni.append(f"  Avg text len   : {info_ni['avg_text_len']:.0f} chars")
+                lines_ni.append(f"  Total words    : {info_ni['total_words']}")
+                lines_ni.append(f"  With summary   : {info_ni['with_summary']}")
+                ok({"content": [{"type": "text", "text": "\n".join(lines_ni)}]})
 
             elif name == "mnemonics_sample":
                 smp_ns_m = args.get("ns", "default")

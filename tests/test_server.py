@@ -626,6 +626,7 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_deduplicate",
         "mnemonics_sample",
         "mnemonics_reindex_all",
+        "mnemonics_namespace_info",
     }
 
 
@@ -3229,3 +3230,57 @@ def test_mcp_reindex_all_with_error(populated_store):
         })[0]
     assert "result" in r
     assert "ERROR" in r["result"]["content"][0]["text"]
+
+
+# ── namespace-info REST + MCP ─────────────────────────────────────────────────
+
+def test_http_namespace_info_ok(populated_store):
+    """GET /namespace/<ns> returns namespace summary."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/namespace/default", {})
+    assert code == 200
+    assert data["ns"] == "default"
+    assert data["total"] == len(docs)
+
+
+def test_http_namespace_info_not_found(tmp_store):
+    """GET /namespace/<ns> returns 404 for unknown namespace."""
+    code, data = http_call(tmp_store, "GET", "/namespace/ghost", {})
+    assert code == 404
+
+
+def test_http_namespace_info_empty_path(tmp_store):
+    """GET /namespace/ without ns name returns 400."""
+    code, data = http_call(tmp_store, "GET", "/namespace/", {})
+    assert code == 400
+
+
+def test_mcp_namespace_info_ok(populated_store):
+    """MCP mnemonics_namespace_info returns formatted stats."""
+    store, docs, vecs = populated_store
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_namespace_info",
+                   "arguments": {"ns": "default"}},
+    })[0]
+    assert "result" in r
+    assert "Total" in r["result"]["content"][0]["text"]
+
+
+def test_mcp_namespace_info_not_found(tmp_store):
+    """MCP mnemonics_namespace_info returns error for unknown ns."""
+    r = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_namespace_info",
+                   "arguments": {"ns": "ghost"}},
+    })[0]
+    assert "error" in r
+
+
+def test_mcp_namespace_info_missing_arg(tmp_store):
+    """MCP mnemonics_namespace_info without ns arg returns error."""
+    r = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_namespace_info", "arguments": {}},
+    })[0]
+    assert "error" in r

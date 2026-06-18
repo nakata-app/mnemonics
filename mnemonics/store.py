@@ -686,6 +686,44 @@ class Store:
             row = self._db.execute("SELECT COUNT(*) FROM memories WHERE ns=?", (ns,)).fetchone()
         return row[0] if row else 0
 
+    def namespace_info(self, ns: str) -> dict | None:
+        """Return a summary dict for a single namespace, or None if it doesn't exist.
+
+        Fields returned:
+        - ``ns``: namespace name
+        - ``total``: total memory count
+        - ``by_tier``: {tier_int: count, ...}
+        - ``oldest``: ISO timestamp of the earliest created row
+        - ``newest``: ISO timestamp of the most recent created row
+        - ``avg_text_len``: average character length of the ``text`` field
+        - ``total_words``: approximate total word count (space-split)
+        - ``with_summary``: count of memories that have a non-null summary
+        """
+        row = self._db.execute(
+            "SELECT COUNT(*), MIN(created), MAX(created), "
+            "AVG(LENGTH(text)), SUM(LENGTH(text) - LENGTH(REPLACE(text, ' ', '')) + 1), "
+            "SUM(CASE WHEN summary IS NOT NULL THEN 1 ELSE 0 END) "
+            "FROM memories WHERE ns=?",
+            (ns,),
+        ).fetchone()
+        if row is None or row[0] == 0:
+            return None
+        total, oldest, newest, avg_len, total_words, with_summary = row
+        tier_rows = self._db.execute(
+            "SELECT tier, COUNT(*) FROM memories WHERE ns=? GROUP BY tier", (ns,)
+        ).fetchall()
+        by_tier = {int(t): int(c) for t, c in tier_rows}
+        return {
+            "ns": ns,
+            "total": int(total),
+            "by_tier": by_tier,
+            "oldest": oldest,
+            "newest": newest,
+            "avg_text_len": round(float(avg_len), 1) if avg_len is not None else 0.0,
+            "total_words": int(total_words) if total_words is not None else 0,
+            "with_summary": int(with_summary),
+        }
+
     def sample(
         self,
         ns: str = "default",

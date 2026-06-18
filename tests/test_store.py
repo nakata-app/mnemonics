@@ -2407,3 +2407,43 @@ def test_reindex_all_reports_error(tmp_store):
     assert len(results) == 1
     assert "error" in results[0]
     assert "disk full" in results[0]["error"]
+
+
+# ── namespace_info ────────────────────────────────────────────────────────────
+
+def test_namespace_info_returns_correct_counts(populated_store):
+    """namespace_info returns total and by_tier counts."""
+    store, docs, vecs = populated_store
+    info = store.namespace_info("default")
+    assert info is not None
+    assert info["ns"] == "default"
+    assert info["total"] == len(docs)
+    assert 1 in info["by_tier"]  # all tier-1
+
+
+def test_namespace_info_nonexistent_ns(tmp_store):
+    """namespace_info returns None for a namespace that doesn't exist."""
+    assert tmp_store.namespace_info("ghost") is None
+
+
+def test_namespace_info_avg_text_len(populated_store):
+    """namespace_info avg_text_len is positive for non-empty ns."""
+    store, docs, vecs = populated_store
+    info = store.namespace_info("default")
+    assert info["avg_text_len"] > 0
+
+
+def test_namespace_info_with_summary(populated_store):
+    """namespace_info with_summary counts correctly."""
+    store, docs, vecs = populated_store
+    mid = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    store.update_summary(mid, "a summary")
+    info = store.namespace_info("default")
+    assert info["with_summary"] == 1
+
+
+def test_namespace_info_total_words(populated_store):
+    """namespace_info total_words is positive."""
+    store, docs, vecs = populated_store
+    info = store.namespace_info("default")
+    assert info["total_words"] > 0

@@ -80,6 +80,12 @@ def main() -> None:
     ts.add_argument("--json", dest="json_out", action="store_true", help="Output results as JSON array")
     ts.add_argument("--path", default="~/.mnemonics")
 
+    # namespace-info
+    nsi = sub.add_parser("namespace-info", help="Show detailed stats for a single namespace")
+    nsi.add_argument("ns", help="Namespace to inspect")
+    nsi.add_argument("--json", dest="json_out", action="store_true", help="Output as JSON")
+    nsi.add_argument("--path", default="~/.mnemonics")
+
     # reindex-all
     ria = sub.add_parser("reindex-all", help="Rebuild vector indexes for all namespaces")
     ria.add_argument("--path", default="~/.mnemonics")
@@ -509,6 +515,27 @@ def main() -> None:
                 print(line)
                 if r.get("summary"):
                     print(f"           summary: {r['summary']}")
+
+    elif args.cmd == "namespace-info":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        info = store.namespace_info(args.ns)
+        if info is None:
+            print(f"Namespace {args.ns!r} not found.", file=sys.stderr)
+            sys.exit(1)
+        if args.json_out:
+            print(json.dumps(info, default=str, ensure_ascii=False))
+        else:
+            tier_labels = {0: "pinned", 1: "default", 2: "ambient"}
+            print(f"Namespace : {info['ns']}")
+            print(f"Total     : {info['total']}")
+            for t, c in sorted(info["by_tier"].items()):
+                print(f"  {tier_labels.get(t, str(t)):<10}: {c}")
+            print(f"Oldest    : {info['oldest']}")
+            print(f"Newest    : {info['newest']}")
+            print(f"Avg len   : {info['avg_text_len']:.0f} chars")
+            print(f"Total words: {info['total_words']}")
+            print(f"w/ summary: {info['with_summary']}")
 
     elif args.cmd == "reindex-all":
         from mnemonics.store import Store

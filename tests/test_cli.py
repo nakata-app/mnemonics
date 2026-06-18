@@ -2710,3 +2710,57 @@ def test_cli_reindex_all_with_error(tmp_path, capsys):
     ):
         main()
     assert "ERROR" in capsys.readouterr().out
+
+
+# ── namespace-info CLI ────────────────────────────────────────────────────────
+
+def test_cli_namespace_info_ok(tmp_path, capsys):
+    """namespace-info prints namespace stats."""
+    mock_store = MagicMock()
+    mock_store.namespace_info.return_value = {
+        "ns": "default", "total": 5,
+        "by_tier": {1: 5}, "oldest": "2026-01-01",
+        "newest": "2026-06-01", "avg_text_len": 42.0,
+        "total_words": 30, "with_summary": 2,
+    }
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "namespace-info", "default",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "default" in out and "5" in out
+
+
+def test_cli_namespace_info_not_found(tmp_path, capsys):
+    """namespace-info exits 1 when namespace not found."""
+    mock_store = MagicMock()
+    mock_store.namespace_info.return_value = None
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "namespace-info", "ghost",
+                           "--path", str(tmp_path)]),
+    ):
+        with pytest.raises(SystemExit) as exc:
+            main()
+    assert exc.value.code == 1
+
+
+def test_cli_namespace_info_json(tmp_path, capsys):
+    """namespace-info --json outputs JSON."""
+    mock_store = MagicMock()
+    mock_store.namespace_info.return_value = {
+        "ns": "default", "total": 3,
+        "by_tier": {1: 3}, "oldest": "2026-01-01",
+        "newest": "2026-06-01", "avg_text_len": 50.0,
+        "total_words": 20, "with_summary": 0,
+    }
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "namespace-info", "default",
+                           "--json", "--path", str(tmp_path)]),
+    ):
+        main()
+    parsed = json.loads(capsys.readouterr().out)
+    assert parsed["ns"] == "default"
