@@ -1668,3 +1668,59 @@ def test_cli_bm25_json_no_results(tmp_path, capsys):
     out = capsys.readouterr().out
     data = _json.loads(out.strip())
     assert data == []
+
+
+# ── get-many --json ───────────────────────────────────────────────────────────
+
+def test_cli_get_many_json(tmp_path, capsys):
+    """get-many --json outputs JSONL."""
+    import json as _json
+    fake_rows = [
+        {"id": 1, "ns": "default", "text": "a", "tier": 1, "summary": None,
+         "meta": {}, "created": "2026-01-01", "last_accessed": None, "access_count": 0},
+    ]
+    mock_store = MagicMock()
+    mock_store.get_many.return_value = fake_rows
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "get-many", "1", "--json", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    lines = [l for l in out.strip().splitlines() if l]
+    assert len(lines) == 1
+    assert _json.loads(lines[0])["id"] == 1
+
+
+# ── search-meta --json ────────────────────────────────────────────────────────
+
+def test_cli_search_meta_json(tmp_path, capsys):
+    """search-meta --json outputs JSONL."""
+    import json as _json
+    fake_rows = [{"id": 7, "tier": 0, "text": "pinned match", "ns": "default",
+                  "summary": None, "meta": {"tag": "x"}, "created": "2026-01-01",
+                  "last_accessed": None, "access_count": 0}]
+    mock_store = MagicMock()
+    mock_store.search_by_meta.return_value = fake_rows
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "search-meta", "tag=x", "--json", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    lines = [l for l in out.strip().splitlines() if l]
+    assert len(lines) == 1
+    assert _json.loads(lines[0])["id"] == 7
+
+
+def test_cli_search_meta_json_empty(tmp_path, capsys):
+    """search-meta --json with no results outputs nothing."""
+    mock_store = MagicMock()
+    mock_store.search_by_meta.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "search-meta", "tag=x", "--json", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out.strip()
+    assert out == ""

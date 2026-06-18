@@ -124,6 +124,7 @@ def main() -> None:
     # get-many
     gm = sub.add_parser("get-many", help="Fetch multiple memories by ID (space-separated)")
     gm.add_argument("ids", type=int, nargs="+", metavar="ID")
+    gm.add_argument("--json", dest="json_out", action="store_true", help="Output as JSONL (one object per line)")
     gm.add_argument("--path", default="~/.mnemonics")
 
     # delete-ids
@@ -136,6 +137,7 @@ def main() -> None:
     sm.add_argument("filters", nargs="+", metavar="KEY=VALUE", help="Metadata filters (e.g. tag=important)")
     sm.add_argument("--ns", default="default")
     sm.add_argument("--limit", type=int, default=20)
+    sm.add_argument("--json", dest="json_out", action="store_true", help="Output as JSONL (one object per line)")
     sm.add_argument("--path", default="~/.mnemonics")
 
     # update-meta
@@ -384,12 +386,16 @@ def main() -> None:
         from mnemonics.store import Store
         store = Store(args.path)
         rows = store.get_many(args.ids)
-        tier_label = {0: "pinned", 1: "default", 2: "ambient"}
-        for row in rows:
-            tl = tier_label.get(row["tier"], "?")
-            print(f"id={row['id']}  ns={row['ns']}  tier={tl}  {row['text'][:120]}")
-        if not rows:
-            print("No memories found for those IDs.")
+        if args.json_out:
+            for row in rows:
+                print(json.dumps(row, default=str, ensure_ascii=False))
+        else:
+            tier_label = {0: "pinned", 1: "default", 2: "ambient"}
+            for row in rows:
+                tl = tier_label.get(row["tier"], "?")
+                print(f"id={row['id']}  ns={row['ns']}  tier={tl}  {row['text'][:120]}")
+            if not rows:
+                print("No memories found for those IDs.")
 
     elif args.cmd == "delete-ids":
         from mnemonics.store import Store
@@ -408,7 +414,10 @@ def main() -> None:
             k, _, v = kv.partition("=")
             filters[k.strip()] = v.strip()
         results = store.search_by_meta(filters, ns=args.ns, limit=args.limit)
-        if not results:
+        if args.json_out:
+            for r in results:
+                print(json.dumps(r, default=str, ensure_ascii=False))
+        elif not results:
             print(f"No results for {filters} in ns={args.ns!r}.")
         else:
             tier_label = {0: "pinned", 1: "default", 2: "ambient"}
