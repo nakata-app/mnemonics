@@ -1031,3 +1031,63 @@ def test_mcp_ignores_blank_lines(tmp_store):
     ):
         srv._mcp_loop()
     assert output == []
+
+
+# ── mnemonics_ingest MCP validation ──────────────────────────────────────────
+
+def _mcp_msg(resp_item: dict) -> str:
+    """Extract text from MCP response whether it's an error or a result."""
+    if "error" in resp_item:
+        return resp_item["error"].get("message", "")
+    return resp_item.get("result", {}).get("content", [{}])[0].get("text", "")
+
+
+def test_mcp_ingest_texts_none(tmp_store):
+    resp = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 90,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_ingest", "arguments": {"texts": None}},
+    })
+    assert "error" in resp[0] or "error" in _mcp_msg(resp[0]).lower()
+
+
+def test_mcp_ingest_texts_not_list(tmp_store):
+    resp = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 91,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_ingest", "arguments": {"texts": 42}},
+    })
+    msg = _mcp_msg(resp[0]).lower()
+    assert "array" in msg or "error" in msg or "error" in resp[0]
+
+
+def test_mcp_ingest_texts_empty(tmp_store):
+    resp = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 92,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_ingest", "arguments": {"texts": []}},
+    })
+    msg = _mcp_msg(resp[0]).lower()
+    assert "empty" in msg or "error" in msg or "error" in resp[0]
+
+
+def test_mcp_ingest_texts_non_string_item(tmp_store):
+    resp = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 93,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_ingest", "arguments": {"texts": [123, "valid"]}},
+    })
+    msg = _mcp_msg(resp[0])
+    assert "non-empty string" in msg or "error" in msg.lower() or "error" in resp[0]
+
+
+def test_mcp_ingest_summaries_bad_length(tmp_store):
+    resp = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 94,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_ingest", "arguments": {
+            "texts": ["a", "b"], "summaries": ["only one"],
+        }},
+    })
+    msg = _mcp_msg(resp[0]).lower()
+    assert "summaries" in msg or "error" in msg or "error" in resp[0]
