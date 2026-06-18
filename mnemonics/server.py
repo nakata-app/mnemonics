@@ -732,6 +732,20 @@ def _mcp_loop() -> None:
                         },
                     },
                 },
+                {
+                    "name": "mnemonics_import",
+                    "description": "Import memories from a JSONL string (counterpart to mnemonics_export). Each line must be a JSON object with at least a 'text' field. Optional fields: ns, tier, summary, meta. ns/tier overrides apply to all rows when set.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "jsonl": {"type": "string", "description": "JSONL string — one JSON object per line, each with at least a 'text' field"},
+                            "ns": {"type": "string", "description": "Override namespace for all imported rows (uses per-row ns otherwise, defaulting to 'default')"},
+                            "tier": {"type": "integer", "enum": [0, 1, 2], "description": "Override tier for all imported rows (uses per-row tier otherwise, defaulting to 1)"},
+                            "dry_run": {"type": "boolean", "description": "If true, parse and count without writing to store"},
+                        },
+                        "required": ["jsonl"],
+                    },
+                },
             ]})
 
         elif method == "tools/call":
@@ -1038,6 +1052,50 @@ def _mcp_loop() -> None:
                     }, ensure_ascii=False))
                 result_text = "\n".join(lines) if lines else "(no memories matched)"
                 ok({"content": [{"type": "text", "text": result_text}]})
+
+            elif name == "mnemonics_import":
+                jsonl_str = args.get("jsonl", "")
+                if not isinstance(jsonl_str, str) or not jsonl_str.strip():
+                    err("mnemonics_import: 'jsonl' must be a non-empty string")
+                    continue
+                ns_override = args.get("ns")
+                tier_override = args.get("tier")
+                dry_run = bool(args.get("dry_run", False))
+                imported = skipped = 0
+                import_errors: list[str] = []
+                for lineno, raw_line in enumerate(jsonl_str.splitlines(), start=1):
+                    raw_line = raw_line.strip()
+                    if not raw_line:
+                        continue
+                    try:
+                        obj = json.loads(raw_line)
+                    except json.JSONDecodeError as e:
+                        import_errors.append(f"line {lineno}: invalid JSON: {e}")
+                        skipped += 1
+                        continue
+                    text = obj.get("text")
+                    if not text or not isinstance(text, str):
+                        import_errors.append(f"line {lineno}: missing or invalid 'text' field")
+                        skipped += 1
+                        continue
+                    ns = ns_override if ns_override is not None else obj.get("ns", "default")
+                    raw_tier = tier_override if tier_override is not None else obj.get("tier", 1)
+                    tier = int(raw_tier) if raw_tier in (0, 1, 2) else 1
+                    meta = obj.get("meta") or {}
+                    summary = obj.get("summary")
+                    if not dry_run:
+                        n = _ingest(texts=[text], store=_get_store(), ns=ns,
+                                    meta=[meta] if meta else None,
+                                    summaries=[summary], tier=tier)
+                        imported += n
+                    else:
+                        imported += 1
+                summary_parts = [f"imported={imported}", f"skipped={skipped}"]
+                if import_errors:
+                    summary_parts.append("errors=" + "; ".join(import_errors[:5]))
+                if dry_run:
+                    summary_parts.insert(0, "[dry-run]")
+                ok({"content": [{"type": "text", "text": ", ".join(summary_parts)}]})
 
             elif name == "mnemonics_stats":
                 store = _get_store()

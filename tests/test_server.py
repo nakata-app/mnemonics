@@ -618,7 +618,7 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_pin", "mnemonics_tier", "mnemonics_gc", "mnemonics_stats",
         "mnemonics_health", "mnemonics_repair",
         "mnemonics_search_by_meta", "mnemonics_delete_many", "mnemonics_update_meta",
-        "mnemonics_export",
+        "mnemonics_export", "mnemonics_import",
     }
 
 
@@ -2054,3 +2054,83 @@ def test_mcp_export_limit(populated_store):
     text = r["result"]["content"][0]["text"]
     objs = [_json.loads(l) for l in text.splitlines() if l.strip()]
     assert len(objs) == 1
+
+
+# ── MCP mnemonics_import ──────────────────────────────────────────────────────
+
+def _mcp_import(store, jsonl: str, **kwargs):
+    """Helper: call mnemonics_import MCP tool and return resp[0]."""
+    return _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_import", "arguments": {"jsonl": jsonl, **kwargs}},
+    })[0]
+
+
+def test_mcp_import_basic(tmp_store):
+    """mnemonics_import ingests a valid JSONL string."""
+    import json as _json
+    line = _json.dumps({"text": "hello memory", "ns": "default", "tier": 1})
+    with patch("mnemonics.server._ingest", return_value=1) as mock_ingest:
+        r = _mcp_import(tmp_store, line)
+    assert "result" in r
+    assert "imported=1" in r["result"]["content"][0]["text"]
+    mock_ingest.assert_called_once()
+
+
+def test_mcp_import_dry_run(tmp_store):
+    """mnemonics_import dry_run=true does not call _ingest."""
+    import json as _json
+    line = _json.dumps({"text": "dry row"})
+    with patch("mnemonics.server._ingest") as mock_ingest:
+        r = _mcp_import(tmp_store, line, dry_run=True)
+    mock_ingest.assert_not_called()
+    text = r["result"]["content"][0]["text"]
+    assert "dry-run" in text
+    assert "imported=1" in text
+
+
+def test_mcp_import_empty_jsonl(tmp_store):
+    """mnemonics_import with empty string returns error."""
+    r = _mcp_import(tmp_store, "   ")
+    assert "error" in r
+
+
+def test_mcp_import_invalid_line(tmp_store):
+    """mnemonics_import skips invalid JSON lines and rows without text."""
+    import json as _json
+    jsonl = "not json\n" + _json.dumps({"ns": "x"}) + "\n" + _json.dumps({"text": "ok"})
+    with patch("mnemonics.server._ingest", return_value=1) as mock_ingest:
+        r = _mcp_import(tmp_store, jsonl)
+    assert mock_ingest.call_count == 1
+    text = r["result"]["content"][0]["text"]
+    assert "skipped=2" in text
+
+
+def test_mcp_import_ns_override(tmp_store):
+    """mnemonics_import ns= overrides namespace in all rows."""
+    import json as _json
+    line = _json.dumps({"text": "row", "ns": "original"})
+    with patch("mnemonics.server._ingest", return_value=1) as mock_ingest:
+        _mcp_import(tmp_store, line, ns="override")
+    kw = mock_ingest.call_args[1]
+    assert kw["ns"] == "override"
+
+
+def test_mcp_import_blank_lines_skipped(tmp_store):
+    """mnemonics_import ignores blank lines in JSONL."""
+    import json as _json
+    jsonl = "\n\n" + _json.dumps({"text": "row"}) + "\n\n"
+    with patch("mnemonics.server._ingest", return_value=1) as mock_ingest:
+        r = _mcp_import(tmp_store, jsonl)
+    assert mock_ingest.call_count == 1
+    assert "imported=1" in r["result"]["content"][0]["text"]
+
+
+def test_mcp_import_tools_list(tmp_store):
+    """mnemonics_import appears in the MCP tools list."""
+    resp = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1,
+        "method": "tools/list", "params": {},
+    })[0]
+    names = {t["name"] for t in resp["result"]["tools"]}
+    assert "mnemonics_import" in names
