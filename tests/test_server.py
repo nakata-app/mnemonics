@@ -1376,3 +1376,79 @@ def test_version_fallback(monkeypatch):
         import importlib
         importlib.reload(_fresh)
         assert _fresh._VERSION == "0.3.0"
+
+
+# ── new bulk endpoints ─────────────────────────────────────────────────────────
+
+def test_post_search_by_meta(populated_store):
+    """POST /search-by-meta returns filtered results."""
+    store, docs, vecs = populated_store
+    # Tag the first memory with a unique source
+    first_id = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    store.update_meta(first_id, {"source": "unit-test"})
+    code, data = http_call(store, "POST", "/search-by-meta",
+                           {"filters": {"source": "unit-test"}, "ns": "default"})
+    assert code == 200
+    assert len(data["results"]) == 1
+    assert data["results"][0]["id"] == first_id
+
+
+def test_post_search_by_meta_bad_filters(populated_store):
+    """POST /search-by-meta with non-dict filters returns 400."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/search-by-meta", {"filters": "bad"})
+    assert code == 400
+
+
+def test_post_get_many(populated_store):
+    """POST /get-many returns the requested memories."""
+    store, docs, vecs = populated_store
+    ids = [r[0] for r in store._db.execute("SELECT id FROM memories LIMIT 2").fetchall()]
+    code, data = http_call(store, "POST", "/get-many", {"ids": ids})
+    assert code == 200
+    assert len(data["results"]) == 2
+
+
+def test_post_get_many_bad_ids(populated_store):
+    """POST /get-many with non-list ids returns 400."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/get-many", {"ids": "not-a-list"})
+    assert code == 400
+
+
+def test_post_delete_many(populated_store):
+    """POST /delete-many removes the specified memories."""
+    store, docs, vecs = populated_store
+    ids = [r[0] for r in store._db.execute("SELECT id FROM memories LIMIT 2").fetchall()]
+    before = store.count()
+    code, data = http_call(store, "POST", "/delete-many", {"ids": ids})
+    assert code == 200
+    assert data["deleted"] == 2
+    assert store.count() == before - 2
+
+
+def test_post_delete_many_bad_ids(populated_store):
+    """POST /delete-many with non-list ids returns 400."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/delete-many", {"ids": 42})
+    assert code == 400
+
+
+def test_post_update_meta(populated_store):
+    """POST /update-meta updates a memory's metadata."""
+    store, docs, vecs = populated_store
+    first_id = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    code, data = http_call(store, "POST", "/update-meta",
+                           {"id": first_id, "meta": {"tag": "updated"}})
+    assert code == 200
+    assert data["changed"] is True
+    import json
+    raw = store._db.execute("SELECT meta FROM memories WHERE id=?", (first_id,)).fetchone()[0]
+    assert json.loads(raw) == {"tag": "updated"}
+
+
+def test_post_update_meta_missing_params(populated_store):
+    """POST /update-meta without id or meta returns 400."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/update-meta", {"id": 1})
+    assert code == 400

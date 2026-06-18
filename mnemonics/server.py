@@ -232,6 +232,41 @@ class _Handler(BaseHTTPRequestHandler):
             changed = _get_store().set_tier(int(mid), int(tier_val))
             self._json(200, {"id": int(mid), "tier": int(tier_val), "changed": changed})
 
+        elif self.path == "/search-by-meta":
+            filters = body.get("filters")
+            if not isinstance(filters, dict):
+                self._json(400, {"error": "filters must be a JSON object"})
+                return
+            ns_val = body.get("ns", "default")
+            limit = int(body.get("limit", 100))
+            results = _get_store().search_by_meta(filters, ns=ns_val, limit=limit)
+            self._json(200, {"ns": ns_val, "filters": filters, "results": results})
+
+        elif self.path == "/get-many":
+            ids = body.get("ids")
+            if not isinstance(ids, list):
+                self._json(400, {"error": "ids must be an array of integers"})
+                return
+            results = _get_store().get_many([int(i) for i in ids])
+            self._json(200, {"results": results})
+
+        elif self.path == "/delete-many":
+            ids = body.get("ids")
+            if not isinstance(ids, list):
+                self._json(400, {"error": "ids must be an array of integers"})
+                return
+            deleted = _get_store().delete_many([int(i) for i in ids])
+            self._json(200, {"deleted": deleted})
+
+        elif self.path == "/update-meta":
+            mid = body.get("id")
+            meta = body.get("meta")
+            if mid is None or not isinstance(meta, dict):
+                self._json(400, {"error": "id and meta (object) are required"})
+                return
+            changed = _get_store().update_meta(int(mid), meta)
+            self._json(200, {"id": int(mid), "changed": changed})
+
         else:
             self._json(404, {"error": "not found"})
 
