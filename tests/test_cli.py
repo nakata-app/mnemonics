@@ -699,3 +699,45 @@ def test_gc_no_candidates(tmp_path, capsys):
             pass
     out = capsys.readouterr().out
     assert "Nothing to GC" in out
+
+
+# ── bm25 summary output ───────────────────────────────────────────────────────
+
+def test_cli_bm25_shows_summary(tmp_path, capsys):
+    import numpy as np
+    from mnemonics.store import Store, DIM
+    store = Store(tmp_path)
+    rng = np.random.default_rng(0)
+    vecs = rng.random((1, DIM)).astype("float32")
+    vecs = vecs / np.linalg.norm(vecs, axis=1, keepdims=True)
+    ids = store.add(["unique_keyword_abc123"], vecs)
+    store.update_summary(ids[0], "the short gist")
+    with patch("sys.argv", ["mnemonics", "bm25", "unique_keyword_abc123", "--path", str(tmp_path)]):
+        try:
+            main()
+        except SystemExit:
+            pass
+    out = capsys.readouterr().out
+    assert "unique_keyword_abc123" in out
+    assert "the short gist" in out
+
+
+# ── get with summary ──────────────────────────────────────────────────────────
+
+def test_cli_get_with_summary(tmp_path, capsys):
+    import numpy as np
+    from mnemonics.store import Store, DIM
+    store = Store(tmp_path)
+    rng = np.random.default_rng(0)
+    vecs = rng.random((1, DIM)).astype("float32")
+    vecs = vecs / np.linalg.norm(vecs, axis=1, keepdims=True)
+    ids = store.add(["memory content"], vecs)
+    store.update_summary(ids[0], "memory gist")
+    with patch("sys.argv", ["mnemonics", "get", str(ids[0]), "--path", str(tmp_path)]):
+        try:
+            main()
+        except SystemExit:
+            pass
+    out = capsys.readouterr().out
+    assert "memory content" in out
+    assert "memory gist" in out
