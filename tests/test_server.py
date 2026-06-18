@@ -102,6 +102,26 @@ def test_health(tmp_store):
     assert data["status"] == "ok"
 
 
+# ── GET /doctor ───────────────────────────────────────────────────────────────
+
+def test_http_doctor(tmp_store):
+    code, data = http_call(tmp_store, "GET", "/doctor")
+    assert code == 200
+    assert data["db_integrity"] == "ok"
+    assert "namespaces" in data
+    assert "orphan_indexes" in data
+
+
+# ── POST /repair ──────────────────────────────────────────────────────────────
+
+def test_http_repair(tmp_store):
+    code, data = http_call(tmp_store, "POST", "/repair")
+    assert code == 200
+    assert "orphan_vectors_fixed" in data
+    assert "orphan_indexes_removed" in data
+    assert "missing_vectors_reported" in data
+
+
 # ── GET /namespaces ───────────────────────────────────────────────────────────
 
 def test_namespaces_empty(tmp_store):

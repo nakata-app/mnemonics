@@ -2,8 +2,10 @@
 
 Endpoints:
   GET  /health
+  GET  /doctor                 — store health report (DB integrity, index vs SQL, capacity)
   POST /ingest   {"texts": [...], "ns": "default", "meta": [...]}
   POST /retrieve {"query": "...", "ns": "default", "top_k": 5}
+  POST /repair                 — auto-fix orphan vectors and orphan index files
   GET  /namespaces
   GET  /count?ns=default
   DELETE /memory/<id>
@@ -67,6 +69,8 @@ class _Handler(BaseHTTPRequestHandler):
         path = self.path.split("?")[0]
         if path == "/health":
             self._json(200, {"status": "ok", "version": "0.3.0"})
+        elif path == "/doctor":
+            self._json(200, _get_store().health_check())
         elif path == "/namespaces":
             self._json(200, {"namespaces": _get_store().list_namespaces()})
         elif path == "/count":
@@ -82,7 +86,10 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(400, {"error": "invalid JSON"})
             return
 
-        if self.path == "/ingest":
+        if self.path == "/repair":
+            self._json(200, _get_store().repair())
+
+        elif self.path == "/ingest":
             texts = body.get("texts", [])
             if not isinstance(texts, list):
                 self._json(400, {"error": "texts must be an array of strings"})
