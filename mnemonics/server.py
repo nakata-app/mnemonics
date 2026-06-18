@@ -763,6 +763,11 @@ def _mcp_loop() -> None:
                     },
                 },
                 {
+                    "name": "mnemonics_namespaces",
+                    "description": "List all namespaces that exist in the store, ordered alphabetically.",
+                    "inputSchema": {"type": "object", "properties": {}},
+                },
+                {
                     "name": "mnemonics_rename_ns",
                     "description": "Rename a namespace — moves all its memories and renames the vector index file. Fails with an error if the target namespace already exists (prevents silent merges).",
                     "inputSchema": {
@@ -1108,6 +1113,13 @@ def _mcp_loop() -> None:
                     }, ensure_ascii=False))
                 result_text = "\n".join(lines) if lines else "(no memories matched)"
                 ok({"content": [{"type": "text", "text": result_text}]})
+
+            elif name == "mnemonics_namespaces":
+                ns_list = _get_store().list_namespaces()
+                if ns_list:
+                    ok({"content": [{"type": "text", "text": "\n".join(ns_list)}]})
+                else:
+                    ok({"content": [{"type": "text", "text": "(no namespaces)"}]})
 
             elif name == "mnemonics_rename_ns":
                 old_ns = args.get("old_ns", "").strip()

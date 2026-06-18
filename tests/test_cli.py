@@ -2111,3 +2111,33 @@ def test_cli_rename_ns_conflict_exits(tmp_path, capsys):
         with pytest.raises(SystemExit) as exc:
             main()
     assert exc.value.code == 1
+
+
+# ── namespaces ─────────────────────────────────────────────────────────────────
+
+def test_cli_namespaces_populated(tmp_path, capsys):
+    """namespaces lists existing namespaces with counts."""
+    mock_store = MagicMock()
+    mock_store.list_namespaces.return_value = ["default", "work"]
+    mock_store.count.side_effect = lambda ns: 3 if ns == "default" else 1
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "namespaces", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "default" in out
+    assert "work" in out
+
+
+def test_cli_namespaces_empty(tmp_path, capsys):
+    """namespaces on empty store prints placeholder."""
+    mock_store = MagicMock()
+    mock_store.list_namespaces.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "namespaces", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "no namespaces" in out

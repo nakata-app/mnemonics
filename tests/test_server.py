@@ -618,7 +618,7 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_pin", "mnemonics_tier", "mnemonics_gc", "mnemonics_stats",
         "mnemonics_health", "mnemonics_repair",
         "mnemonics_search_by_meta", "mnemonics_delete_many", "mnemonics_update_meta",
-        "mnemonics_export", "mnemonics_import", "mnemonics_text_search", "mnemonics_rename_ns",
+        "mnemonics_export", "mnemonics_import", "mnemonics_text_search", "mnemonics_rename_ns", "mnemonics_namespaces",
     }
 
 
@@ -2292,3 +2292,35 @@ def test_mcp_rename_ns_in_tools_list(tmp_store):
     })[0]
     names = {t["name"] for t in resp["result"]["tools"]}
     assert "mnemonics_rename_ns" in names
+
+
+# ── MCP mnemonics_namespaces ──────────────────────────────────────────────────
+
+def test_mcp_namespaces_populated(populated_store):
+    """mnemonics_namespaces lists existing namespaces."""
+    store, docs, vecs = populated_store
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_namespaces", "arguments": {}},
+    })[0]
+    text = r["result"]["content"][0]["text"]
+    assert "default" in text
+
+
+def test_mcp_namespaces_empty(tmp_store):
+    """mnemonics_namespaces on empty store returns placeholder."""
+    r = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_namespaces", "arguments": {}},
+    })[0]
+    text = r["result"]["content"][0]["text"]
+    assert "no namespaces" in text
+
+
+def test_mcp_namespaces_in_tools_list(tmp_store):
+    """mnemonics_namespaces appears in the MCP tools list."""
+    resp = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {},
+    })[0]
+    names = {t["name"] for t in resp["result"]["tools"]}
+    assert "mnemonics_namespaces" in names

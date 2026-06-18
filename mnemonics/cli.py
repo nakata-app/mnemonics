@@ -227,6 +227,10 @@ def main() -> None:
     ij.add_argument("--dry-run", action="store_true", help="Parse and validate without writing to store")
     ij.add_argument("--path", default="~/.mnemonics", help="Store directory")
 
+    # namespaces
+    nsc = sub.add_parser("namespaces", help="List all namespaces in the store")
+    nsc.add_argument("--path", default="~/.mnemonics", help="Store directory")
+
     # rename-ns
     rn = sub.add_parser("rename-ns", help="Rename a namespace (moves all memories + renames index file)")
     rn.add_argument("old_ns", help="Current namespace name")
@@ -834,6 +838,17 @@ def main() -> None:
             print(f"  warning: {err}", file=sys.stderr)
         label = "(dry-run) would import" if args.dry_run else "Imported"
         print(f"{label} {imported} chunk(s), skipped {skipped} invalid row(s).")
+
+    elif args.cmd == "namespaces":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        ns_list = store.list_namespaces()
+        if not ns_list:
+            print("(no namespaces)")
+        else:
+            for ns_name in ns_list:
+                cnt = store.count(ns_name)
+                print(f"  {ns_name}  ({cnt})")
 
     elif args.cmd == "rename-ns":
         from mnemonics.store import Store
