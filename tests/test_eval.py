@@ -98,3 +98,110 @@ def test_compare_table_multi_encoder_renders_deltas():
     # second column should carry signed deltas vs the first (baseline)
     assert "+0.33" in out  # mrr delta
     assert "+0.13" in out  # r@5 delta
+
+
+# ── run_eval with mocked encoder ─────────────────────────────────────────────
+
+import json
+import tempfile
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import numpy as np
+
+
+def _write_jsonl(path: Path, items: list):
+    with open(path, "w") as f:
+        for item in items:
+            f.write(json.dumps(item) + "\n")
+
+
+def _fake_encoder():
+    enc = MagicMock()
+    # Always return normalized unit vectors
+    def encode(texts, **kw):
+        n = len(texts)
+        vecs = np.eye(n, 4, dtype="float32")
+        vecs = vecs / np.linalg.norm(vecs, axis=1, keepdims=True)
+        return vecs
+    enc.encode.side_effect = encode
+    return enc
+
+
+def test_run_eval_vector_method(tmp_path):
+    from mnemonics.eval import run_eval
+
+    corpus = [{"id": f"c{i}", "text": f"chunk {i}"} for i in range(4)]
+    queries = [{"query": "chunk 0", "relevant_id": "c0"}]
+    _write_jsonl(tmp_path / "corpus.jsonl", corpus)
+    _write_jsonl(tmp_path / "queries.jsonl", queries)
+
+    with patch("mnemonics.eval._build_encoder", return_value=_fake_encoder()):
+        result = run_eval(
+            corpus_path=tmp_path / "corpus.jsonl",
+            queries_path=tmp_path / "queries.jsonl",
+            encoder="minilm",
+            top_k=4,
+            method="vector",
+        )
+    assert result["method"] == "vector"
+    assert "agg" in result
+    assert result["agg"]["n"] == 1
+
+
+def test_run_eval_hybrid_method(tmp_path):
+    from mnemonics.eval import run_eval
+
+    corpus = [{"id": f"c{i}", "text": f"word{i} unique"} for i in range(4)]
+    queries = [{"query": "word0", "relevant_id": "c0"}]
+    _write_jsonl(tmp_path / "corpus.jsonl", corpus)
+    _write_jsonl(tmp_path / "queries.jsonl", queries)
+
+    with patch("mnemonics.eval._build_encoder", return_value=_fake_encoder()):
+        result = run_eval(
+            corpus_path=tmp_path / "corpus.jsonl",
+            queries_path=tmp_path / "queries.jsonl",
+            encoder="minilm",
+            top_k=4,
+            method="hybrid",
+        )
+    assert "+hybrid" in result["encoder"]
+    assert result["agg"]["n"] == 1
+
+
+def test_run_eval_unknown_method_raises(tmp_path):
+    from mnemonics.eval import run_eval
+
+    corpus = [{"id": "c0", "text": "text"}]
+    queries = [{"query": "q", "relevant_id": "c0"}]
+    _write_jsonl(tmp_path / "corpus.jsonl", corpus)
+    _write_jsonl(tmp_path / "queries.jsonl", queries)
+
+    with pytest.raises(ValueError, match="unknown method"):
+        run_eval(
+            corpus_path=tmp_path / "corpus.jsonl",
+            queries_path=tmp_path / "queries.jsonl",
+            method="invalid",
+        )
+
+
+def test_load_jsonl(tmp_path):
+    from mnemonics.eval import _load_jsonl
+    p = tmp_path / "data.jsonl"
+    _write_jsonl(p, [{"a": 1}, {"b": 2}])
+    rows = _load_jsonl(p)
+    assert rows == [{"a": 1}, {"b": 2}]
+
+
+def test_build_encoder_minilm():
+    from mnemonics.eval import _build_encoder
+    with patch("sentence_transformers.SentenceTransformer") as MockST:
+        _build_encoder("minilm", None)
+    MockST.assert_called_once_with("all-MiniLM-L6-v2")
+
+
+def test_build_encoder_custom():
+    from mnemonics.eval import _build_encoder
+    with patch("sentence_transformers.SentenceTransformer") as MockST:
+        _build_encoder("some/model", None)
+    MockST.assert_called_once_with("some/model")
