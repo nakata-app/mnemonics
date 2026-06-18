@@ -127,6 +127,38 @@ def main() -> None:
     trt_p.add_argument("max_chars", type=int, help="Maximum character count")
     trt_p.add_argument("--path", default="~/.mnemonics")
 
+    # import-ns
+    imp_ns_cli = sub.add_parser("import-ns", help="Bulk-import JSON memory rows into a namespace")
+    imp_ns_cli.add_argument("ns", help="Target namespace")
+    imp_ns_cli.add_argument("file", help="JSON file with a list of memory dicts (or - for stdin)")
+    imp_ns_cli.add_argument("--overwrite", action="store_true", help="Clear namespace before importing")
+    imp_ns_cli.add_argument("--path", default="~/.mnemonics")
+
+    # get-tier-distribution
+    gtd_cli = sub.add_parser("get-tier-distribution", help="Show tier → count mapping")
+    gtd_cli.add_argument("--ns", default="default")
+    gtd_cli.add_argument("--all-ns", action="store_true")
+    gtd_cli.add_argument("--json", action="store_true", dest="as_json")
+    gtd_cli.add_argument("--path", default="~/.mnemonics")
+
+    # archive-by-tier
+    abt_cli = sub.add_parser("archive-by-tier", help="Copy/move memories at a given tier to an archive namespace")
+    abt_cli.add_argument("ns", help="Source namespace")
+    abt_cli.add_argument("tier", type=int, help="Tier to archive (0=pinned, 1=default, 2=ambient)")
+    abt_cli.add_argument("--dst-ns", default=None, dest="dst_ns")
+    abt_cli.add_argument("--delete-original", action="store_true", dest="delete_original")
+    abt_cli.add_argument("--path", default="~/.mnemonics")
+
+    # text-search-ranked
+    tsr_cli = sub.add_parser("text-search-ranked", help="Ranked LIKE search (hit-count order)")
+    tsr_cli.add_argument("query")
+    tsr_cli.add_argument("--ns", default="default")
+    tsr_cli.add_argument("--all-ns", action="store_true")
+    tsr_cli.add_argument("--tier", type=int, default=None)
+    tsr_cli.add_argument("--limit", type=int, default=20)
+    tsr_cli.add_argument("--json", action="store_true", dest="as_json")
+    tsr_cli.add_argument("--path", default="~/.mnemonics")
+
     # search-by-access-count
     # bulk-summarize
     bs_cli = sub.add_parser("bulk-summarize", help="Update summaries for multiple memories (id:summary pairs)")
@@ -2211,6 +2243,54 @@ def main() -> None:
                     print(f"[eval] wrote {out_dir / f'{slug}.json'}")
         print()
         print(compare_table(results))
+
+    elif args.cmd == "import-ns":
+        import sys as _sys_imp, json as _json_imp
+        from mnemonics.store import Store
+        store = Store(args.path)
+        if args.file == "-":
+            rows = _json_imp.load(_sys_imp.stdin)
+        else:
+            with open(args.file) as f_imp:
+                rows = _json_imp.load(f_imp)
+        n = store.import_ns(args.ns, rows, overwrite=args.overwrite)
+        print(f"Imported {n} memories into ns={args.ns!r}.")
+
+    elif args.cmd == "get-tier-distribution":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        ns_q = None if args.all_ns else args.ns
+        dist = store.get_tier_distribution(ns=ns_q)
+        if args.as_json:
+            print(json.dumps(dist, ensure_ascii=False))
+        else:
+            ns_label = repr(ns_q) if ns_q is not None else "(all)"
+            print(f"Tier distribution for ns={ns_label}:")
+            tier_names = {0: "pinned", 1: "default", 2: "ambient"}
+            for t, cnt in sorted(dist.items()):
+                label = tier_names.get(t, f"tier{t}")
+                print(f"  tier {t} ({label}): {cnt}")
+
+    elif args.cmd == "archive-by-tier":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        new_ids = store.archive_by_tier(
+            args.ns, args.tier, dst_ns=args.dst_ns, delete_original=args.delete_original
+        )
+        dst = args.dst_ns or f"{args.ns}_archive"
+        print(f"Archived {len(new_ids)} memories → ns={dst!r}.")
+
+    elif args.cmd == "text-search-ranked":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        ns_q = None if args.all_ns else args.ns
+        hits = store.text_search_ranked(args.query, ns=ns_q, limit=args.limit, tier=args.tier)
+        if args.as_json:
+            print(json.dumps(hits, default=str, ensure_ascii=False))
+        else:
+            print(f"Found {len(hits)} results for {args.query!r}:")
+            for h in hits:
+                print(f"  [{h['id']}] hits={h['hits']} ns={h['ns']} {h['text'][:70]}")
 
     elif args.cmd == "bulk-summarize":
         from mnemonics.store import Store

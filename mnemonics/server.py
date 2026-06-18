@@ -262,6 +262,29 @@ class _Handler(BaseHTTPRequestHandler):
             n_mtn = _get_store().move_to_ns([int(i) for i in mtn_ids], mtn_ns)
             self._json(200, {"moved": n_mtn, "target_ns": mtn_ns})
 
+        elif self.path == "/import-ns":
+            imp_ns = body.get("ns")
+            imp_rows = body.get("rows")
+            if not imp_ns or not isinstance(imp_rows, list):
+                self._json(400, {"error": "'ns' (string) and 'rows' (list) are required"})
+                return
+            imp_overwrite = bool(body.get("overwrite", False))
+            n_imp = _get_store().import_ns(str(imp_ns), imp_rows, overwrite=imp_overwrite)
+            self._json(200, {"imported": n_imp, "ns": imp_ns})
+
+        elif self.path == "/archive-by-tier":
+            abt_ns = body.get("ns")
+            abt_tier = body.get("tier")
+            if abt_ns is None or abt_tier is None:
+                self._json(400, {"error": "'ns' and 'tier' are required"})
+                return
+            abt_dst = body.get("dst_ns") or None
+            abt_del = bool(body.get("delete_original", False))
+            new_ids_abt = _get_store().archive_by_tier(
+                str(abt_ns), int(abt_tier), dst_ns=abt_dst, delete_original=abt_del
+            )
+            self._json(200, {"archived": len(new_ids_abt), "new_ids": new_ids_abt})
+
         elif self.path == "/bulk-summarize":
             bs_updates = body.get("updates")
             if not isinstance(bs_updates, dict):
@@ -815,6 +838,31 @@ class _Handler(BaseHTTPRequestHandler):
                 _uqp_cns(q_cns), ns_list_cns, limit=lim_cns
             )
             self._json(200, {"query": q_cns, "count": len(hits_cns), "results": hits_cns})
+
+        elif path.startswith("/get-tier-distribution"):
+            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_gtd
+            qs_gtd = parse_qs(urlparse(self.path).query)
+            ns_gtd_raw = (qs_gtd.get("ns") or [None])[0]
+            ns_gtd = _uqp_gtd(ns_gtd_raw) if ns_gtd_raw is not None else None
+            dist = _get_store().get_tier_distribution(ns=ns_gtd)
+            self._json(200, {"ns": ns_gtd, "distribution": dist})
+
+        elif path.startswith("/text-search-ranked"):
+            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_tsr
+            qs_tsr = parse_qs(urlparse(self.path).query)
+            q_tsr = (qs_tsr.get("query") or [None])[0]
+            if not q_tsr:
+                self._json(400, {"error": "'query' param is required"})
+                return
+            ns_tsr_raw = (qs_tsr.get("ns") or [None])[0]
+            ns_tsr = _uqp_tsr(ns_tsr_raw) if ns_tsr_raw is not None else None
+            lim_tsr = int((qs_tsr.get("limit") or ["20"])[0])
+            tier_tsr_raw = (qs_tsr.get("tier") or [None])[0]
+            tier_tsr = int(tier_tsr_raw) if tier_tsr_raw is not None else None
+            hits_tsr = _get_store().text_search_ranked(
+                _uqp_tsr(q_tsr), ns=ns_tsr, limit=lim_tsr, tier=tier_tsr
+            )
+            self._json(200, {"query": q_tsr, "count": len(hits_tsr), "results": hits_tsr})
 
         elif path.startswith("/filter-by-text-length"):
             from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_fbtl
@@ -1444,6 +1492,57 @@ def _mcp_loop() -> None:
                             "max_tier": {"type": "integer", "description": "Only return memories with tier <= this value"},
                         },
                         "required": ["query", "vector"],
+                    },
+                },
+                {
+                    "name": "mnemonics_import_ns",
+                    "description": "Bulk-import raw memory dicts into a namespace. Each dict needs 'text'; optional: summary, meta, tier. Embeddings are zero-filled (call reindex_all after).",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ns": {"type": "string"},
+                            "rows": {"type": "array", "items": {"type": "object"}},
+                            "overwrite": {"type": "boolean", "default": False},
+                        },
+                        "required": ["ns", "rows"],
+                    },
+                },
+                {
+                    "name": "mnemonics_get_tier_distribution",
+                    "description": "Return {tier: count} mapping for a namespace (or all namespaces when ns is omitted).",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ns": {"type": "string", "description": "Omit for all namespaces"},
+                        },
+                    },
+                },
+                {
+                    "name": "mnemonics_archive_by_tier",
+                    "description": "Copy (or move) all memories at a given tier to an archive namespace. delete_original=true to remove originals.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ns": {"type": "string"},
+                            "tier": {"type": "integer"},
+                            "dst_ns": {"type": "string"},
+                            "delete_original": {"type": "boolean", "default": False},
+                        },
+                        "required": ["ns", "tier"],
+                    },
+                },
+                {
+                    "name": "mnemonics_text_search_ranked",
+                    "description": "LIKE search that ranks results by how many query words appear in the text (hit-count descending).",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string"},
+                            "ns": {"type": "string"},
+                            "limit": {"type": "integer", "default": 20},
+                            "tier": {"type": "integer"},
+                        },
+                        "required": ["query"],
                     },
                 },
                 {
@@ -3733,6 +3832,64 @@ def _mcp_loop() -> None:
                     amb = tiers.get(2, 0)
                     lines.append(f"  {ns_name}: {total} chunks  (pin={pin} def={def_} amb={amb})")
                 ok({"content": [{"type": "text", "text": "\n".join(lines) or "(empty)"}]})
+
+            elif name == "mnemonics_import_ns":
+                imp_ns_m = args.get("ns", "").strip()
+                imp_rows_m = args.get("rows")
+                if not imp_ns_m or not isinstance(imp_rows_m, list):
+                    err("mnemonics_import_ns: 'ns' (string) and 'rows' (list) are required")
+                    continue
+                imp_ow_m = bool(args.get("overwrite", False))
+                n_imp_m = _get_store().import_ns(imp_ns_m, imp_rows_m, overwrite=imp_ow_m)
+                ok({"content": [{"type": "text", "text":
+                    f"Imported {n_imp_m} memories into ns={imp_ns_m!r} (embeddings zero-filled; run reindex_all to fix)."}]})
+
+            elif name == "mnemonics_get_tier_distribution":
+                gtd_ns_m = args.get("ns")
+                dist_m = _get_store().get_tier_distribution(ns=gtd_ns_m)
+                lines_gtd = [f"Tier distribution for ns={gtd_ns_m!r}:"] if gtd_ns_m else ["Tier distribution (all ns):"]
+                for t, cnt in sorted(dist_m.items()):
+                    tier_label = {0: "pinned", 1: "default", 2: "ambient"}.get(t, f"tier{t}")
+                    lines_gtd.append(f"  tier {t} ({tier_label}): {cnt}")
+                ok({"content": [{"type": "text", "text": "\n".join(lines_gtd)}]})
+
+            elif name == "mnemonics_archive_by_tier":
+                abt_ns_m = args.get("ns", "").strip()
+                abt_tier_m = args.get("tier")
+                if not abt_ns_m or abt_tier_m is None:
+                    err("mnemonics_archive_by_tier: 'ns' and 'tier' are required")
+                    continue
+                abt_dst_m = args.get("dst_ns") or None
+                abt_del_m = bool(args.get("delete_original", False))
+                new_ids_abt_m = _get_store().archive_by_tier(
+                    abt_ns_m, int(abt_tier_m), dst_ns=abt_dst_m, delete_original=abt_del_m
+                )
+                dst_label = abt_dst_m or f"{abt_ns_m}_archive"
+                ok({"content": [{"type": "text", "text":
+                    f"Archived {len(new_ids_abt_m)} memories from ns={abt_ns_m!r} tier={abt_tier_m} → ns={dst_label!r}."}]})
+
+            elif name == "mnemonics_text_search_ranked":
+                tsr_q_m = args.get("query", "").strip()
+                if not tsr_q_m:
+                    err("mnemonics_text_search_ranked: 'query' is required")
+                    continue
+                tsr_ns_m = args.get("ns")
+                tsr_lim_m = int(args.get("limit", 20))
+                tsr_tier_m = args.get("tier")
+                if tsr_tier_m is not None:
+                    tsr_tier_m = int(tsr_tier_m)
+                tsr_hits = _get_store().text_search_ranked(
+                    tsr_q_m, ns=tsr_ns_m, limit=tsr_lim_m, tier=tsr_tier_m
+                )
+                if not tsr_hits:
+                    ok({"content": [{"type": "text", "text": f"No results for {tsr_q_m!r}."}]})
+                else:
+                    lines_tsr = [f"Top {len(tsr_hits)} results for {tsr_q_m!r}:"]
+                    for h in tsr_hits[:20]:
+                        lines_tsr.append(
+                            f"  [{h['id']}] hits={h['hits']} ns={h['ns']} {h['text'][:70]}"
+                        )
+                    ok({"content": [{"type": "text", "text": "\n".join(lines_tsr)}]})
 
             elif name == "mnemonics_bulk_summarize":
                 bs_upd_m = args.get("updates")

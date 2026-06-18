@@ -4517,3 +4517,147 @@ def test_keyword_extract_top_n(tmp_store):
     ids = tmp_store.add(["alpha beta gamma delta epsilon zeta eta"], vecs, ns="default")
     result = tmp_store.keyword_extract(ids[0], top_n=3)
     assert len(result) <= 3
+
+
+# ─── Batch 8: import_ns, get_tier_distribution, archive_by_tier, text_search_ranked ───
+
+def test_import_ns_basic(tmp_store):
+    rows = [
+        {"text": "hello world", "summary": "hi", "tier": 1},
+        {"text": "goodbye world"},
+    ]
+    n = tmp_store.import_ns("imported", rows)
+    assert n == 2
+    all_m = tmp_store.list_memories(ns="imported")
+    assert len(all_m) == 2
+
+
+def test_import_ns_overwrite(tmp_store):
+    import numpy as np
+    vecs = np.zeros((1, 384), dtype=np.float32)
+    tmp_store.add(["old content"], vecs, ns="imported")
+    rows = [{"text": "fresh start"}]
+    n = tmp_store.import_ns("imported", rows, overwrite=True)
+    assert n == 1
+    all_m = tmp_store.list_memories(ns="imported")
+    assert all(m["text"] == "fresh start" for m in all_m)
+
+
+def test_import_ns_empty_rows(tmp_store):
+    n = tmp_store.import_ns("empty_ns", [])
+    assert n == 0
+
+
+def test_import_ns_meta_string(tmp_store):
+    rows = [{"text": "meta as string", "meta": '{"tags": ["x"]}'}]
+    n = tmp_store.import_ns("ns_meta", rows)
+    assert n == 1
+
+
+def test_import_ns_bad_meta_string(tmp_store):
+    rows = [{"text": "bad meta", "meta": "not_json"}]
+    n = tmp_store.import_ns("ns_bad", rows)
+    assert n == 1
+
+
+def test_import_ns_tier_override(tmp_store):
+    rows = [{"text": "pinned", "tier": 0}]
+    n = tmp_store.import_ns("ns_pin", rows)
+    assert n == 1
+    m = tmp_store.list_memories(ns="ns_pin")[0]
+    assert m["tier"] == 0
+
+
+def test_get_tier_distribution_basic(tmp_store):
+    import numpy as np
+    vecs = np.zeros((3, 384), dtype=np.float32)
+    ids = tmp_store.add(["a", "b", "c"], vecs, ns="default")
+    tmp_store.set_tier(ids[0], 0)
+    tmp_store.set_tier(ids[1], 2)
+    dist = tmp_store.get_tier_distribution(ns="default")
+    assert isinstance(dist, dict)
+    total = sum(dist.values())
+    assert total == 3
+
+
+def test_get_tier_distribution_all_ns(tmp_store):
+    import numpy as np
+    tmp_store.add(["x"], np.zeros((1, 384), dtype=np.float32), ns="ns1")
+    tmp_store.add(["y"], np.zeros((1, 384), dtype=np.float32), ns="ns2")
+    dist = tmp_store.get_tier_distribution(ns=None)
+    assert sum(dist.values()) >= 2
+
+
+def test_get_tier_distribution_empty(tmp_store):
+    dist = tmp_store.get_tier_distribution(ns="nonexistent")
+    assert dist == {}
+
+
+def test_archive_by_tier_basic(tmp_store):
+    import numpy as np
+    vecs = np.zeros((2, 384), dtype=np.float32)
+    ids = tmp_store.add(["first", "second"], vecs, ns="src")
+    tmp_store.set_tier(ids[0], 2)
+    new_ids = tmp_store.archive_by_tier("src", 2, dst_ns="dst")
+    assert len(new_ids) >= 1
+    dst_m = tmp_store.list_memories(ns="dst")
+    assert len(dst_m) >= 1
+
+
+def test_archive_by_tier_default_dst(tmp_store):
+    import numpy as np
+    ids = tmp_store.add(["a"], np.zeros((1, 384), dtype=np.float32), ns="myns")
+    tmp_store.set_tier(ids[0], 0)
+    new_ids = tmp_store.archive_by_tier("myns", 0)
+    assert len(new_ids) == 1
+    assert len(tmp_store.list_memories(ns="myns_archive")) == 1
+
+
+def test_archive_by_tier_delete_original(tmp_store):
+    import numpy as np
+    ids = tmp_store.add(["todelete"], np.zeros((1, 384), dtype=np.float32), ns="del_src")
+    tmp_store.set_tier(ids[0], 2)
+    tmp_store.archive_by_tier("del_src", 2, delete_original=True)
+    assert tmp_store.list_memories(ns="del_src") == []
+
+
+def test_archive_by_tier_no_match(tmp_store):
+    new_ids = tmp_store.archive_by_tier("nonexistent", 99)
+    assert new_ids == []
+
+
+def test_text_search_ranked_basic(tmp_store):
+    import numpy as np
+    vecs = np.zeros((3, 384), dtype=np.float32)
+    tmp_store.add(["apple orange", "apple", "banana grape"], vecs, ns="default")
+    hits = tmp_store.text_search_ranked("apple orange", ns="default")
+    assert len(hits) >= 1
+    assert hits[0]["hits"] >= 1
+
+
+def test_text_search_ranked_empty_query(tmp_store):
+    hits = tmp_store.text_search_ranked("", ns="default")
+    assert hits == []
+
+
+def test_text_search_ranked_tier_filter(tmp_store):
+    import numpy as np
+    ids = tmp_store.add(["hello world", "hello moon"], np.zeros((2, 384), dtype=np.float32), ns="default")
+    tmp_store.set_tier(ids[0], 0)
+    hits = tmp_store.text_search_ranked("hello", ns="default", tier=0)
+    assert all(h["tier"] == 0 for h in hits)
+
+
+def test_text_search_ranked_all_ns(tmp_store):
+    import numpy as np
+    tmp_store.add(["test memory"], np.zeros((1, 384), dtype=np.float32), ns="ns_a")
+    hits = tmp_store.text_search_ranked("test memory", ns=None)
+    assert any(h["ns"] == "ns_a" for h in hits)
+
+
+def test_text_search_ranked_hit_count_order(tmp_store):
+    import numpy as np
+    vecs = np.zeros((2, 384), dtype=np.float32)
+    tmp_store.add(["alpha beta gamma delta", "alpha"], vecs, ns="rank_ns")
+    hits = tmp_store.text_search_ranked("alpha beta gamma", ns="rank_ns")
+    assert hits[0]["hits"] >= hits[-1]["hits"]

@@ -1104,6 +1104,159 @@ class Store:
 
         return sorted(results, key=lambda x: x["score"], reverse=True)[:top_n]
 
+    def import_ns(
+        self,
+        ns: str,
+        rows: list[dict],
+        *,
+        overwrite: bool = False,
+    ) -> int:
+        """Bulk-import raw memory dicts into *ns*.
+
+        Each dict must have at least ``"text"`` key; optional: ``"summary"``,
+        ``"meta"`` (dict or JSON string), ``"tier"`` (int).  Embeddings are
+        NOT carried over — imported memories get zero vectors and need
+        ``reindex_all()`` to become searchable via ANN.
+
+        If *overwrite=True* the namespace is cleared before import.
+        Returns the number of rows inserted.
+        """
+        import numpy as np, json as _j_imp
+        if not rows:
+            return 0
+        if overwrite:
+            self.clear_ns(ns)
+        texts: list[str] = []
+        summaries: list[str | None] = []
+        metas: list[dict] = []
+        tiers: list[int] = []
+        for r in rows:
+            texts.append(str(r.get("text", "")))
+            summaries.append(r.get("summary") or None)
+            raw_meta = r.get("meta", {})
+            if isinstance(raw_meta, str):
+                try:
+                    raw_meta = _j_imp.loads(raw_meta)
+                except Exception:
+                    raw_meta = {}
+            metas.append(raw_meta if isinstance(raw_meta, dict) else {})
+            tiers.append(int(r.get("tier", 1)))
+        vecs = np.zeros((len(texts), self.dim), dtype=np.float32)
+        ids = self.add(texts, vecs, ns=ns, meta=metas, summaries=summaries)
+        with self._lock:
+            for i, mid in enumerate(ids):
+                if tiers[i] != 1:
+                    self._db.execute(
+                        "UPDATE memories SET tier=? WHERE id=?", (tiers[i], mid)
+                    )
+            self._db.commit()
+        return len(ids)
+
+    def get_tier_distribution(
+        self,
+        ns: str | None = "default",
+    ) -> dict[int, int]:
+        """Return a mapping of tier → count for the given namespace.
+
+        *ns=None* spans all namespaces.  Missing tiers are omitted (not
+        returned as 0).  Result is dict[int, int], e.g. ``{0: 3, 1: 42, 2: 7}``.
+        """
+        if ns is not None:
+            rows = self._db.execute(
+                "SELECT tier, COUNT(*) FROM memories WHERE ns=? GROUP BY tier",
+                (ns,),
+            ).fetchall()
+        else:
+            rows = self._db.execute(
+                "SELECT tier, COUNT(*) FROM memories GROUP BY tier",
+            ).fetchall()
+        return {int(r[0]): int(r[1]) for r in rows}
+
+    def archive_by_tier(
+        self,
+        ns: str,
+        tier: int,
+        *,
+        dst_ns: str | None = None,
+        delete_original: bool = False,
+    ) -> list[int]:
+        """Copy (or move) all memories at *tier* in *ns* to *dst_ns*.
+
+        *dst_ns* defaults to ``"<ns>_archive"``.  Cloned memories keep the
+        same text/summary/meta/tier; embeddings are zero-filled.
+        If *delete_original=True* the originals are deleted after cloning.
+        Returns the list of new memory IDs created in *dst_ns*.
+        """
+        if dst_ns is None:
+            dst_ns = f"{ns}_archive"
+        rows = self._db.execute(
+            "SELECT id FROM memories WHERE ns=? AND tier=?", (ns, tier)
+        ).fetchall()
+        new_ids: list[int] = []
+        for (mid,) in rows:
+            cloned = self.clone_memory(mid, dst_ns=dst_ns)
+            if cloned is not None:
+                new_ids.append(cloned)
+        if delete_original and new_ids:
+            orig_ids = [r[0] for r in rows]
+            for oid in orig_ids:
+                self.delete(oid)
+        return new_ids
+
+    def text_search_ranked(
+        self,
+        query: str,
+        ns: str | None = "default",
+        limit: int = 20,
+        tier: int | None = None,
+    ) -> list[dict]:
+        """Case-insensitive LIKE search with a basic relevance ranking.
+
+        Results are ranked by number of query words found in the text (hit
+        count descending), then by created DESC as a tiebreaker.
+
+        Each result dict contains:
+        ``{"id", "ns", "text", "summary", "tier", "created", "hits": int}``.
+
+        *tier* optionally restricts results to a specific tier.
+        """
+        import re as _re_tsr
+        words = [w.lower() for w in _re_tsr.findall(r"[a-zA-Z0-9]+", query) if w]
+        if not words:
+            return []
+
+        conds = ["1=1"]
+        params: list = []
+        if ns is not None:
+            conds.append("ns=?")
+            params.append(ns)
+        if tier is not None:
+            conds.append("tier=?")
+            params.append(tier)
+        like_conds = " OR ".join(["text LIKE ? COLLATE NOCASE"] * len(words))
+        conds.append(f"({like_conds})")
+        params.extend([f"%{w}%" for w in words])
+        params.append(limit * 5)
+        rows = self._db.execute(
+            f"SELECT id, ns, text, summary, tier, created FROM memories "
+            f"WHERE {' AND '.join(conds)} ORDER BY created DESC LIMIT ?",
+            params,
+        ).fetchall()
+
+        def _hit_count(text: str) -> int:
+            t = text.lower()
+            return sum(1 for w in words if w in t)
+
+        results = [
+            {
+                "id": r[0], "ns": r[1], "text": r[2], "summary": r[3],
+                "tier": r[4], "created": r[5], "hits": _hit_count(r[2]),
+            }
+            for r in rows
+        ]
+        results.sort(key=lambda x: (-x["hits"], x["created"]))
+        return results[:limit]
+
     def filter_by_text_length(
         self,
         min_chars: int = 0,

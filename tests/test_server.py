@@ -689,6 +689,10 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_cross_ns_search",
         "mnemonics_memory_timeline",
         "mnemonics_keyword_extract",
+        "mnemonics_import_ns",
+        "mnemonics_get_tier_distribution",
+        "mnemonics_archive_by_tier",
+        "mnemonics_text_search_ranked",
     }
 
 
@@ -6202,3 +6206,177 @@ def test_mcp_keyword_extract_empty_result(populated_store):
     })[0]
     text = resp["result"]["content"][0]["text"]
     assert "keywords" in text.lower() or "no keywords" in text.lower() or "word" in text.lower()
+
+
+# ─── Batch 8: import_ns, get_tier_distribution, archive_by_tier, text_search_ranked ───
+
+def test_rest_import_ns(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/import-ns", {
+        "ns": "imported_test", "rows": [{"text": "imported memory"}]
+    })
+    assert code == 200
+    assert data["imported"] == 1
+
+
+def test_rest_import_ns_missing_args(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/import-ns", {"ns": "x"})
+    assert code == 400
+
+
+def test_rest_import_ns_overwrite(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/import-ns", {
+        "ns": "default", "rows": [{"text": "replaced"}], "overwrite": True
+    })
+    assert code == 200
+
+
+def test_rest_get_tier_distribution(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/get-tier-distribution?ns=default")
+    assert code == 200
+    assert "distribution" in data
+
+
+def test_rest_get_tier_distribution_all_ns(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/get-tier-distribution")
+    assert code == 200
+    assert "distribution" in data
+
+
+def test_rest_archive_by_tier(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/archive-by-tier", {"ns": "default", "tier": 2})
+    assert code == 200
+    assert "archived" in data
+
+
+def test_rest_archive_by_tier_missing_args(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/archive-by-tier", {"ns": "default"})
+    assert code == 400
+
+
+def test_rest_text_search_ranked(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/text-search-ranked?query=the&ns=default")
+    assert code == 200
+    assert "results" in data
+
+
+def test_rest_text_search_ranked_missing_query(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/text-search-ranked")
+    assert code == 400
+
+
+def test_mcp_import_ns(populated_store):
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 31,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_import_ns",
+                   "arguments": {"ns": "mcp_import", "rows": [{"text": "hello"}]}},
+    })[0]
+    assert "Imported" in resp["result"]["content"][0]["text"]
+
+
+def test_mcp_import_ns_missing_args(populated_store):
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 32,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_import_ns", "arguments": {"ns": "x"}},
+    })[0]
+    assert "error" in resp
+
+
+def test_mcp_get_tier_distribution(populated_store):
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 33,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_get_tier_distribution", "arguments": {"ns": "default"}},
+    })[0]
+    assert "distribution" in resp["result"]["content"][0]["text"].lower() or "tier" in resp["result"]["content"][0]["text"].lower()
+
+
+def test_mcp_get_tier_distribution_all_ns(populated_store):
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 34,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_get_tier_distribution", "arguments": {}},
+    })[0]
+    assert "tier" in resp["result"]["content"][0]["text"].lower()
+
+
+def test_mcp_archive_by_tier(populated_store):
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 35,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_archive_by_tier",
+                   "arguments": {"ns": "default", "tier": 2}},
+    })[0]
+    assert "Archived" in resp["result"]["content"][0]["text"]
+
+
+def test_mcp_archive_by_tier_missing_args(populated_store):
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 36,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_archive_by_tier", "arguments": {"ns": "default"}},
+    })[0]
+    assert "error" in resp
+
+
+def test_mcp_text_search_ranked(populated_store):
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 37,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_text_search_ranked",
+                   "arguments": {"query": "the", "ns": "default"}},
+    })[0]
+    text = resp["result"]["content"][0]["text"]
+    assert "results" in text.lower() or "Top" in text or "No results" in text
+
+
+def test_mcp_text_search_ranked_no_query(populated_store):
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 38,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_text_search_ranked", "arguments": {}},
+    })[0]
+    assert "error" in resp
+
+
+def test_mcp_text_search_ranked_with_tier(populated_store):
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 39,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_text_search_ranked",
+                   "arguments": {"query": "the", "ns": "default", "tier": "1"}},
+    })[0]
+    text = resp["result"]["content"][0]["text"]
+    assert "Top" in text or "No results" in text
+
+
+def test_mcp_text_search_ranked_no_results(populated_store):
+    """MCP text_search_ranked returns 'No results' for non-matching query."""
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 40,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_text_search_ranked",
+                   "arguments": {"query": "xyzzy_nonexistent_term_zzz"}},
+    })[0]
+    text = resp["result"]["content"][0]["text"]
+    assert "No results" in text

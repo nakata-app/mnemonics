@@ -5017,3 +5017,185 @@ def test_cli_keyword_extract_not_found(tmp_path, capsys):
         main()
     out = capsys.readouterr().out
     assert "not found" in out
+
+
+# ─── Batch 8: import-ns, get-tier-distribution, archive-by-tier, text-search-ranked ───
+
+def test_cli_import_ns(tmp_path, capsys):
+    """import-ns reads JSON file."""
+    import json as _j_cli
+    f = tmp_path / "data.json"
+    f.write_text(_j_cli.dumps([{"text": "hello"}, {"text": "world"}]))
+    mock_store = MagicMock()
+    mock_store.import_ns.return_value = 2
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "import-ns", "test_ns", str(f),
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "2" in out
+
+
+def test_cli_import_ns_overwrite(tmp_path, capsys):
+    """import-ns --overwrite passes flag to store."""
+    import json as _j_cli2
+    f = tmp_path / "data.json"
+    f.write_text(_j_cli2.dumps([{"text": "fresh"}]))
+    mock_store = MagicMock()
+    mock_store.import_ns.return_value = 1
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "import-ns", "ns", str(f),
+                           "--overwrite", "--path", str(tmp_path)]),
+    ):
+        main()
+    kw = mock_store.import_ns.call_args[1]
+    assert kw.get("overwrite") is True
+
+
+def test_cli_get_tier_distribution_text(tmp_path, capsys):
+    """get-tier-distribution prints tier table."""
+    mock_store = MagicMock()
+    mock_store.get_tier_distribution.return_value = {0: 3, 1: 10, 2: 1}
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "get-tier-distribution", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "10" in out
+
+
+def test_cli_get_tier_distribution_json(tmp_path, capsys):
+    """get-tier-distribution --json outputs dict."""
+    mock_store = MagicMock()
+    mock_store.get_tier_distribution.return_value = {1: 5}
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "get-tier-distribution", "--json",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    import json
+    out = capsys.readouterr().out
+    assert json.loads(out) == {"1": 5}
+
+
+def test_cli_get_tier_distribution_all_ns(tmp_path, capsys):
+    """get-tier-distribution --all-ns passes ns=None."""
+    mock_store = MagicMock()
+    mock_store.get_tier_distribution.return_value = {}
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "get-tier-distribution", "--all-ns",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    kw = mock_store.get_tier_distribution.call_args[1]
+    assert kw["ns"] is None
+
+
+def test_cli_archive_by_tier(tmp_path, capsys):
+    """archive-by-tier prints archived count."""
+    mock_store = MagicMock()
+    mock_store.archive_by_tier.return_value = [101, 102]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "archive-by-tier", "myns", "2",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "2" in out
+
+
+def test_cli_archive_by_tier_dst_ns(tmp_path, capsys):
+    """archive-by-tier --dst-ns passes correct target."""
+    mock_store = MagicMock()
+    mock_store.archive_by_tier.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "archive-by-tier", "myns", "1",
+                           "--dst-ns", "custom_archive", "--path", str(tmp_path)]),
+    ):
+        main()
+    kw = mock_store.archive_by_tier.call_args[1]
+    assert kw["dst_ns"] == "custom_archive"
+
+
+def test_cli_archive_by_tier_delete_original(tmp_path, capsys):
+    """archive-by-tier --delete-original passes flag."""
+    mock_store = MagicMock()
+    mock_store.archive_by_tier.return_value = [99]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "archive-by-tier", "ns1", "0",
+                           "--delete-original", "--path", str(tmp_path)]),
+    ):
+        main()
+    kw = mock_store.archive_by_tier.call_args[1]
+    assert kw["delete_original"] is True
+
+
+def test_cli_text_search_ranked_text(tmp_path, capsys):
+    """text-search-ranked prints results."""
+    mock_store = MagicMock()
+    mock_store.text_search_ranked.return_value = [
+        {"id": 1, "hits": 2, "ns": "default", "text": "apple orange pie"}
+    ]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "text-search-ranked", "apple orange",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "apple" in out
+
+
+def test_cli_text_search_ranked_json(tmp_path, capsys):
+    """text-search-ranked --json outputs list."""
+    mock_store = MagicMock()
+    mock_store.text_search_ranked.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "text-search-ranked", "x", "--json",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    import json
+    assert json.loads(capsys.readouterr().out) == []
+
+
+def test_cli_text_search_ranked_all_ns(tmp_path, capsys):
+    """text-search-ranked --all-ns passes ns=None."""
+    mock_store = MagicMock()
+    mock_store.text_search_ranked.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "text-search-ranked", "x", "--all-ns",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    kw = mock_store.text_search_ranked.call_args[1]
+    assert kw["ns"] is None
+
+
+def test_cli_import_ns_stdin(tmp_path, capsys):
+    """import-ns with '-' reads from stdin."""
+    import json as _j_stdin
+    import io
+    mock_store = MagicMock()
+    mock_store.import_ns.return_value = 1
+    fake_stdin = io.StringIO(_j_stdin.dumps([{"text": "from stdin"}]))
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "import-ns", "ns", "-",
+                           "--path", str(tmp_path)]),
+        patch("sys.stdin", fake_stdin),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "1" in out
