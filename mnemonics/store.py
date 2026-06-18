@@ -539,6 +539,48 @@ class Store:
                     pass  # label absent from index (e.g. index rebuilt without this entry)
         return cur.rowcount > 0
 
+    def delete_many(self, memory_ids: list[int]) -> int:
+        """Delete multiple memories by ID. Returns count of actually deleted rows.
+
+        Uses a single DELETE … WHERE id IN (…) per namespace to keep the
+        per-NS hnswlib index consistent. Missing IDs are silently skipped.
+        """
+        if not memory_ids:
+            return 0
+        placeholders = ",".join("?" * len(memory_ids))
+        with self._lock:
+            ns_rows = self._db.execute(
+                f"SELECT id, ns FROM memories WHERE id IN ({placeholders})",
+                memory_ids,
+            ).fetchall()
+            if not ns_rows:
+                return 0
+            by_ns: dict[str, list[int]] = {}
+            for mid, ns in ns_rows:
+                by_ns.setdefault(ns, []).append(mid)
+            found_ids = [r[0] for r in ns_rows]
+            found_ph = ",".join("?" * len(found_ids))
+            cur = self._db.execute(
+                f"DELETE FROM memories WHERE id IN ({found_ph})", found_ids
+            )
+            self._db.commit()
+        deleted = cur.rowcount
+        for ns, ids in by_ns.items():
+            with self._ns_file_lock(ns, exclusive=True), self._lock:
+                try:
+                    idx = self._index_for(ns)
+                    for mid in ids:
+                        try:
+                            idx.mark_deleted(mid)
+                        except Exception:  # pragma: no cover
+                            pass
+                    idx_path = self.root / f"index_{ns}.bin"
+                    idx.save_index(str(idx_path))
+                    self._index_mtime[ns] = idx_path.stat().st_mtime
+                except Exception:  # pragma: no cover
+                    pass
+        return deleted
+
     def rebuild_ns_index(self, ns: str) -> tuple[int, int]:
         """Rebuild the hnswlib index for *ns* from the SQL source of truth.
 

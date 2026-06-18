@@ -1129,3 +1129,54 @@ def test_get_many_empty_input(tmp_path):
     """get_many([]) returns []."""
     s = Store(tmp_path)
     assert s.get_many([]) == []
+
+
+def test_delete_many_removes_all(tmp_path):
+    """delete_many removes all specified IDs and returns count."""
+    s = Store(tmp_path)
+    ids = s.add(["a", "b", "c"], make_vecs(3))
+    deleted = s.delete_many([ids[0], ids[2]])
+    assert deleted == 2
+    assert s.count() == 1
+    assert s.get(ids[1]) is not None
+    assert s.get(ids[0]) is None
+    assert s.get(ids[2]) is None
+
+
+def test_delete_many_skips_missing_ids(tmp_path):
+    """delete_many skips non-existent IDs without error."""
+    s = Store(tmp_path)
+    ids = s.add(["only"], make_vecs(1))
+    deleted = s.delete_many([ids[0], 99999, 88888])
+    assert deleted == 1
+    assert s.count() == 0
+
+
+def test_delete_many_empty_input(tmp_path):
+    """delete_many([]) returns 0 without touching the store."""
+    s = Store(tmp_path)
+    s.add(["x"], make_vecs(1))
+    assert s.delete_many([]) == 0
+    assert s.count() == 1
+
+
+def test_delete_many_multi_ns(tmp_path):
+    """delete_many handles IDs across multiple namespaces."""
+    s = Store(tmp_path)
+    ids_a = s.add(["ns-a-1", "ns-a-2"], make_vecs(2), ns="a")
+    ids_b = s.add(["ns-b-1"], make_vecs(1), ns="b")
+    deleted = s.delete_many([ids_a[0], ids_b[0]])
+    assert deleted == 2
+    assert s.count("a") == 1
+    assert s.count("b") == 0
+
+
+def test_delete_many_all_missing_ids_returns_zero(tmp_path):
+    """delete_many with only non-existent IDs returns 0 without error."""
+    s = Store(tmp_path)
+    s.add(["keeper"], make_vecs(1))
+    result = s.delete_many([99999, 88888])
+    assert result == 0
+    assert s.count() == 1
+
+
