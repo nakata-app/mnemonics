@@ -718,6 +718,20 @@ def _mcp_loop() -> None:
                         "required": ["id", "meta"],
                     },
                 },
+                {
+                    "name": "mnemonics_export",
+                    "description": "Export memories as a JSONL string. Useful for snapshots, cross-store migration, or backing up a namespace. Filters by ns, tier, since, and before. Returns JSONL where each line is one memory object.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ns": {"type": "string", "description": "Namespace to export (omit for all namespaces)"},
+                            "tier": {"type": "integer", "enum": [0, 1, 2], "description": "Filter to specific tier (omit for all)"},
+                            "since": {"type": "string", "description": "Only export memories created on or after this date (YYYY-MM-DD)"},
+                            "before": {"type": "string", "description": "Only export memories created before this date (YYYY-MM-DD)"},
+                            "limit": {"type": "integer", "description": "Max rows to export (default: 500)"},
+                        },
+                    },
+                },
             ]})
 
         elif method == "tools/call":
@@ -986,6 +1000,44 @@ def _mcp_loop() -> None:
                     continue
                 changed = _get_store().update_meta(int(mid), meta)
                 ok({"content": [{"type": "text", "text": f"Meta updated: {changed}"}]})
+
+            elif name == "mnemonics_export":
+                ns_val = args.get("ns")
+                tier_arg = args.get("tier")
+                tier_filter = int(tier_arg) if tier_arg is not None else None
+                since_arg = args.get("since")
+                before_arg = args.get("before")
+                limit = min(int(args.get("limit", 500)), 2000)
+                where_parts = ["1=1"]
+                sql_params: list = []
+                if ns_val is not None:
+                    where_parts.append("ns = ?")
+                    sql_params.append(ns_val)
+                if tier_filter is not None:
+                    where_parts.append("tier = ?")
+                    sql_params.append(tier_filter)
+                if since_arg is not None:
+                    where_parts.append("created >= ?")
+                    sql_params.append(since_arg)
+                if before_arg is not None:
+                    where_parts.append("created < ?")
+                    sql_params.append(before_arg)
+                where = " AND ".join(where_parts)
+                sql_params.append(limit)
+                rows = _get_store()._db.execute(
+                    f"SELECT id, ns, text, summary, meta, created, tier, last_accessed, access_count "
+                    f"FROM memories WHERE {where} ORDER BY id LIMIT ?",
+                    sql_params,
+                ).fetchall()
+                lines = []
+                for r in rows:
+                    lines.append(json.dumps({
+                        "id": r[0], "ns": r[1], "text": r[2], "summary": r[3],
+                        "meta": json.loads(r[4]), "created": r[5], "tier": r[6],
+                        "last_accessed": r[7], "access_count": r[8],
+                    }, ensure_ascii=False))
+                result_text = "\n".join(lines) if lines else "(no memories matched)"
+                ok({"content": [{"type": "text", "text": result_text}]})
 
             elif name == "mnemonics_stats":
                 store = _get_store()

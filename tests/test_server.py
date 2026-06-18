@@ -618,6 +618,7 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_pin", "mnemonics_tier", "mnemonics_gc", "mnemonics_stats",
         "mnemonics_health", "mnemonics_repair",
         "mnemonics_search_by_meta", "mnemonics_delete_many", "mnemonics_update_meta",
+        "mnemonics_export",
     }
 
 
@@ -1978,3 +1979,78 @@ def test_http_import_jsonl_blank_lines_skipped(tmp_store):
     assert code == 200
     assert data["imported"] == 1
     assert data["skipped"] == 0
+
+
+# ── MCP mnemonics_export ──────────────────────────────────────────────────────
+
+def _mcp_export(store, **kwargs):
+    """Helper: call mnemonics_export MCP tool and return resp[0]."""
+    return _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_export", "arguments": kwargs},
+    })[0]
+
+
+def test_mcp_export_all(populated_store):
+    """mnemonics_export returns all memories as JSONL."""
+    import json as _json
+    store, docs, vecs = populated_store
+    r = _mcp_export(store)
+    text = r["result"]["content"][0]["text"]
+    lines = [l for l in text.splitlines() if l.strip()]
+    assert len(lines) == len(docs)
+    obj = _json.loads(lines[0])
+    assert "id" in obj and "text" in obj and "ns" in obj
+
+
+def test_mcp_export_ns_filter(populated_store):
+    """mnemonics_export ns filter returns only rows from that namespace."""
+    import json as _json
+    store, docs, vecs = populated_store
+    import numpy as np
+    v = np.random.rand(384).astype("float32")
+    v /= np.linalg.norm(v)
+    store.add(["other ns row"], v[None], ns="other")
+    r = _mcp_export(store, ns="default")
+    text = r["result"]["content"][0]["text"]
+    objs = [_json.loads(l) for l in text.splitlines() if l.strip()]
+    assert all(o["ns"] == "default" for o in objs)
+
+
+def test_mcp_export_tier_filter(populated_store):
+    """mnemonics_export tier=0 returns only pinned rows."""
+    import json as _json
+    store, docs, vecs = populated_store
+    first_id = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    store.pin(first_id)
+    r = _mcp_export(store, tier=0)
+    text = r["result"]["content"][0]["text"]
+    objs = [_json.loads(l) for l in text.splitlines() if l.strip()]
+    assert len(objs) == 1
+    assert objs[0]["id"] == first_id
+
+
+def test_mcp_export_since_filter(populated_store):
+    """mnemonics_export since=far-future returns empty."""
+    store, docs, vecs = populated_store
+    r = _mcp_export(store, since="2099-01-01")
+    text = r["result"]["content"][0]["text"]
+    assert text == "(no memories matched)"
+
+
+def test_mcp_export_before_filter(populated_store):
+    """mnemonics_export before=past returns empty."""
+    store, docs, vecs = populated_store
+    r = _mcp_export(store, before="2000-01-01")
+    text = r["result"]["content"][0]["text"]
+    assert text == "(no memories matched)"
+
+
+def test_mcp_export_limit(populated_store):
+    """mnemonics_export limit restricts number of returned rows."""
+    import json as _json
+    store, docs, vecs = populated_store
+    r = _mcp_export(store, limit=1)
+    text = r["result"]["content"][0]["text"]
+    objs = [_json.loads(l) for l in text.splitlines() if l.strip()]
+    assert len(objs) == 1
