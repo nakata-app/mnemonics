@@ -1724,3 +1724,31 @@ def test_cli_search_meta_json_empty(tmp_path, capsys):
         main()
     out = capsys.readouterr().out.strip()
     assert out == ""
+
+
+# ── ingest --tier ─────────────────────────────────────────────────────────────
+
+def test_cli_ingest_tier_ambient(tmp_path):
+    """ingest --tier 2 passes tier=2 to ingest()."""
+    with (
+        patch("mnemonics.store.Store"),
+        patch("mnemonics.ingest.ingest", return_value=1) as mock_ingest,
+        patch("sys.argv", ["mnemonics", "ingest", "ambient text", "--tier", "2",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    kwargs = mock_ingest.call_args[1]
+    assert kwargs["tier"] == 2
+
+
+def test_cli_ingest_tier_pinned(tmp_path):
+    """ingest --tier 0 passes tier=0 (pinned) to ingest()."""
+    with (
+        patch("mnemonics.store.Store"),
+        patch("mnemonics.ingest.ingest", return_value=1) as mock_ingest,
+        patch("sys.argv", ["mnemonics", "ingest", "pin this", "--tier", "0",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    kwargs = mock_ingest.call_args[1]
+    assert kwargs["tier"] == 0

@@ -265,7 +265,10 @@ class Store:
         ns: str = "default",
         meta: list[dict] | None = None,
         summaries: list[str | None] | None = None,
+        tier: int = 1,
     ) -> list[int]:
+        if tier not in (0, 1, 2):
+            raise ValueError(f"tier must be 0, 1, or 2; got {tier!r}")
         if meta is None:
             meta = [{} for _ in texts]
         if summaries is None:
@@ -282,8 +285,8 @@ class Store:
             ids = []
             for text, m, summary in zip(texts, meta, summaries):
                 cur = self._db.execute(
-                    "INSERT INTO memories (ns, text, summary, meta) VALUES (?, ?, ?, ?)",
-                    (ns, text, summary, json.dumps(m)),
+                    "INSERT INTO memories (ns, text, summary, meta, tier) VALUES (?, ?, ?, ?, ?)",
+                    (ns, text, summary, json.dumps(m), tier),
                 )
                 ids.append(cur.lastrowid)
             self._db.commit()

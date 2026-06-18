@@ -183,12 +183,17 @@ class _Handler(BaseHTTPRequestHandler):
             ):
                 self._json(400, {"error": "summaries must be an array of (string|null), same length as texts"})
                 return
+            tier_val = body.get("tier", 1)
+            if tier_val not in (0, 1, 2):
+                self._json(400, {"error": "tier must be 0, 1, or 2"})
+                return
             n = _ingest(
                 texts=texts,
                 store=_get_store(),
                 ns=body.get("ns", "default"),
                 meta=body.get("meta"),
                 summaries=summaries,
+                tier=int(tier_val),
             )
             self._json(200, {"ingested": n})
 
@@ -427,6 +432,11 @@ def _mcp_loop() -> None:
                                 "type": "object",
                                 "description": "Optional metadata dict attached to every chunk (e.g. {\"tag\": \"work\", \"source\": \"slack\"}). Same dict applied to all texts in this call.",
                             },
+                            "tier": {
+                                "type": "integer",
+                                "enum": [0, 1, 2],
+                                "description": "Initial tier for all ingested chunks: 0=pinned, 1=default (default), 2=ambient",
+                            },
                         },
                     },
                 },
@@ -656,12 +666,17 @@ def _mcp_loop() -> None:
                     err("meta must be a JSON object")
                     continue
                 metas = [meta_arg] * len(texts) if meta_arg is not None else None
+                tier_arg = args.get("tier", 1)
+                if tier_arg not in (0, 1, 2):
+                    err("tier must be 0, 1, or 2")
+                    continue
                 n = _ingest(
                     texts=texts,
                     store=_get_store(),
                     ns=args.get("ns", "default"),
                     summaries=summaries,
                     meta=metas,
+                    tier=int(tier_arg),
                 )
                 ok({"content": [{"type": "text", "text": f"Stored {n} chunks."}]})
 

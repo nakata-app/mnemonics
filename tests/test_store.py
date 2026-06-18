@@ -1280,3 +1280,27 @@ def test_search_by_meta_limit(tmp_path):
     s.add(["a", "b", "c"], make_vecs(3), meta=[{"t": "x"}] * 3)
     results = s.search_by_meta({"t": "x"}, limit=2)
     assert len(results) == 2
+
+
+# ── store.add tier ────────────────────────────────────────────────────────────
+
+def test_store_add_initial_tier(tmp_store):
+    """store.add respects initial tier parameter."""
+    import numpy as np
+    vecs = np.random.rand(1, 384).astype("float32")
+    ids = tmp_store.add(["pinned from start"], vecs, tier=0)
+    row = tmp_store.get(ids[0])
+    assert row["tier"] == 0
+
+
+def test_store_add_ambient_tier(tmp_store):
+    vecs = np.random.rand(1, 384).astype("float32")
+    ids = tmp_store.add(["ambient"], vecs, tier=2)
+    assert tmp_store.get(ids[0])["tier"] == 2
+
+
+def test_store_add_invalid_tier(tmp_store):
+    import numpy as np
+    vecs = np.random.rand(1, 384).astype("float32")
+    with pytest.raises(ValueError, match="tier"):
+        tmp_store.add(["x"], vecs, tier=9)

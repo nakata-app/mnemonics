@@ -1640,3 +1640,48 @@ def test_http_count_specific_ns(populated_store):
     assert code == 200
     assert data["ns"] == "default"
     assert data["count"] == store.count("default")
+
+
+# ── REST /ingest tier ─────────────────────────────────────────────────────────
+
+def test_http_ingest_tier_pinned(tmp_store):
+    """POST /ingest with tier=0 stores pinned memories."""
+    with patch("mnemonics.server._ingest", return_value=1) as mock_ing:
+        code, data = http_call(tmp_store, "POST", "/ingest",
+                               {"texts": ["pin me"], "tier": 0})
+    assert code == 200
+    mock_ing.assert_called_once()
+    assert mock_ing.call_args[1]["tier"] == 0
+
+
+def test_http_ingest_tier_invalid(tmp_store):
+    """POST /ingest with tier=9 returns 400."""
+    code, data = http_call(tmp_store, "POST", "/ingest",
+                           {"texts": ["hi"], "tier": 9})
+    assert code == 400
+    assert "tier" in data["error"]
+
+
+# ── MCP mnemonics_ingest tier ─────────────────────────────────────────────────
+
+def test_mcp_ingest_tier_pinned(tmp_store):
+    """MCP mnemonics_ingest with tier=0 calls ingest with tier=0."""
+    with patch("mnemonics.server._ingest", return_value=1) as mock_ing:
+        resp = _mcp(tmp_store, {
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": {"name": "mnemonics_ingest",
+                       "arguments": {"texts": ["pin"], "tier": 0}},
+        })
+    assert "result" in resp[0]
+    mock_ing.assert_called_once()
+    assert mock_ing.call_args[1]["tier"] == 0
+
+
+def test_mcp_ingest_tier_invalid(tmp_store):
+    """MCP mnemonics_ingest with tier=5 returns JSON-RPC error."""
+    resp = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_ingest",
+                   "arguments": {"texts": ["x"], "tier": 5}},
+    })
+    assert "error" in resp[0]

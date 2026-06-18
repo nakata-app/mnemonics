@@ -252,6 +252,7 @@ def ingest(
     chunk_overlap: int = 40,
     augment_preferences: bool = False,
     augment_assistant_facts: bool = False,
+    tier: int = 1,
 ) -> int:
     """Chunk, embed and store texts. Returns total chunks stored.
 
@@ -303,5 +304,5 @@ def ingest(
 
     vecs = enc.encode(all_chunks, batch_size=64, show_progress_bar=False,
                       normalize_embeddings=True, convert_to_numpy=True)
-    store.add(all_chunks, vecs, ns=ns, meta=all_meta, summaries=all_summaries)
+    store.add(all_chunks, vecs, ns=ns, meta=all_meta, summaries=all_summaries, tier=tier)
     return len(all_chunks)

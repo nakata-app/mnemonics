@@ -37,6 +37,13 @@ def main() -> None:
         default=None,
         help="JSON object to attach as metadata to every chunk (e.g. '{\"tag\":\"work\"}').",
     )
+    i.add_argument(
+        "--tier",
+        type=int,
+        choices=[0, 1, 2],
+        default=1,
+        help="Initial tier for ingested chunks: 0=pinned, 1=default, 2=ambient (default: 1)",
+    )
 
     # retrieve
     r = sub.add_parser("retrieve", help="Search memory")
@@ -296,7 +303,7 @@ def main() -> None:
                 print("--meta: must be a JSON object", file=sys.stderr)
                 sys.exit(2)
         metas = [meta_dict] if meta_dict is not None else None
-        n = ingest(texts=[joined], store=store, ns=args.ns, summaries=summaries, meta=metas)
+        n = ingest(texts=[joined], store=store, ns=args.ns, summaries=summaries, meta=metas, tier=args.tier)
         print(f"Stored {n} chunk(s).")
 
     elif args.cmd == "retrieve":
