@@ -74,39 +74,6 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def do_GET(self) -> None:
-        path = self.path.split("?")[0]
-        if path == "/health":
-            self._json(200, {"status": "ok", "version": "0.3.0"})
-        elif path == "/doctor":
-            self._json(200, _get_store().health_check())
-        elif path == "/namespaces":
-            self._json(200, {"namespaces": _get_store().list_namespaces()})
-        elif path == "/count":
-            ns = (self.path.split("ns=")[-1] if "ns=" in self.path else "default")
-            self._json(200, {"ns": ns, "count": _get_store().count(ns)})
-        elif path == "/stats":
-            store = _get_store()
-            rows = store._db.execute(
-                "SELECT ns, tier, COUNT(*) FROM memories GROUP BY ns, tier ORDER BY ns, tier"
-            ).fetchall()
-            ns_data: dict = {}
-            for ns_name, tier, cnt in rows:
-                ns_data.setdefault(ns_name, {})[tier] = cnt
-            result = []
-            for ns_name, tiers in sorted(ns_data.items()):
-                total = sum(tiers.values())
-                result.append({
-                    "ns": ns_name,
-                    "total": total,
-                    "pin": tiers.get(0, 0),
-                    "def": tiers.get(1, 0),
-                    "amb": tiers.get(2, 0),
-                })
-            self._json(200, {"namespaces": result})
-        else:
-            self._json(404, {"error": "not found"})
-
     def do_POST(self) -> None:
         try:
             body = self._body()
@@ -252,6 +219,50 @@ class _Handler(BaseHTTPRequestHandler):
         else:
             self._json(404, {"error": "not found"})
 
+    def do_GET(self) -> None:  # noqa: N802
+        path = self.path.split("?")[0]
+        if path == "/health":
+            self._json(200, {"status": "ok", "version": "0.3.0"})
+        elif path == "/doctor":
+            self._json(200, _get_store().health_check())
+        elif path == "/namespaces":
+            self._json(200, {"namespaces": _get_store().list_namespaces()})
+        elif path == "/count":
+            ns = (self.path.split("ns=")[-1] if "ns=" in self.path else "default")
+            self._json(200, {"ns": ns, "count": _get_store().count(ns)})
+        elif path == "/stats":
+            store = _get_store()
+            rows = store._db.execute(
+                "SELECT ns, tier, COUNT(*) FROM memories GROUP BY ns, tier ORDER BY ns, tier"
+            ).fetchall()
+            ns_data: dict = {}
+            for ns_name, tier, cnt in rows:
+                ns_data.setdefault(ns_name, {})[tier] = cnt
+            result = []
+            for ns_name, tiers in sorted(ns_data.items()):
+                total = sum(tiers.values())
+                result.append({
+                    "ns": ns_name,
+                    "total": total,
+                    "pin": tiers.get(0, 0),
+                    "def": tiers.get(1, 0),
+                    "amb": tiers.get(2, 0),
+                })
+            self._json(200, {"namespaces": result})
+        elif path.startswith("/memory/"):
+            try:
+                mid = int(path.split("/memory/")[1])
+            except ValueError:
+                self._json(400, {"error": "invalid id"})
+                return
+            row = _get_store().get(mid)
+            if row is None:
+                self._json(404, {"error": f"memory {mid} not found"})
+            else:
+                self._json(200, row)
+        else:
+            self._json(404, {"error": "not found"})
+
     def do_DELETE(self) -> None:
         if self.path.startswith("/memory/"):
             try:
@@ -328,6 +339,15 @@ def _mcp_loop() -> None:
                             "rerank": {"type": "boolean", "description": "Cross-encoder rerank via AdaptMem over the candidate band (default false)"},
                         },
                         "required": ["query"],
+                    },
+                },
+                {
+                    "name": "mnemonics_get",
+                    "description": "Fetch a single memory by id. Returns its text, ns, tier, summary, timestamps, and access count. Useful for inspecting a specific memory before pinning, tiering, or deleting it.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {"id": {"type": "integer", "description": "Memory id to fetch"}},
+                        "required": ["id"],
                     },
                 },
                 {
@@ -491,6 +511,18 @@ def _mcp_loop() -> None:
                     else:
                         lines.append(f"{header} {r['text'][:200]}")
                 ok({"content": [{"type": "text", "text": "\n".join(lines)}]})
+
+            elif name == "mnemonics_get":
+                mid = args.get("id")
+                if mid is None:
+                    err("mnemonics_get: 'id' is required")
+                    continue
+                row = _get_store().get(int(mid))
+                if row is None:
+                    err(f"mnemonics_get: memory {mid} not found")
+                else:
+                    import json as _json
+                    ok({"content": [{"type": "text", "text": _json.dumps(row, default=str, indent=2)}]})
 
             elif name == "mnemonics_forget":
                 deleted = _get_store().delete(int(args["id"]))

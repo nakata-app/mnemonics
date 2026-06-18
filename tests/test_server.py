@@ -102,6 +102,30 @@ def test_health(tmp_store):
     assert data["status"] == "ok"
 
 
+# ── GET /memory/<id> ──────────────────────────────────────────────────────────
+
+def test_http_get_memory(populated_store):
+    store, docs, vecs = populated_store
+    first_id = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    code, data = http_call(store, "GET", f"/memory/{first_id}")
+    assert code == 200
+    assert data["id"] == first_id
+    assert "text" in data
+    assert "ns" in data
+    assert "tier" in data
+
+
+def test_http_get_memory_not_found(tmp_store):
+    code, data = http_call(tmp_store, "GET", "/memory/9999")
+    assert code == 404
+    assert "not found" in data["error"]
+
+
+def test_http_get_memory_invalid_id(tmp_store):
+    code, data = http_call(tmp_store, "GET", "/memory/abc")
+    assert code == 400
+
+
 # ── GET /stats ────────────────────────────────────────────────────────────────
 
 def test_http_stats_empty(tmp_store):
@@ -442,9 +466,9 @@ def test_mcp_tools_list(tmp_store):
     resp = _mcp(tmp_store, {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
     names = {t["name"] for t in resp[0]["result"]["tools"]}
     assert names == {
-        "mnemonics_ingest", "mnemonics_retrieve", "mnemonics_forget",
-        "mnemonics_forget_ns", "mnemonics_rebuild_index", "mnemonics_pin",
-        "mnemonics_tier", "mnemonics_gc", "mnemonics_stats",
+        "mnemonics_ingest", "mnemonics_retrieve", "mnemonics_get",
+        "mnemonics_forget", "mnemonics_forget_ns", "mnemonics_rebuild_index",
+        "mnemonics_pin", "mnemonics_tier", "mnemonics_gc", "mnemonics_stats",
         "mnemonics_health", "mnemonics_repair",
     }
 
@@ -497,6 +521,41 @@ def test_mcp_forget_ns_missing_ns(tmp_store):
         "jsonrpc": "2.0", "id": 52,
         "method": "tools/call",
         "params": {"name": "mnemonics_forget_ns", "arguments": {}},
+    })
+    assert "error" in resp[0]
+
+
+def test_mcp_get(populated_store):
+    store, docs, vecs = populated_store
+    first_id = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 80,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_get", "arguments": {"id": first_id}},
+    })
+    import json as _json
+    text = resp[0]["result"]["content"][0]["text"]
+    data = _json.loads(text)
+    assert data["id"] == first_id
+    assert "text" in data
+    assert "ns" in data
+    assert "tier" in data
+
+
+def test_mcp_get_not_found(tmp_store):
+    resp = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 81,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_get", "arguments": {"id": 9999}},
+    })
+    assert "error" in resp[0]
+
+
+def test_mcp_get_missing_id(tmp_store):
+    resp = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 82,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_get", "arguments": {}},
     })
     assert "error" in resp[0]
 

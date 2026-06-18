@@ -419,6 +419,20 @@ class Store:
         row = self._db.execute("SELECT COUNT(*) FROM memories WHERE ns=?", (ns,)).fetchone()
         return row[0] if row else 0
 
+    def get(self, memory_id: int) -> dict | None:
+        row = self._db.execute(
+            "SELECT id, ns, text, summary, tier, created, last_accessed, access_count "
+            "FROM memories WHERE id=?",
+            (memory_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        return {
+            "id": row[0], "ns": row[1], "text": row[2], "summary": row[3],
+            "tier": row[4], "created": row[5], "last_accessed": row[6],
+            "access_count": row[7],
+        }
+
     def delete(self, memory_id: int) -> bool:
         with self._lock:
             row = self._db.execute("SELECT ns FROM memories WHERE id=?", (memory_id,)).fetchone()
