@@ -1613,3 +1613,58 @@ def test_cli_list_json_empty(tmp_path, capsys):
         main()
     out = capsys.readouterr().out.strip()
     assert out == "[]"
+
+
+# ── retrieve --json ───────────────────────────────────────────────────────────
+
+def test_cli_retrieve_json_output(tmp_path, capsys):
+    """retrieve --json outputs a JSON array."""
+    import json as _json
+    fake_result = {"results": [
+        {"id": 3, "score": 0.9, "raw_score": 0.8, "decay_factor": 1.0, "boost": 1.0,
+         "age_days": 2, "tier": 1, "text": "the capital of France", "signal_boost": 1.0},
+    ]}
+    with (
+        patch("mnemonics.store.Store"),
+        patch("mnemonics.retrieve.retrieve", return_value=fake_result),
+        patch("sys.argv", ["mnemonics", "retrieve", "France", "--json", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    data = _json.loads(out.strip())
+    assert isinstance(data, list)
+    assert data[0]["id"] == 3
+
+
+# ── bm25 --json ───────────────────────────────────────────────────────────────
+
+def test_cli_bm25_json_output(tmp_path, capsys):
+    """bm25 --json outputs a JSON array."""
+    import json as _json
+    fake_hits = [{"id": 5, "score": 0.75, "text": "keyword match", "tier": 1, "summary": None}]
+    mock_store = MagicMock()
+    mock_store.search_bm25.return_value = fake_hits
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "bm25", "keyword", "--json", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    data = _json.loads(out.strip())
+    assert isinstance(data, list)
+    assert data[0]["id"] == 5
+
+
+def test_cli_bm25_json_no_results(tmp_path, capsys):
+    """bm25 --json with no results outputs empty array."""
+    import json as _json
+    mock_store = MagicMock()
+    mock_store.search_bm25.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "bm25", "ghost", "--json", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    data = _json.loads(out.strip())
+    assert data == []

@@ -49,6 +49,7 @@ def main() -> None:
     r.add_argument("--rerank", action="store_true", help="Cross-encoder rerank via AdaptMem over the widened candidate band (requires adaptmem)")
     r.add_argument("--min-tier", type=int, choices=[0, 1, 2], default=None, help="Only return memories at or above this tier (0=pinned, 1=default, 2=ambient)")
     r.add_argument("--max-tier", type=int, choices=[0, 1, 2], default=None, help="Only return memories at or below this tier")
+    r.add_argument("--json", dest="json_out", action="store_true", help="Output results as JSON array")
     r.add_argument("--path", default="~/.mnemonics")
 
     # bm25 (pure keyword search)
@@ -58,6 +59,7 @@ def main() -> None:
     bm.add_argument("--top-k", type=int, default=5)
     bm.add_argument("--min-tier", type=int, choices=[0, 1, 2], default=None, help="Only return memories at or above this tier")
     bm.add_argument("--max-tier", type=int, choices=[0, 1, 2], default=None, help="Only return memories at or below this tier")
+    bm.add_argument("--json", dest="json_out", action="store_true", help="Output results as JSON array")
     bm.add_argument("--path", default="~/.mnemonics")
 
     # stats
@@ -311,27 +313,32 @@ def main() -> None:
             min_tier=args.min_tier,
             max_tier=args.max_tier,
         )
-        for r in result["results"]:
-            tier_label = {0: "pin", 1: "def", 2: "amb"}.get(r["tier"], "?")
-            header = (
-                f"  [{r['score']:.3f}] "
-                f"[id={r['id']} raw={r['raw_score']:.3f} decay={r['decay_factor']:.2f} "
-                f"boost={r['boost']:.2f} age={r['age_days']:.0f}d "
-                f"tier={tier_label}]"
-            )
-            summary = r.get("summary")
-            if summary:
-                print(f"{header} {summary[:120]}")
-                print(f"      └─ raw: {r['text'][:120]}")
-            else:
-                print(f"{header} {r['text'][:120]}")
+        if args.json_out:
+            print(json.dumps(result["results"], default=str, ensure_ascii=False))
+        else:
+            for r in result["results"]:
+                tier_label = {0: "pin", 1: "def", 2: "amb"}.get(r["tier"], "?")
+                header = (
+                    f"  [{r['score']:.3f}] "
+                    f"[id={r['id']} raw={r['raw_score']:.3f} decay={r['decay_factor']:.2f} "
+                    f"boost={r['boost']:.2f} age={r['age_days']:.0f}d "
+                    f"tier={tier_label}]"
+                )
+                summary = r.get("summary")
+                if summary:
+                    print(f"{header} {summary[:120]}")
+                    print(f"      └─ raw: {r['text'][:120]}")
+                else:
+                    print(f"{header} {r['text'][:120]}")
 
     elif args.cmd == "bm25":
         from mnemonics.store import Store
         store = Store(args.path)
         hits = store.search_bm25(args.query, ns=args.ns, top_k=args.top_k,
                                    min_tier=args.min_tier, max_tier=args.max_tier)
-        if not hits:
+        if args.json_out:
+            print(json.dumps(hits, default=str, ensure_ascii=False))
+        elif not hits:
             print(f"No BM25 results for {args.query!r} in ns={args.ns!r}")
         else:
             tier_label = {0: "pin", 1: "def", 2: "amb"}
