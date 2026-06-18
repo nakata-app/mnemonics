@@ -270,6 +270,31 @@ def test_health_check_orphan_index(tmp_path):
     assert "orphan-ns" in orphan_ns
 
 
+def test_gc_tier1_targets_default_tier(tmp_path):
+    vecs = make_vecs(3)
+    s = Store(tmp_path)
+    ids = s.add(["ambient", "default-old", "default-new"], vecs, ns="test-ns")
+    s.set_tier(ids[0], 2)   # tier-2: gc target
+    s.set_tier(ids[1], 1)   # tier-1: gc target with --tier 1
+    s.set_tier(ids[2], 1)   # tier-1: too recent (age_days=0 means >0 days, these are just created)
+
+    # Standard gc (tier=2) only gets the ambient row
+    cands_t2 = s.gc_candidates(tier=2, age_days=0)
+    assert len(cands_t2) == 1
+    assert cands_t2[0]["id"] == ids[0]
+
+    # gc with tier=1 gets the two default rows
+    cands_t1 = s.gc_candidates(tier=1, age_days=0)
+    assert len(cands_t1) == 2
+    assert {c["id"] for c in cands_t1} == {ids[1], ids[2]}
+
+
+def test_gc_tier1_invalid_tier_raises(tmp_store):
+    import pytest as _pytest
+    with _pytest.raises(ValueError, match="tier must be"):
+        tmp_store.gc_candidates(tier=0)
+
+
 # ── namespaces ───────────────────────────────────────────────────────────────
 
 def test_list_namespaces_empty(tmp_store):

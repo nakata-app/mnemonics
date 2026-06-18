@@ -63,6 +63,7 @@ def main() -> None:
     gc = sub.add_parser("gc", help="Garbage-collect ambient (tier 2) memories never accessed and older than N days")
     gc.add_argument("--ns", default=None, help="Limit GC to one namespace (default: all)")
     gc.add_argument("--age-days", type=int, default=30, help="Minimum age before a row is eligible (default: 30)")
+    gc.add_argument("--tier", type=int, choices=[1, 2], default=2, help="Tier to GC: 2=ambient (default), 1=default")
     gc.add_argument("--apply", action="store_true", help="Actually delete (default: dry-run, list only)")
     gc.add_argument("--path", default="~/.mnemonics")
 
@@ -250,16 +251,17 @@ def main() -> None:
     elif args.cmd == "gc":
         from mnemonics.store import Store
         store = Store(args.path)
-        candidates = store.gc_candidates(ns=args.ns, age_days=args.age_days)
+        candidates = store.gc_candidates(ns=args.ns, age_days=args.age_days, tier=args.tier)
+        tier_desc = "ambient (never accessed)" if args.tier == 2 else "default"
         if not candidates:
-            print(f"Nothing to GC (tier=2 + age>{args.age_days}d + access_count=0).")
+            print(f"Nothing to GC (tier={args.tier}/{tier_desc} + age>{args.age_days}d).")
             sys.exit(0)
         for c in candidates[:50]:
             print(f"  id={c['id']:>5} ns={c['ns']:<12} age={c['age_days']}d  {c['preview']}")
         if len(candidates) > 50:
             print(f"  ... and {len(candidates) - 50} more")
         if args.apply:
-            n = store.gc(ns=args.ns, age_days=args.age_days)
+            n = store.gc(ns=args.ns, age_days=args.age_days, tier=args.tier)
             print(f"\nDeleted: {n} row(s).")
         else:
             print(f"\nDry-run, {len(candidates)} candidate(s). Re-run with --apply to delete.")
