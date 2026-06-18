@@ -42,6 +42,8 @@ def main() -> None:
     r.add_argument("--no-hybrid", dest="hybrid", action="store_false", default=True, help="Disable hybrid; fall back to vector-only retrieval")
     r.add_argument("--candidate-k", type=int, default=50, help="Per-channel candidate pool size for hybrid (default 50)")
     r.add_argument("--rerank", action="store_true", help="Cross-encoder rerank via AdaptMem over the widened candidate band (requires adaptmem)")
+    r.add_argument("--min-tier", type=int, choices=[0, 1, 2], default=None, help="Only return memories at or above this tier (0=pinned, 1=default, 2=ambient)")
+    r.add_argument("--max-tier", type=int, choices=[0, 1, 2], default=None, help="Only return memories at or below this tier")
     r.add_argument("--path", default="~/.mnemonics")
 
     # bm25 (pure keyword search)
@@ -49,6 +51,8 @@ def main() -> None:
     bm.add_argument("query")
     bm.add_argument("--ns", default="default")
     bm.add_argument("--top-k", type=int, default=5)
+    bm.add_argument("--min-tier", type=int, choices=[0, 1, 2], default=None, help="Only return memories at or above this tier")
+    bm.add_argument("--max-tier", type=int, choices=[0, 1, 2], default=None, help="Only return memories at or below this tier")
     bm.add_argument("--path", default="~/.mnemonics")
 
     # stats
@@ -273,6 +277,8 @@ def main() -> None:
             hybrid=args.hybrid,
             candidate_k=args.candidate_k,
             rerank=args.rerank,
+            min_tier=args.min_tier,
+            max_tier=args.max_tier,
         )
         for r in result["results"]:
             tier_label = {0: "pin", 1: "def", 2: "amb"}.get(r["tier"], "?")
@@ -292,7 +298,8 @@ def main() -> None:
     elif args.cmd == "bm25":
         from mnemonics.store import Store
         store = Store(args.path)
-        hits = store.search_bm25(args.query, ns=args.ns, top_k=args.top_k)
+        hits = store.search_bm25(args.query, ns=args.ns, top_k=args.top_k,
+                                   min_tier=args.min_tier, max_tier=args.max_tier)
         if not hits:
             print(f"No BM25 results for {args.query!r} in ns={args.ns!r}")
         else:

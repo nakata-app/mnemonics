@@ -1384,3 +1384,40 @@ def test_cli_update_meta_non_object_json(tmp_path, capsys):
         with pytest.raises(SystemExit) as exc:
             main()
     assert exc.value.code == 2
+
+
+# ── retrieve min_tier/max_tier ────────────────────────────────────────────────
+
+def test_cli_retrieve_tier_filters_passed(tmp_path):
+    """retrieve --min-tier / --max-tier are forwarded to retrieve()."""
+    from unittest.mock import patch, MagicMock
+    mock_result = {"results": []}
+    with (
+        patch("mnemonics.store.Store"),
+        patch("mnemonics.retrieve.retrieve", return_value=mock_result) as mock_ret,
+        patch("sys.argv", ["mnemonics", "retrieve", "hello",
+                           "--min-tier", "1", "--max-tier", "2",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    call_kwargs = mock_ret.call_args[1]
+    assert call_kwargs["min_tier"] == 1
+    assert call_kwargs["max_tier"] == 2
+
+
+# ── bm25 min_tier/max_tier ────────────────────────────────────────────────────
+
+def test_cli_bm25_tier_filters_passed(tmp_path):
+    """bm25 --min-tier / --max-tier are forwarded to search_bm25()."""
+    mock_store = MagicMock()
+    mock_store.search_bm25.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "bm25", "hello",
+                           "--min-tier", "0", "--max-tier", "1",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    call_kwargs = mock_store.search_bm25.call_args[1]
+    assert call_kwargs["min_tier"] == 0
+    assert call_kwargs["max_tier"] == 1
