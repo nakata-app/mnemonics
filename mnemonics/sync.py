@@ -99,7 +99,7 @@ def _read_manifest(archive: Path) -> dict[str, Any]:
     with tarfile.open(archive, "r:gz") as tf:
         member = tf.getmember(_MANIFEST_NAME)
         f = tf.extractfile(member)
-        if f is None:
+        if f is None:  # pragma: no cover
             raise ValueError(f"manifest unreadable in {archive}")
         return json.loads(f.read().decode("utf-8"))
 

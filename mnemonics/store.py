@@ -16,10 +16,10 @@ from mnemonics import crypto
 # Swap in sqlcipher3 only when the caller has opted into encryption. Keeping
 # the stdlib path as default means existing plain-text DBs and the 155-test
 # suite are untouched; opt-in is an explicit env-var flip.
-if crypto.encryption_requested():
+if crypto.encryption_requested():  # pragma: no cover
     try:
         import sqlcipher3 as sqlite3  # type: ignore[no-redef]
-    except ImportError as _e:  # pragma: no cover — install-time concern
+    except ImportError as _e:
         raise RuntimeError(
             "MNEMONICS_ENCRYPT=1 is set but sqlcipher3 is not installed. "
             "Install with `pip install mnemonics[encrypt]` or set the env "
