@@ -440,6 +440,32 @@ def test_mcp_forget(populated_store):
     assert "True" in text or "False" in text
 
 
+def test_mcp_health(tmp_store):
+    resp = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 20,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_health", "arguments": {}},
+    })
+    import json as _json
+    text = resp[0]["result"]["content"][0]["text"]
+    report = _json.loads(text)
+    assert "db_integrity" in report
+    assert "namespaces" in report
+    assert report["db_integrity"] == "ok"
+
+
+def test_mcp_gc_with_tier(populated_store):
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 21,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_gc", "arguments": {"tier": 1, "age_days": 0, "dry_run": True}},
+    })
+    text = resp[0]["result"]["content"][0]["text"]
+    assert "tier=1" in text
+    assert "candidate(s)" in text
+
+
 def test_mcp_unknown_tool(tmp_store):
     resp = _mcp(tmp_store, {
         "jsonrpc": "2.0", "id": 6,
