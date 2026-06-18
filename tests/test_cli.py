@@ -1421,3 +1421,52 @@ def test_cli_bm25_tier_filters_passed(tmp_path):
     call_kwargs = mock_store.search_bm25.call_args[1]
     assert call_kwargs["min_tier"] == 0
     assert call_kwargs["max_tier"] == 1
+
+
+# ── count ─────────────────────────────────────────────────────────────────────
+
+def test_cli_count_all(tmp_path, capsys):
+    """count --ns=None reports total across all namespaces."""
+    mock_store = MagicMock()
+    mock_store.count.return_value = 42
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "count", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "42" in out
+    assert "all namespaces" in out
+    mock_store.count.assert_called_once_with(ns=None)
+
+
+def test_cli_count_ns(tmp_path, capsys):
+    """count --ns=foo reports count for that namespace."""
+    mock_store = MagicMock()
+    mock_store.count.return_value = 7
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "count", "--ns", "foo", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "7" in out
+    assert "foo" in out
+    mock_store.count.assert_called_once_with(ns="foo")
+
+
+# ── set-tier-many ─────────────────────────────────────────────────────────────
+
+def test_cli_set_tier_many(tmp_path, capsys):
+    """set-tier-many updates rows and reports count."""
+    mock_store = MagicMock()
+    mock_store.update_tier_many.return_value = 3
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "set-tier-many", "0", "1", "2", "3", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "Updated 3 of 3" in out
+    assert "pinned" in out
+    mock_store.update_tier_many.assert_called_once_with([1, 2, 3], 0)

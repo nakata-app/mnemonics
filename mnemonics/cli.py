@@ -97,6 +97,17 @@ def main() -> None:
     ft.add_argument("--apply", action="store_true", help="Actually delete (default: dry-run)")
     ft.add_argument("--path", default="~/.mnemonics")
 
+    # count
+    cn = sub.add_parser("count", help="Count memories in a namespace (or all namespaces)")
+    cn.add_argument("--ns", default=None, help="Namespace to count (default: all namespaces)")
+    cn.add_argument("--path", default="~/.mnemonics")
+
+    # set-tier-many
+    stm = sub.add_parser("set-tier-many", help="Set tier for multiple memories by ID")
+    stm.add_argument("level", type=int, choices=[0, 1, 2], help="Target tier: 0=pinned, 1=default, 2=ambient")
+    stm.add_argument("ids", type=int, nargs="+", metavar="ID")
+    stm.add_argument("--path", default="~/.mnemonics")
+
     # get
     gt = sub.add_parser("get", help="Fetch a single memory by ID")
     gt.add_argument("memory_id", type=int)
@@ -311,6 +322,20 @@ def main() -> None:
                 print(line)
                 if r.get("summary"):
                     print(f"           summary: {r['summary']}")
+
+    elif args.cmd == "count":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        n = store.count(ns=args.ns)
+        label = f"ns={args.ns!r}" if args.ns is not None else "all namespaces"
+        print(f"{n} memories ({label})")
+
+    elif args.cmd == "set-tier-many":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        n = store.update_tier_many(args.ids, args.level)
+        label = {0: "pinned", 1: "default", 2: "ambient"}[args.level]
+        print(f"Updated {n} of {len(args.ids)} ID(s) to tier {args.level} ({label}).")
 
     elif args.cmd == "get":
         from mnemonics.store import Store
