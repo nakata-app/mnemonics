@@ -3439,3 +3439,98 @@ def test_cli_bulk_delete_ok(tmp_path, capsys):
         main()
     mock_store.bulk_delete.assert_called_once_with([1, 2])
     assert "2" in capsys.readouterr().out
+
+
+# ── filter-by-meta CLI ────────────────────────────────────────────────────────
+
+def test_cli_filter_by_meta_ok(tmp_path, capsys):
+    """filter-by-meta prints matching memory count."""
+    mock_store = MagicMock()
+    mock_store.filter_by_meta.return_value = [
+        {"id": 1, "text": "hello", "ns": "default", "summary": None,
+         "tier": 1, "created": "2026-01-01", "meta": {"kind": "note"}},
+    ]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "filter-by-meta", "kind", "note",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.filter_by_meta.assert_called_once_with("kind", "note", ns="default", limit=100)
+    out = capsys.readouterr().out
+    assert "1" in out
+
+
+def test_cli_filter_by_meta_json(tmp_path, capsys):
+    """filter-by-meta --json prints JSON array."""
+    mock_store = MagicMock()
+    mock_store.filter_by_meta.return_value = [
+        {"id": 2, "text": "world", "ns": "default", "summary": None,
+         "tier": 1, "created": "2026-01-01", "meta": {}},
+    ]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "filter-by-meta", "x", "1",
+                           "--json", "--path", str(tmp_path)]),
+    ):
+        main()
+    parsed = json.loads(capsys.readouterr().out)
+    assert parsed[0]["id"] == 2
+
+
+def test_cli_filter_by_meta_bool(tmp_path, capsys):
+    """filter-by-meta converts 'true'/'false' to Python bool."""
+    mock_store = MagicMock()
+    mock_store.filter_by_meta.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "filter-by-meta", "active", "true",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.filter_by_meta.assert_called_once_with("active", True, ns="default", limit=100)
+
+
+# ── summary-stats CLI ─────────────────────────────────────────────────────────
+
+def test_cli_summary_stats_ok(tmp_path, capsys):
+    """summary-stats prints coverage info."""
+    mock_store = MagicMock()
+    mock_store.summary_stats.return_value = {
+        "total": 10, "with_summary": 7, "without_summary": 3, "pct_with_summary": 70.0,
+    }
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "summary-stats", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "70" in out
+
+
+def test_cli_summary_stats_json(tmp_path, capsys):
+    """summary-stats --json outputs raw JSON."""
+    mock_store = MagicMock()
+    mock_store.summary_stats.return_value = {
+        "total": 3, "with_summary": 1, "without_summary": 2, "pct_with_summary": 33.33,
+    }
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "summary-stats", "--json", "--path", str(tmp_path)]),
+    ):
+        main()
+    parsed = json.loads(capsys.readouterr().out)
+    assert parsed["total"] == 3
+
+
+def test_cli_filter_by_meta_false(tmp_path, capsys):
+    """filter-by-meta converts 'false' to Python False."""
+    mock_store = MagicMock()
+    mock_store.filter_by_meta.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "filter-by-meta", "active", "false",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.filter_by_meta.assert_called_once_with("active", False, ns="default", limit=100)

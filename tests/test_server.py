@@ -649,6 +649,8 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_rename_ns",
         "mnemonics_merge_ns",
         "mnemonics_bulk_delete",
+        "mnemonics_filter_by_meta",
+        "mnemonics_summary_stats",
     }
 
 
@@ -4276,3 +4278,82 @@ def test_mcp_bulk_delete_missing_arg(tmp_store):
         "params": {"name": "mnemonics_bulk_delete", "arguments": {}},
     })[0]
     assert "error" in r
+
+
+# ── filter-by-meta / summary-stats REST + MCP ─────────────────────────────────
+
+def test_http_filter_by_meta_ok(tmp_store):
+    """GET /filter-by-meta returns matching memories."""
+    import numpy as np
+    vecs = np.random.rand(3, 384).astype(np.float32)
+    tmp_store.add(["a", "b", "c"], vecs, ns="default",
+                  meta=[{"kind": "note"}, {"kind": "note"}, {"kind": "other"}])
+    code, data = http_call(tmp_store, "GET", "/filter-by-meta?key=kind&value=note&ns=default", {})
+    assert code == 200
+    assert data["count"] == 2
+
+
+def test_http_filter_by_meta_missing_params(tmp_store):
+    """GET /filter-by-meta without params returns 400."""
+    code, data = http_call(tmp_store, "GET", "/filter-by-meta?key=x", {})
+    assert code == 400
+
+
+def test_http_summary_stats_ok(populated_store):
+    """GET /summary-stats returns coverage keys."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/summary-stats?ns=default", {})
+    assert code == 200
+    assert "total" in data
+
+
+def test_http_summary_stats_all_ns(populated_store):
+    """GET /summary-stats without ns spans all namespaces."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/summary-stats", {})
+    assert code == 200
+    assert data["total"] >= len(docs)
+
+
+def test_mcp_filter_by_meta_ok(tmp_store):
+    """MCP mnemonics_filter_by_meta returns matches."""
+    import numpy as np
+    v = np.random.rand(2, 384).astype(np.float32)
+    tmp_store.add(["x", "y"], v, ns="default", meta=[{"t": "a"}, {"t": "b"}])
+    r = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_filter_by_meta",
+                   "arguments": {"key": "t", "value": "a", "ns": "default"}},
+    })[0]
+    assert "result" in r
+    assert "1" in r["result"]["content"][0]["text"]
+
+
+def test_mcp_filter_by_meta_missing_args(tmp_store):
+    """MCP mnemonics_filter_by_meta without key returns error."""
+    r = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_filter_by_meta", "arguments": {"key": "x"}},
+    })[0]
+    assert "error" in r
+
+
+def test_mcp_summary_stats_ok(populated_store):
+    """MCP mnemonics_summary_stats returns coverage stats."""
+    store, docs, vecs = populated_store
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_summary_stats", "arguments": {"ns": "default"}},
+    })[0]
+    assert "result" in r
+    assert "total" in r["result"]["content"][0]["text"]
+
+
+def test_mcp_summary_stats_all_ns(populated_store):
+    """MCP mnemonics_summary_stats without ns spans all namespaces."""
+    store, docs, vecs = populated_store
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_summary_stats", "arguments": {}},
+    })[0]
+    assert "result" in r

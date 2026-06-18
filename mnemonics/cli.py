@@ -80,6 +80,23 @@ def main() -> None:
     ts.add_argument("--json", dest="json_out", action="store_true", help="Output results as JSON array")
     ts.add_argument("--path", default="~/.mnemonics")
 
+    # filter-by-meta
+    fbm = sub.add_parser("filter-by-meta", help="Find memories where meta[key]==value")
+    fbm.add_argument("key", help="Top-level meta key")
+    fbm.add_argument("value", help="Value to match (strings, booleans 'true'/'false', or numbers)")
+    fbm.add_argument("--ns", default="default")
+    fbm.add_argument("--all-ns", action="store_true")
+    fbm.add_argument("--limit", type=int, default=100)
+    fbm.add_argument("--json", action="store_true", dest="as_json")
+    fbm.add_argument("--path", default="~/.mnemonics")
+
+    # summary-stats
+    sst = sub.add_parser("summary-stats", help="Show summary-field coverage stats for a namespace")
+    sst.add_argument("--ns", default="default")
+    sst.add_argument("--all-ns", action="store_true")
+    sst.add_argument("--json", action="store_true", dest="as_json")
+    sst.add_argument("--path", default="~/.mnemonics")
+
     # bulk-delete
     bdk = sub.add_parser("bulk-delete", help="Delete multiple memories by ID")
     bdk.add_argument("ids", nargs="+", type=int, help="Memory IDs to delete")
@@ -639,6 +656,47 @@ def main() -> None:
                 print(line)
                 if r.get("summary"):
                     print(f"           summary: {r['summary']}")
+
+    elif args.cmd == "filter-by-meta":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        ns_q = None if args.all_ns else args.ns
+        # Parse value: try float, then int, then bool, then string
+        raw_val = args.value
+        val: object
+        if raw_val.lower() == "true":
+            val = True
+        elif raw_val.lower() == "false":
+            val = False
+        else:
+            try:
+                val = int(raw_val)
+            except ValueError:
+                try:
+                    val = float(raw_val)
+                except ValueError:
+                    val = raw_val
+        hits = store.filter_by_meta(args.key, val, ns=ns_q, limit=args.limit)
+        if args.as_json:
+            print(json.dumps(hits, default=str, ensure_ascii=False))
+        else:
+            ns_label = repr(ns_q) if ns_q is not None else "(all)"
+            print(f"Found {len(hits)} memories where meta.{args.key} == {val!r} in ns={ns_label}:")
+            for r in hits:
+                print(f"  [{r['id']}] {r['text'][:80]}")
+
+    elif args.cmd == "summary-stats":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        ns_q = None if args.all_ns else args.ns
+        stats = store.summary_stats(ns_q)
+        if args.as_json:
+            print(json.dumps(stats))
+        else:
+            ns_label = repr(ns_q) if ns_q is not None else "(all)"
+            print(f"Summary coverage for ns={ns_label}:")
+            for k, v in stats.items():
+                print(f"  {k:<22}: {v}")
 
     elif args.cmd == "bulk-delete":
         from mnemonics.store import Store

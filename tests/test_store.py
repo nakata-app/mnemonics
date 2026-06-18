@@ -3098,3 +3098,77 @@ def test_bulk_delete_mark_deleted_exception_swallowed(populated_store):
     with patch.object(store, "_index_for", return_value=mock_idx):
         n = store.bulk_delete(ids_to_del)
     assert n == 1
+
+
+# ── filter_by_meta ────────────────────────────────────────────────────────────
+
+def test_filter_by_meta_finds_match(tmp_store):
+    """filter_by_meta returns memories where meta[key]==value."""
+    import numpy as np, json as _j
+    vecs = np.random.rand(3, 384).astype(np.float32)
+    tmp_store.add(["alpha", "beta", "gamma"], vecs, ns="default",
+                  meta=[{"kind": "note"}, {"kind": "note"}, {"kind": "other"}])
+    hits = tmp_store.filter_by_meta("kind", "note", ns="default")
+    assert len(hits) == 2
+    for h in hits:
+        assert h["meta"]["kind"] == "note"
+
+
+def test_filter_by_meta_no_match(tmp_store):
+    """filter_by_meta returns empty list when nothing matches."""
+    import numpy as np
+    vecs = np.random.rand(2, 384).astype(np.float32)
+    tmp_store.add(["a", "b"], vecs, ns="default", meta=[{"kind": "x"}, {"kind": "y"}])
+    hits = tmp_store.filter_by_meta("kind", "z", ns="default")
+    assert hits == []
+
+
+def test_filter_by_meta_all_ns(tmp_store):
+    """filter_by_meta ns=None spans all namespaces."""
+    import numpy as np
+    v1 = np.random.rand(1, 384).astype(np.float32)
+    v2 = np.random.rand(1, 384).astype(np.float32)
+    tmp_store.add(["ns1 mem"], v1, ns="ns1", meta=[{"tag": "match"}])
+    tmp_store.add(["ns2 mem"], v2, ns="ns2", meta=[{"tag": "match"}])
+    hits = tmp_store.filter_by_meta("tag", "match", ns=None)
+    assert len(hits) == 2
+
+
+def test_filter_by_meta_limit(tmp_store):
+    """filter_by_meta respects limit."""
+    import numpy as np
+    vecs = np.random.rand(5, 384).astype(np.float32)
+    tmp_store.add([f"doc {i}" for i in range(5)], vecs, ns="default",
+                  meta=[{"x": 1}] * 5)
+    hits = tmp_store.filter_by_meta("x", 1, ns="default", limit=2)
+    assert len(hits) == 2
+
+
+# ── summary_stats ─────────────────────────────────────────────────────────────
+
+def test_summary_stats_keys(populated_store):
+    """summary_stats returns all expected keys."""
+    store, docs, vecs = populated_store
+    stats = store.summary_stats("default")
+    assert {"total", "with_summary", "without_summary", "pct_with_summary"} == set(stats.keys())
+
+
+def test_summary_stats_totals(populated_store):
+    """summary_stats total == with + without."""
+    store, docs, vecs = populated_store
+    stats = store.summary_stats("default")
+    assert stats["total"] == stats["with_summary"] + stats["without_summary"]
+
+
+def test_summary_stats_all_ns(populated_store):
+    """summary_stats ns=None spans all namespaces."""
+    store, docs, vecs = populated_store
+    stats = store.summary_stats(None)
+    assert stats["total"] >= len(docs)
+
+
+def test_summary_stats_empty_ns(tmp_store):
+    """summary_stats returns zeroed stats for empty namespace."""
+    stats = tmp_store.summary_stats("ghost")
+    assert stats["total"] == 0
+    assert stats["pct_with_summary"] == 0.0

@@ -769,6 +769,78 @@ class Store:
             self._db.commit()
         return cur.rowcount
 
+    def filter_by_meta(
+        self,
+        key: str,
+        value: object,
+        ns: str | None = "default",
+        limit: int = 100,
+    ) -> list[dict]:
+        """Return memories whose ``meta[key] == value``.
+
+        Uses SQLite's ``json_extract`` so no Python-side JSON parsing is
+        needed per row.  *ns=None* spans all namespaces.  Returns at most
+        *limit* results ordered by ``created DESC``.  Each result dict
+        contains ``id``, ``ns``, ``text``, ``summary``, ``tier``,
+        ``created``, and ``meta`` (as parsed dict).
+        """
+        import json as _j_fbm
+
+        json_path = f"$.{key}"
+        if ns is not None:
+            rows = self._db.execute(
+                "SELECT id, ns, text, summary, tier, created, meta "
+                "FROM memories WHERE ns=? AND json_extract(meta, ?) = ? "
+                "ORDER BY created DESC LIMIT ?",
+                (ns, json_path, value, limit),
+            ).fetchall()
+        else:
+            rows = self._db.execute(
+                "SELECT id, ns, text, summary, tier, created, meta "
+                "FROM memories WHERE json_extract(meta, ?) = ? "
+                "ORDER BY created DESC LIMIT ?",
+                (json_path, value, limit),
+            ).fetchall()
+
+        return [
+            {
+                "id": r[0], "ns": r[1], "text": r[2], "summary": r[3],
+                "tier": r[4], "created": r[5],
+                "meta": _j_fbm.loads(r[6]) if r[6] else {},
+            }
+            for r in rows
+        ]
+
+    def summary_stats(self, ns: str | None = "default") -> dict:
+        """Return summary-field coverage statistics for a namespace.
+
+        Keys: ``total``, ``with_summary``, ``without_summary``,
+        ``pct_with_summary`` (float 0-100).  *ns=None* spans all
+        namespaces.
+        """
+        if ns is not None:
+            row = self._db.execute(
+                "SELECT COUNT(*), SUM(CASE WHEN summary IS NOT NULL AND summary != '' THEN 1 ELSE 0 END) "
+                "FROM memories WHERE ns=?",
+                (ns,),
+            ).fetchone()
+        else:
+            row = self._db.execute(
+                "SELECT COUNT(*), SUM(CASE WHEN summary IS NOT NULL AND summary != '' THEN 1 ELSE 0 END) "
+                "FROM memories"
+            ).fetchone()
+
+        total = int(row[0]) if row[0] else 0
+        with_s = int(row[1]) if row[1] else 0
+        without_s = total - with_s
+        pct = round(with_s / total * 100, 2) if total > 0 else 0.0
+        return {
+            "total": total,
+            "with_summary": with_s,
+            "without_summary": without_s,
+            "pct_with_summary": pct,
+        }
+
     def bulk_delete(self, memory_ids: list[int]) -> int:
         """Delete multiple memories by ID in a single transaction.
 

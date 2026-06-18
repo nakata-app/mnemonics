@@ -577,6 +577,25 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(200, _get_store().health_check())
         elif path == "/namespaces":
             self._json(200, {"namespaces": _get_store().list_namespaces()})
+        elif path.startswith("/filter-by-meta"):
+            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_fbm
+            qs_fbm = parse_qs(urlparse(self.path).query)
+            fbm_key = (qs_fbm.get("key") or [None])[0]
+            fbm_val = (qs_fbm.get("value") or [None])[0]
+            if not fbm_key or fbm_val is None:
+                self._json(400, {"error": "'key' and 'value' query params are required"})
+                return
+            fbm_ns_raw = qs_fbm.get("ns", [None])[0]
+            fbm_ns = _uqp_fbm(fbm_ns_raw) if fbm_ns_raw is not None else None
+            fbm_limit = int((qs_fbm.get("limit") or ["100"])[0])
+            fbm_hits = _get_store().filter_by_meta(fbm_key, fbm_val, ns=fbm_ns, limit=fbm_limit)
+            self._json(200, {"count": len(fbm_hits), "results": fbm_hits})
+        elif path.startswith("/summary-stats"):
+            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_sst
+            qs_sst = parse_qs(urlparse(self.path).query)
+            ns_sst_raw = qs_sst.get("ns", [None])[0]
+            ns_sst = _uqp_sst(ns_sst_raw) if ns_sst_raw is not None else None
+            self._json(200, _get_store().summary_stats(ns_sst))
         elif path.startswith("/text-stats"):
             from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_ts
             qs_ts = parse_qs(urlparse(self.path).query)
@@ -991,6 +1010,30 @@ def _mcp_loop() -> None:
                             "max_tier": {"type": "integer", "description": "Only return memories with tier <= this value"},
                         },
                         "required": ["query", "vector"],
+                    },
+                },
+                {
+                    "name": "mnemonics_filter_by_meta",
+                    "description": "Return memories where meta[key] == value using SQLite json_extract. Optional ns (omit for all). Returns id, ns, text, summary, tier, created, meta per result.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "key": {"type": "string", "description": "Top-level key in the meta JSON object"},
+                            "value": {"description": "Value to match (string, number, or boolean)"},
+                            "ns": {"type": "string", "description": "Namespace (omit for all)"},
+                            "limit": {"type": "integer", "default": 100},
+                        },
+                        "required": ["key", "value"],
+                    },
+                },
+                {
+                    "name": "mnemonics_summary_stats",
+                    "description": "Return summary-field coverage statistics: total, with_summary, without_summary, pct_with_summary. Omit ns to span all namespaces.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ns": {"type": "string", "description": "Namespace (omit for all)"},
+                        },
                     },
                 },
                 {
@@ -1773,6 +1816,29 @@ def _mcp_loop() -> None:
                         if r.get("summary"):
                             lines_hs.append(f"           summary: {r['summary'][:120]}")
                     ok({"content": [{"type": "text", "text": "\n".join(lines_hs)}]})
+
+            elif name == "mnemonics_filter_by_meta":
+                fbm_key_m = args.get("key", "").strip()
+                fbm_val_m = args.get("value")
+                if not fbm_key_m or fbm_val_m is None:
+                    err("mnemonics_filter_by_meta: 'key' and 'value' are required")
+                    continue
+                fbm_ns_m = args.get("ns")
+                fbm_limit_m = int(args.get("limit", 100))
+                fbm_hits_m = _get_store().filter_by_meta(fbm_key_m, fbm_val_m, ns=fbm_ns_m, limit=fbm_limit_m)
+                import json as _j_mcp_fbm
+                ok({"content": [{"type": "text", "text":
+                    f"Found {len(fbm_hits_m)} memories where meta.{fbm_key_m} == {fbm_val_m!r}.\n" +
+                    _j_mcp_fbm.dumps(fbm_hits_m, default=str, ensure_ascii=False)}]})
+
+            elif name == "mnemonics_summary_stats":
+                sst_ns_m = args.get("ns")
+                sst_stats_m = _get_store().summary_stats(sst_ns_m)
+                sst_label = repr(sst_ns_m) if sst_ns_m is not None else "(all)"
+                lines_sst = [f"Summary coverage for ns={sst_label}:"]
+                for k, v in sst_stats_m.items():
+                    lines_sst.append(f"  {k:<22}: {v}")
+                ok({"content": [{"type": "text", "text": "\n".join(lines_sst)}]})
 
             elif name == "mnemonics_bulk_delete":
                 bd_ids_m = args.get("ids")
