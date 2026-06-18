@@ -588,22 +588,28 @@ class Store:
         for ns, sql_count in sorted(ns_sql.items()):
             idx_path = self.root / f"index_{ns}.bin"
             idx_count: int | None = None
+            max_elements: int | None = None
             if idx_path.exists():
                 try:
                     idx = hnswlib.Index(space="cosine", dim=self.dim)
                     idx.load_index(str(idx_path))
                     idx_count = idx.get_current_count()
+                    max_elements = idx.get_max_elements()
                 except Exception:
                     idx_count = None
             soft_deleted = max(0, (idx_count or 0) - sql_count) if idx_count is not None else 0
             missing_vectors = max(0, sql_count - (idx_count or 0)) if idx_count is not None else 0
+            usage_pct = round(100 * (idx_count or 0) / max_elements, 1) if max_elements else None
             ns_reports.append({
                 "ns": ns,
                 "sql_count": sql_count,
                 "idx_count": idx_count,
+                "max_elements": max_elements,
+                "usage_pct": usage_pct,
                 "soft_deleted": soft_deleted,
                 "missing_vectors": missing_vectors,
                 "idx_missing": idx_count is None,
+                "capacity_warning": usage_pct is not None and usage_pct >= 85.0,
             })
         report["namespaces"] = ns_reports
 

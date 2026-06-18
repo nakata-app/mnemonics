@@ -330,6 +330,9 @@ def main() -> None:
             elif sd > 0:
                 status = f"⚠ {sd} orphan vector(s)"
                 issues += 1
+            elif ns.get("capacity_warning"):
+                status = f"⚠ {ns['usage_pct']}% full — rebuild-index recommended"
+                issues += 1
             else:
                 status = "OK"
             idx_str = str(idx) if idx is not None else "—"

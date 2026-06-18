@@ -321,6 +321,9 @@ def test_health_check_clean_store(tmp_path):
     assert ns_map["alpha"]["sql_count"] == 2
     assert ns_map["alpha"]["idx_count"] == 2
     assert ns_map["alpha"]["soft_deleted"] == 0
+    assert ns_map["alpha"]["max_elements"] is not None
+    assert ns_map["alpha"]["usage_pct"] is not None
+    assert not ns_map["alpha"]["capacity_warning"]
     assert report["orphan_indexes"] == []
 
 
