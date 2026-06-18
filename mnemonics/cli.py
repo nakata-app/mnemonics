@@ -128,6 +128,35 @@ def main() -> None:
     trt_p.add_argument("--path", default="~/.mnemonics")
 
     # search-by-access-count
+    # clone-memory
+    clmem = sub.add_parser("clone-memory", help="Clone a memory to same or different namespace")
+    clmem.add_argument("id", type=int, help="Memory ID to clone")
+    clmem.add_argument("--dst-ns", default=None, dest="dst_ns", help="Destination ns (default: same as source)")
+    clmem.add_argument("--path", default="~/.mnemonics")
+
+    # memories-without-summary
+    mws = sub.add_parser("memories-without-summary", help="List memories with no summary")
+    mws.add_argument("--ns", default="default")
+    mws.add_argument("--all-ns", action="store_true")
+    mws.add_argument("--limit", type=int, default=20)
+    mws.add_argument("--json", action="store_true", dest="as_json")
+    mws.add_argument("--path", default="~/.mnemonics")
+
+    # pin-by-tag
+    pbt_cli = sub.add_parser("pin-by-tag", help="Pin all memories with a given tag (tier=0)")
+    pbt_cli.add_argument("tag", help="Tag to match")
+    pbt_cli.add_argument("--ns", default="default")
+    pbt_cli.add_argument("--all-ns", action="store_true")
+    pbt_cli.add_argument("--path", default="~/.mnemonics")
+
+    # promote-by-access
+    pba_cli = sub.add_parser("promote-by-access", help="Promote top-N memories by access count from one tier to another")
+    pba_cli.add_argument("ns", help="Namespace")
+    pba_cli.add_argument("--n", type=int, default=10, help="Max memories to promote")
+    pba_cli.add_argument("--from-tier", type=int, default=2, dest="from_tier")
+    pba_cli.add_argument("--to-tier", type=int, default=1, dest="to_tier")
+    pba_cli.add_argument("--path", default="~/.mnemonics")
+
     sbac_p = sub.add_parser("search-by-access-count", help="Find memories by access count range")
     sbac_p.add_argument("--min", type=int, default=0, dest="min_count")
     sbac_p.add_argument("--max", type=int, default=None, dest="max_count")
@@ -2115,6 +2144,48 @@ def main() -> None:
                     print(f"[eval] wrote {out_dir / f'{slug}.json'}")
         print()
         print(compare_table(results))
+
+    elif args.cmd == "clone-memory":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        new_id = store.clone_memory(args.id, dst_ns=args.dst_ns if args.dst_ns else None)
+        if new_id is None:
+            print(f"Memory {args.id} not found.")
+        else:
+            print(f"Cloned id={args.id} → new id={new_id} (dst_ns={args.dst_ns!r}).")
+
+    elif args.cmd == "memories-without-summary":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        ns_q = None if args.all_ns else args.ns
+        hits = store.memories_without_summary(ns=ns_q, limit=args.limit)
+        if args.as_json:
+            print(json.dumps(hits, default=str, ensure_ascii=False))
+        else:
+            ns_label = repr(ns_q) if ns_q is not None else "(all)"
+            print(f"Found {len(hits)} memories without summary (ns={ns_label}):")
+            for r in hits:
+                print(f"  [{r['id']}] {r['text'][:80]}")
+
+    elif args.cmd == "pin-by-tag":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        ns_q = None if args.all_ns else args.ns
+        n = store.pin_by_tag(args.tag, ns=ns_q if ns_q is not None else "default")
+        ns_label = repr(ns_q) if ns_q is not None else "(all)"
+        print(f"Pinned {n} memories with tag={args.tag!r} in ns={ns_label}.")
+
+    elif args.cmd == "promote-by-access":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        try:
+            n = store.promote_by_access(
+                args.ns, n=args.n, from_tier=args.from_tier, to_tier=args.to_tier
+            )
+        except ValueError as e:
+            print(f"Error: {e}")
+            return
+        print(f"Promoted {n} memories in ns={args.ns!r} from tier {args.from_tier} → {args.to_tier}.")
 
     else:
         p.print_help()

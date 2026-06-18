@@ -4525,3 +4525,155 @@ def test_cli_set_meta_for_untagged(tmp_path, capsys):
     )
     out = capsys.readouterr().out
     assert "4" in out
+
+
+
+
+# ─── Batch 5: clone-memory, memories-without-summary, pin-by-tag, promote-by-access ───
+
+def test_cli_clone_memory(tmp_path, capsys):
+    """clone-memory clones and prints new id."""
+    mock_store = MagicMock()
+    mock_store.clone_memory.return_value = 99
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "clone-memory", "42", "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.clone_memory.assert_called_once_with(42, dst_ns=None)
+    out = capsys.readouterr().out
+    assert "99" in out
+
+
+def test_cli_clone_memory_with_dst_ns(tmp_path, capsys):
+    """clone-memory passes dst_ns when given."""
+    mock_store = MagicMock()
+    mock_store.clone_memory.return_value = 55
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "clone-memory", "7", "--dst-ns", "archive",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.clone_memory.assert_called_once_with(7, dst_ns="archive")
+    out = capsys.readouterr().out
+    assert "55" in out
+
+
+def test_cli_clone_memory_not_found(tmp_path, capsys):
+    """clone-memory prints 'not found' when store returns None."""
+    mock_store = MagicMock()
+    mock_store.clone_memory.return_value = None
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "clone-memory", "999", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "not found" in out
+
+
+def test_cli_memories_without_summary_text(tmp_path, capsys):
+    """memories-without-summary prints count."""
+    mock_store = MagicMock()
+    mock_store.memories_without_summary.return_value = [
+        {"id": 1, "ns": "default", "text": "hello", "summary": None, "tier": 1, "created": "2024-01-01"}
+    ]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "memories-without-summary", "--ns", "default",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "1" in out
+
+
+def test_cli_memories_without_summary_json(tmp_path, capsys):
+    """memories-without-summary --json outputs JSON."""
+    mock_store = MagicMock()
+    mock_store.memories_without_summary.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "memories-without-summary", "--json",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    import json
+    out = capsys.readouterr().out
+    assert json.loads(out) == []
+
+
+def test_cli_memories_without_summary_all_ns(tmp_path, capsys):
+    """memories-without-summary --all-ns passes ns=None."""
+    mock_store = MagicMock()
+    mock_store.memories_without_summary.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "memories-without-summary", "--all-ns",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.memories_without_summary.assert_called_once()
+    kw = mock_store.memories_without_summary.call_args[1]
+    assert kw["ns"] is None
+
+
+def test_cli_pin_by_tag_text(tmp_path, capsys):
+    """pin-by-tag prints pinned count."""
+    mock_store = MagicMock()
+    mock_store.pin_by_tag.return_value = 3
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "pin-by-tag", "urgent", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "3" in out
+
+
+def test_cli_pin_by_tag_all_ns(tmp_path, capsys):
+    """pin-by-tag --all-ns passes ns=None to pin_by_tag."""
+    mock_store = MagicMock()
+    mock_store.pin_by_tag.return_value = 2
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "pin-by-tag", "vip", "--all-ns",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    kw = mock_store.pin_by_tag.call_args
+    assert kw[0][0] == "vip"
+
+
+def test_cli_promote_by_access_text(tmp_path, capsys):
+    """promote-by-access prints promoted count."""
+    mock_store = MagicMock()
+    mock_store.promote_by_access.return_value = 5
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "promote-by-access", "default",
+                           "--n", "10", "--from-tier", "2", "--to-tier", "1",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.promote_by_access.assert_called_once_with(
+        "default", n=10, from_tier=2, to_tier=1
+    )
+    out = capsys.readouterr().out
+    assert "5" in out
+
+
+def test_cli_promote_by_access_bad_tier(tmp_path, capsys):
+    """promote-by-access prints error on ValueError."""
+    mock_store = MagicMock()
+    mock_store.promote_by_access.side_effect = ValueError("bad tier")
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "promote-by-access", "default",
+                           "--from-tier", "9", "--to-tier", "1",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "error" in out.lower() or "bad tier" in out.lower()

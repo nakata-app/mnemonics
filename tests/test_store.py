@@ -4087,3 +4087,121 @@ def test_set_meta_for_untagged_with_broken_meta(tmp_store):
     tmp_store._db.commit()
     n = tmp_store.set_meta_for_untagged("default", "k", "v")
     assert n == 1
+
+
+# ─── Batch 5: clone_memory, memories_without_summary, pin_by_tag, promote_by_access ───
+
+def test_clone_memory_same_ns(tmp_store):
+    import numpy as np
+    vecs = np.zeros((1, 384), dtype=np.float32)
+    ids = tmp_store.add(["clone target"], vecs, ns="default")
+    new_id = tmp_store.clone_memory(ids[0])
+    assert new_id is not None
+    assert new_id != ids[0]
+    row = tmp_store.get(new_id)
+    assert row["text"] == "clone target"
+    assert row["ns"] == "default"
+
+
+def test_clone_memory_dst_ns(tmp_store):
+    import numpy as np
+    vecs = np.zeros((1, 384), dtype=np.float32)
+    ids = tmp_store.add(["clone dst"], vecs, ns="default")
+    new_id = tmp_store.clone_memory(ids[0], dst_ns="archive")
+    assert new_id is not None
+    row = tmp_store.get(new_id)
+    assert row["ns"] == "archive"
+
+
+def test_clone_memory_preserves_tier(tmp_store):
+    import numpy as np
+    vecs = np.zeros((1, 384), dtype=np.float32)
+    ids = tmp_store.add(["pinned"], vecs, ns="default")
+    tmp_store.set_tier(ids[0], 0)
+    new_id = tmp_store.clone_memory(ids[0])
+    assert new_id is not None
+    row = tmp_store.get(new_id)
+    assert row["tier"] == 0
+
+
+def test_clone_memory_not_found(tmp_store):
+    result = tmp_store.clone_memory(999999)
+    assert result is None
+
+
+def test_memories_without_summary(tmp_store):
+    import numpy as np
+    vecs = np.zeros((2, 384), dtype=np.float32)
+    ids = tmp_store.add(["has summary", "no summary"], vecs, ns="default",
+                        summaries=["s", None])
+    hits = tmp_store.memories_without_summary(ns="default")
+    hit_ids = [h["id"] for h in hits]
+    assert ids[1] in hit_ids
+    assert ids[0] not in hit_ids
+
+
+def test_memories_without_summary_all_ns(tmp_store):
+    import numpy as np
+    vecs = np.zeros((1, 384), dtype=np.float32)
+    tmp_store.add(["x"], vecs, ns="ns1")
+    hits = tmp_store.memories_without_summary(ns=None, limit=100)
+    assert len(hits) >= 1
+
+
+def test_memories_without_summary_limit(tmp_store):
+    import numpy as np
+    vecs = np.zeros((5, 384), dtype=np.float32)
+    tmp_store.add(["a", "b", "c", "d", "e"], vecs, ns="default")
+    hits = tmp_store.memories_without_summary(ns="default", limit=2)
+    assert len(hits) <= 2
+
+
+def test_pin_by_tag(tmp_store):
+    import numpy as np
+    vecs = np.zeros((2, 384), dtype=np.float32)
+    ids = tmp_store.add(["x", "y"], vecs, ns="default")
+    tmp_store.tag(ids[0], "urgent")
+    tmp_store.tag(ids[1], "other")
+    n = tmp_store.pin_by_tag("urgent", ns="default")
+    assert n == 1
+    assert tmp_store.get(ids[0])["tier"] == 0
+    assert tmp_store.get(ids[1])["tier"] == 1
+
+
+def test_pin_by_tag_all_ns(tmp_store):
+    import numpy as np
+    vecs = np.zeros((2, 384), dtype=np.float32)
+    ids_a = tmp_store.add(["a"], np.zeros((1, 384), dtype=np.float32), ns="ns1")
+    ids_b = tmp_store.add(["b"], np.zeros((1, 384), dtype=np.float32), ns="ns2")
+    tmp_store.tag(ids_a[0], "vip")
+    tmp_store.tag(ids_b[0], "vip")
+    n = tmp_store.pin_by_tag("vip", ns=None)
+    assert n == 2
+
+
+def test_promote_by_access_basic(tmp_store):
+    import numpy as np
+    vecs = np.zeros((3, 384), dtype=np.float32)
+    ids = tmp_store.add(["a", "b", "c"], vecs, ns="default", tier=2)
+    # Give the first one high access count
+    tmp_store._db.execute("UPDATE memories SET access_count=10 WHERE id=?", (ids[0],))
+    tmp_store._db.commit()
+    n = tmp_store.promote_by_access("default", n=1, from_tier=2, to_tier=1)
+    assert n == 1
+    assert tmp_store.get(ids[0])["tier"] == 1
+
+
+def test_promote_by_access_same_tier_returns_zero(tmp_store):
+    n = tmp_store.promote_by_access("default", from_tier=1, to_tier=1)
+    assert n == 0
+
+
+def test_promote_by_access_bad_tier(tmp_store):
+    import pytest
+    with pytest.raises(ValueError):
+        tmp_store.promote_by_access("default", from_tier=5, to_tier=0)
+
+
+def test_promote_by_access_empty_ns(tmp_store):
+    n = tmp_store.promote_by_access("nonexistent", n=5, from_tier=2, to_tier=1)
+    assert n == 0

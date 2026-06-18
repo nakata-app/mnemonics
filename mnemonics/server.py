@@ -262,6 +262,29 @@ class _Handler(BaseHTTPRequestHandler):
             n_mtn = _get_store().move_to_ns([int(i) for i in mtn_ids], mtn_ns)
             self._json(200, {"moved": n_mtn, "target_ns": mtn_ns})
 
+        elif self.path == "/clone-memory":
+            clm_id = body.get("id")
+            if clm_id is None:
+                self._json(400, {"error": "'id' (int) is required"})
+                return
+            clm_ns = body.get("dst_ns")
+            new_clm_id = _get_store().clone_memory(int(clm_id), dst_ns=clm_ns)
+            if new_clm_id is None:
+                self._json(404, {"error": f"Memory {clm_id} not found"})
+                return
+            self._json(201, {"original_id": int(clm_id), "clone_id": new_clm_id,
+                             "dst_ns": clm_ns})
+
+        elif self.path == "/pin-by-tag":
+            pbt_tag = body.get("tag")
+            if not pbt_tag:
+                self._json(400, {"error": "'tag' (str) is required"})
+                return
+            pbt_ns = body.get("ns")
+            n_pbt = _get_store().pin_by_tag(str(pbt_tag),
+                                             ns=pbt_ns if pbt_ns else "default")
+            self._json(200, {"tag": pbt_tag, "pinned": n_pbt})
+
         elif self.path == "/delete-by-tier":
             dbt_ns = body.get("ns")
             dbt_tier = body.get("tier")
@@ -709,6 +732,33 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(200, _get_store().health_check())
         elif path == "/namespaces":
             self._json(200, {"namespaces": _get_store().list_namespaces()})
+        elif path.startswith("/memories-without-summary"):
+            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_mws
+            qs_mws = parse_qs(urlparse(self.path).query)
+            ns_mws_raw = qs_mws.get("ns", [None])[0]
+            ns_mws = _uqp_mws(ns_mws_raw) if ns_mws_raw is not None else None
+            limit_mws = int((qs_mws.get("limit") or ["20"])[0])
+            hits_mws = _get_store().memories_without_summary(ns=ns_mws, limit=limit_mws)
+            self._json(200, {"count": len(hits_mws), "results": hits_mws})
+        elif path.startswith("/promote-by-access"):
+            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_pba
+            qs_pba = parse_qs(urlparse(self.path).query)
+            ns_pba_raw = (qs_pba.get("ns") or [None])[0]
+            if not ns_pba_raw:
+                self._json(400, {"error": "'ns' query param is required"})
+                return
+            n_pba = int((qs_pba.get("n") or ["10"])[0])
+            from_pba = int((qs_pba.get("from_tier") or ["2"])[0])
+            to_pba = int((qs_pba.get("to_tier") or ["1"])[0])
+            try:
+                promoted_pba = _get_store().promote_by_access(
+                    _uqp_pba(ns_pba_raw), n=n_pba, from_tier=from_pba, to_tier=to_pba
+                )
+            except ValueError as e_pba:
+                self._json(400, {"error": str(e_pba)})
+                return
+            self._json(200, {"ns": ns_pba_raw, "promoted": promoted_pba,
+                             "from_tier": from_pba, "to_tier": to_pba})
         elif path.startswith("/age-by-ns"):
             from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_abn
             qs_abn = parse_qs(urlparse(self.path).query)
@@ -1288,6 +1338,55 @@ def _mcp_loop() -> None:
                             "max_tier": {"type": "integer", "description": "Only return memories with tier <= this value"},
                         },
                         "required": ["query", "vector"],
+                    },
+                },
+                {
+                    "name": "mnemonics_clone_memory",
+                    "description": "Create an exact copy of a memory (text, meta, tier) in the same or another namespace. Vectors are zero-filled; reindex_all to fix.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer"},
+                            "dst_ns": {"type": "string"},
+                        },
+                        "required": ["id"],
+                    },
+                },
+                {
+                    "name": "mnemonics_memories_without_summary",
+                    "description": "Return memories with a NULL or empty summary. Useful for finding memories needing summarization.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ns": {"type": "string"},
+                            "limit": {"type": "integer", "default": 20},
+                        },
+                    },
+                },
+                {
+                    "name": "mnemonics_pin_by_tag",
+                    "description": "Set tier=0 (pinned) on all memories with a given tag. Shortcut for set_tier_by_tag(..., tier=0).",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "tag": {"type": "string"},
+                            "ns": {"type": "string"},
+                        },
+                        "required": ["tag"],
+                    },
+                },
+                {
+                    "name": "mnemonics_promote_by_access",
+                    "description": "Promote the N most-accessed memories from from_tier to to_tier in ns. Default: top 10 ambient→default.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ns": {"type": "string"},
+                            "n": {"type": "integer", "default": 10},
+                            "from_tier": {"type": "integer", "default": 2},
+                            "to_tier": {"type": "integer", "default": 1},
+                        },
+                        "required": ["ns"],
                     },
                 },
                 {
@@ -3429,6 +3528,55 @@ def _mcp_loop() -> None:
                     amb = tiers.get(2, 0)
                     lines.append(f"  {ns_name}: {total} chunks  (pin={pin} def={def_} amb={amb})")
                 ok({"content": [{"type": "text", "text": "\n".join(lines) or "(empty)"}]})
+
+            elif name == "mnemonics_clone_memory":
+                clm_id_m = args.get("id")
+                if clm_id_m is None:
+                    err("mnemonics_clone_memory: 'id' is required")
+                    continue
+                clm_dst_m = args.get("dst_ns")
+                new_clm_m = _get_store().clone_memory(int(clm_id_m), dst_ns=clm_dst_m)
+                if new_clm_m is None:
+                    err(f"mnemonics_clone_memory: id={clm_id_m!r} not found")
+                    continue
+                ok({"content": [{"type": "text", "text":
+                    f"Cloned id={clm_id_m} → new id={new_clm_m} (dst_ns={clm_dst_m!r})."}]})
+
+            elif name == "mnemonics_memories_without_summary":
+                mws_ns_m = args.get("ns")
+                mws_limit_m = int(args.get("limit", 20))
+                mws_hits = _get_store().memories_without_summary(ns=mws_ns_m, limit=mws_limit_m)
+                ok({"content": [{"type": "text", "text":
+                    f"Found {len(mws_hits)} memories without summary in ns={mws_ns_m!r}.\n" +
+                    "\n".join(f"  [{h['id']}] {h['text'][:80]}" for h in mws_hits)}]})
+
+            elif name == "mnemonics_pin_by_tag":
+                pbt_tag_m = args.get("tag", "").strip()
+                if not pbt_tag_m:
+                    err("mnemonics_pin_by_tag: 'tag' is required")
+                    continue
+                pbt_ns_m = args.get("ns")
+                n_pbt_m = _get_store().pin_by_tag(pbt_tag_m, ns=pbt_ns_m if pbt_ns_m else "default")
+                ok({"content": [{"type": "text", "text":
+                    f"Pinned {n_pbt_m} memories with tag={pbt_tag_m!r} in ns={pbt_ns_m!r}."}]})
+
+            elif name == "mnemonics_promote_by_access":
+                pba_ns_m = args.get("ns", "").strip()
+                if not pba_ns_m:
+                    err("mnemonics_promote_by_access: 'ns' is required")
+                    continue
+                pba_n_m = int(args.get("n", 10))
+                pba_from_m = int(args.get("from_tier", 2))
+                pba_to_m = int(args.get("to_tier", 1))
+                try:
+                    n_pba_m = _get_store().promote_by_access(
+                        pba_ns_m, n=pba_n_m, from_tier=pba_from_m, to_tier=pba_to_m
+                    )
+                except ValueError as e_pba_m:
+                    err(str(e_pba_m))
+                    continue
+                ok({"content": [{"type": "text", "text":
+                    f"Promoted {n_pba_m} memories in ns={pba_ns_m!r} from tier {pba_from_m} → {pba_to_m}."}]})
 
             else:
                 err(f"unknown tool: {name}")

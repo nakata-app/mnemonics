@@ -677,6 +677,10 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_delete_by_tier",
         "mnemonics_untagged_memories",
         "mnemonics_set_meta_for_untagged",
+        "mnemonics_clone_memory",
+        "mnemonics_memories_without_summary",
+        "mnemonics_pin_by_tag",
+        "mnemonics_promote_by_access",
     }
 
 
@@ -5641,4 +5645,175 @@ def test_mcp_set_meta_for_untagged_missing(tmp_path):
     resp = _mcp(store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
                          "params": {"name": "mnemonics_set_meta_for_untagged",
                                     "arguments": {"ns": "default"}}})[0]
+    assert "error" in resp
+
+
+# ─── Batch 5: clone_memory, memories_without_summary, pin_by_tag, promote_by_access ───
+
+def test_rest_clone_memory(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/get", {"id": 1})
+    code, data = http_call(store, "POST", "/clone-memory", {"id": 1, "dst_ns": "clones"})
+    assert code == 201
+    assert "clone_id" in data
+    assert data["dst_ns"] == "clones"
+
+
+def test_rest_clone_memory_not_found(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/clone-memory", {"id": 999999})
+    assert code == 404
+
+
+def test_rest_clone_memory_missing_id(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/clone-memory", {})
+    assert code == 400
+
+
+def test_rest_memories_without_summary(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/memories-without-summary?ns=default&limit=10")
+    assert code == 200
+    assert "count" in data
+
+
+def test_rest_memories_without_summary_all_ns(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/memories-without-summary?limit=5")
+    assert code == 200
+
+
+def test_rest_promote_by_access(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/promote-by-access?ns=default&n=5&from_tier=1&to_tier=0")
+    assert code == 200
+    assert "promoted" in data
+
+
+def test_rest_promote_by_access_missing_ns(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/promote-by-access")
+    assert code == 400
+
+
+def test_rest_promote_by_access_bad_tier(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/promote-by-access?ns=default&from_tier=5&to_tier=0")
+    assert code == 400
+
+
+def test_rest_pin_by_tag(populated_store):
+    store, docs, vecs = populated_store
+    store.tag(1, "pinme")
+    code, data = http_call(store, "POST", "/pin-by-tag", {"tag": "pinme", "ns": "default"})
+    assert code == 200
+    assert data["pinned"] >= 1
+
+
+def test_rest_pin_by_tag_missing_tag(populated_store):
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/pin-by-tag", {})
+    assert code == 400
+
+
+def test_mcp_clone_memory(populated_store):
+    """MCP mnemonics_clone_memory clones a memory."""
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_clone_memory", "arguments": {"id": 1, "dst_ns": "clones"}},
+    })[0]
+    assert "clone" in resp["result"]["content"][0]["text"].lower()
+
+
+def test_mcp_clone_memory_not_found(populated_store):
+    """MCP mnemonics_clone_memory returns error for missing id."""
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 2,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_clone_memory", "arguments": {"id": 999999}},
+    })[0]
+    assert "error" in resp
+
+
+def test_mcp_clone_memory_missing_id(populated_store):
+    """MCP mnemonics_clone_memory returns error when id omitted."""
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 3,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_clone_memory", "arguments": {}},
+    })[0]
+    assert "error" in resp
+
+
+def test_mcp_memories_without_summary(populated_store):
+    """MCP mnemonics_memories_without_summary works."""
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 4,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_memories_without_summary", "arguments": {"ns": "default"}},
+    })[0]
+    assert "without summary" in resp["result"]["content"][0]["text"].lower()
+
+
+def test_mcp_pin_by_tag(populated_store):
+    """MCP mnemonics_pin_by_tag pins memories."""
+    store, docs, vecs = populated_store
+    store.tag(1, "urgent")
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 5,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_pin_by_tag", "arguments": {"tag": "urgent"}},
+    })[0]
+    assert "pinned" in resp["result"]["content"][0]["text"].lower()
+
+
+def test_mcp_pin_by_tag_missing_tag(populated_store):
+    """MCP mnemonics_pin_by_tag returns error when tag omitted."""
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 6,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_pin_by_tag", "arguments": {}},
+    })[0]
+    assert "error" in resp
+
+
+def test_mcp_promote_by_access(populated_store):
+    """MCP mnemonics_promote_by_access promotes memories."""
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 7,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_promote_by_access",
+                   "arguments": {"ns": "default", "n": 5, "from_tier": 1, "to_tier": 0}},
+    })[0]
+    assert "promoted" in resp["result"]["content"][0]["text"].lower()
+
+
+def test_mcp_promote_by_access_missing_ns(populated_store):
+    """MCP mnemonics_promote_by_access returns error when ns omitted."""
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 8,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_promote_by_access", "arguments": {}},
+    })[0]
+    assert "error" in resp
+
+
+def test_mcp_promote_by_access_bad_tier(populated_store):
+    """MCP mnemonics_promote_by_access returns error for invalid tier."""
+    store, docs, vecs = populated_store
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 9,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_promote_by_access",
+                   "arguments": {"ns": "default", "from_tier": 9, "to_tier": 1}},
+    })[0]
     assert "error" in resp

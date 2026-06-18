@@ -956,6 +956,117 @@ class Store:
             for r in rows
         ]
 
+    def clone_memory(
+        self,
+        memory_id: int,
+        dst_ns: str | None = None,
+    ) -> int | None:
+        """Create an exact copy of a memory, optionally in a different namespace.
+
+        The clone gets a fresh ``id`` and ``created`` timestamp but inherits
+        the original's text, summary, meta, and tier.  Vectors are zero-filled
+        (call ``reindex_all`` afterwards).  Returns the new ``id``, or
+        ``None`` if *memory_id* does not exist.
+        """
+        import json as _j_cm
+        import numpy as _np_cm
+
+        row = self._db.execute(
+            "SELECT ns, text, summary, meta, tier FROM memories WHERE id=?",
+            (memory_id,),
+        ).fetchone()
+        if row is None:
+            return None
+
+        target_ns = dst_ns if dst_ns is not None else row[0]
+        meta = _j_cm.loads(row[2]) if row[2] else {}  # summary is row[2]?
+        # Correct order: ns, text, summary, meta, tier
+        ns_orig, text, summary, meta_str, tier = row
+        meta_obj = _j_cm.loads(meta_str) if meta_str else {}
+
+        zero_vec = _np_cm.zeros((1, self.dim), dtype=_np_cm.float32)
+        new_ids = self.add(
+            [text], zero_vec, ns=target_ns, meta=[meta_obj], summaries=[summary]
+        )
+        new_id = new_ids[0] if new_ids else None
+        if new_id is not None and tier != 1:
+            self._db.execute("UPDATE memories SET tier=? WHERE id=?", (tier, new_id))
+            self._db.commit()
+        return new_id
+
+    def memories_without_summary(
+        self,
+        ns: str | None = "default",
+        limit: int = 20,
+    ) -> list[dict]:
+        """Return memories that have a NULL or empty summary.
+
+        Useful for identifying memories that need summarization.  *ns=None*
+        spans all namespaces.  Ordered by created DESC.
+        """
+        if ns is not None:
+            rows = self._db.execute(
+                "SELECT id, ns, text, summary, tier, created FROM memories "
+                "WHERE ns=? AND (summary IS NULL OR summary = '') "
+                "ORDER BY created DESC LIMIT ?",
+                (ns, limit),
+            ).fetchall()
+        else:
+            rows = self._db.execute(
+                "SELECT id, ns, text, summary, tier, created FROM memories "
+                "WHERE (summary IS NULL OR summary = '') "
+                "ORDER BY created DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [
+            {"id": r[0], "ns": r[1], "text": r[2], "summary": r[3],
+             "tier": r[4], "created": r[5]}
+            for r in rows
+        ]
+
+    def pin_by_tag(self, tag: str, ns: str | None = "default") -> int:
+        """Set tier=0 (pinned) on all memories in *ns* that have *tag*.
+
+        Returns the number of memories pinned.  *ns=None* spans all
+        namespaces.  Complement to ``set_tier_by_tag`` but always pins
+        and more explicit in intent.
+        """
+        return self.set_tier_by_tag(tag, tier=0, ns=ns)
+
+    def promote_by_access(
+        self,
+        ns: str,
+        n: int = 10,
+        from_tier: int = 2,
+        to_tier: int = 1,
+    ) -> int:
+        """Promote the *n* most-accessed memories from *from_tier* to *to_tier*.
+
+        Useful for automatically graduating frequently-referenced ambient
+        memories to default tier.  Returns the number of memories promoted.
+        *ns* is required.
+        """
+        if from_tier not in (0, 1, 2) or to_tier not in (0, 1, 2):
+            raise ValueError("from_tier and to_tier must each be 0, 1, or 2")
+        if from_tier == to_tier:
+            return 0
+        rows = self._db.execute(
+            "SELECT id FROM memories WHERE ns=? AND tier=? "
+            "ORDER BY access_count DESC, last_accessed DESC LIMIT ?",
+            (ns, from_tier, n),
+        ).fetchall()
+        if not rows:
+            return 0
+        ids = [r[0] for r in rows]
+        placeholders = ",".join("?" * len(ids))
+        with self._lock:
+            cur = self._db.execute(
+                f"UPDATE memories SET tier=? WHERE id IN ({placeholders})",
+                (to_tier, *ids),
+            )
+            self._db.commit()
+        return cur.rowcount
+
     def age_by_ns(self, ns: str) -> dict:
         """Return memory count broken down by age bracket for *ns*.
 
