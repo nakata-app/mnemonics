@@ -719,3 +719,31 @@ def test_gc_candidates_rejects_tier0(tmp_store):
 def test_gc_candidates_rejects_invalid_tier(tmp_store):
     with pytest.raises(ValueError):
         tmp_store.gc_candidates(tier=3)
+
+
+# ── search edge cases ─────────────────────────────────────────────────────────
+
+def test_search_bm25_fts_operational_error(tmp_store, monkeypatch):
+    """OperationalError during FTS query returns empty list, doesn't raise."""
+    # Patch _fts_sanitize to return an unparseable MATCH expression.
+    # FTS5 rejects unmatched parens → OperationalError → [] fallback.
+    monkeypatch.setattr(tmp_store, "_fts_sanitize", lambda q: "(((")
+    tmp_store.add(["some text"], make_vecs(1))
+    results = tmp_store.search_bm25("some text", top_k=5)
+    assert results == []
+
+
+def test_search_skips_orphan_vector(tmp_store):
+    """Vectors in the index that have no DB row are silently skipped."""
+    import numpy as np
+    from mnemonics.store import DIM
+    vecs = make_vecs(1)
+    ids = tmp_store.add(["text to delete"], vecs)
+    # Remove from DB but NOT from index — creates an orphan vector
+    tmp_store._db.execute("DELETE FROM memories WHERE id=?", (ids[0],))
+    tmp_store._db.commit()
+    # Ensure index is loaded
+    tmp_store._index_for("default")
+    # Search should return empty (orphan vector filtered out)
+    results = tmp_store.search(vecs[0], ns="default", top_k=5)
+    assert all(r["id"] != ids[0] for r in results)
