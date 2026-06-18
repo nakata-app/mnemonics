@@ -80,6 +80,13 @@ def main() -> None:
     ts.add_argument("--json", dest="json_out", action="store_true", help="Output results as JSON array")
     ts.add_argument("--path", default="~/.mnemonics")
 
+    # update-text
+    utp = sub.add_parser("update-text", help="Replace text of a memory (re-embed via sentence-transformers)")
+    utp.add_argument("id", type=int, help="Memory ID to update")
+    utp.add_argument("text", help="New text content")
+    utp.add_argument("--model", default="all-MiniLM-L6-v2")
+    utp.add_argument("--path", default="~/.mnemonics")
+
     # clone
     cln = sub.add_parser("clone", help="Clone a single memory to a different namespace (copies text + vector)")
     cln.add_argument("id", type=int, help="Memory ID to clone")
@@ -527,6 +534,19 @@ def main() -> None:
                 print(line)
                 if r.get("summary"):
                     print(f"           summary: {r['summary']}")
+
+    elif args.cmd == "update-text":
+        import numpy as _np_cli_ut
+        from sentence_transformers import SentenceTransformer
+        from mnemonics.store import Store
+        store = Store(args.path)
+        enc = SentenceTransformer(args.model)
+        vec = enc.encode([args.text], normalize_embeddings=True, convert_to_numpy=True)[0]
+        ok_ut = store.update_text(args.id, args.text, _np_cli_ut.array(vec, dtype="float32"))
+        if not ok_ut:
+            print(f"Error: memory id={args.id} not found.", file=sys.stderr)
+            sys.exit(1)
+        print(f"Updated id={args.id} text and vector.")
 
     elif args.cmd == "clone":
         from mnemonics.store import Store

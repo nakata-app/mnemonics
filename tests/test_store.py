@@ -2525,3 +2525,38 @@ def test_clone_preserves_meta_and_tier(populated_store):
     meta = _j.loads(row[0]) if row[0] else {}
     assert meta.get("tag") == "important"
     assert row[1] == 0
+
+
+# ── update_text ───────────────────────────────────────────────────────────────
+
+def test_update_text_changes_text(populated_store):
+    """update_text replaces text in the DB row."""
+    store, docs, vecs = populated_store
+    src_id = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    import numpy as np
+    new_vec = np.random.default_rng(42).random(DIM).astype("float32")
+    ok = store.update_text(src_id, "replaced text", new_vec)
+    assert ok is True
+    row = store._db.execute("SELECT text FROM memories WHERE id=?", (src_id,)).fetchone()
+    assert row[0] == "replaced text"
+
+
+def test_update_text_nonexistent_returns_false(tmp_store):
+    """update_text returns False for missing ID."""
+    import numpy as np
+    vec = np.zeros(DIM, dtype="float32")
+    assert tmp_store.update_text(99999, "x", vec) is False
+
+
+def test_update_text_mark_deleted_exception_tolerated(populated_store):
+    """update_text tolerates mark_deleted raising (e.g. id already deleted)."""
+    from unittest.mock import MagicMock, patch
+    store, docs, vecs = populated_store
+    src_id = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    import numpy as np
+    new_vec = np.zeros(DIM, dtype="float32")
+    mock_idx = MagicMock()
+    mock_idx.mark_deleted.side_effect = RuntimeError("already deleted")
+    with patch.object(store, "_index_for", return_value=mock_idx):
+        result = store.update_text(src_id, "new text", new_vec)
+    assert result is True  # tolerated

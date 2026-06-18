@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from mnemonics import server as srv
+from mnemonics.store import DIM
 
 
 # ── helper: in-process server ────────────────────────────────────────────────
@@ -629,6 +630,7 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_namespace_info",
         "mnemonics_move_to_ns",
         "mnemonics_clone",
+        "mnemonics_update_text",
     }
 
 
@@ -3385,5 +3387,70 @@ def test_mcp_clone_missing_args(tmp_store):
     r = _mcp(tmp_store, {
         "jsonrpc": "2.0", "id": 1, "method": "tools/call",
         "params": {"name": "mnemonics_clone", "arguments": {"id": 1}},
+    })[0]
+    assert "error" in r
+
+
+# ── update-text REST + MCP ────────────────────────────────────────────────────
+
+def test_http_update_text_ok(populated_store):
+    """POST /update-text replaces text and vector."""
+    store, docs, vecs = populated_store
+    src_id = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    new_vec = [0.1] * DIM
+    code, data = http_call(store, "POST", "/update-text",
+                           {"id": src_id, "text": "new text here", "vec": new_vec})
+    assert code == 200
+    assert data["updated"] is True
+
+
+def test_http_update_text_not_found(populated_store):
+    """POST /update-text with missing id returns 404."""
+    store, docs, vecs = populated_store
+    new_vec = [0.1] * DIM
+    code, data = http_call(store, "POST", "/update-text",
+                           {"id": 999999, "text": "text", "vec": new_vec})
+    assert code == 404
+
+
+def test_http_update_text_missing_params(populated_store):
+    """POST /update-text without required params returns 400."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/update-text", {"id": 1, "text": "x"})
+    assert code == 400
+
+
+def test_mcp_update_text_ok(populated_store):
+    """MCP mnemonics_update_text replaces text and vector."""
+    store, docs, vecs = populated_store
+    src_id = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    new_vec = [0.1] * DIM
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_update_text",
+                   "arguments": {"id": src_id, "text": "updated text", "vec": new_vec}},
+    })[0]
+    assert "result" in r
+    assert "Updated" in r["result"]["content"][0]["text"]
+
+
+def test_mcp_update_text_not_found(populated_store):
+    """MCP mnemonics_update_text with missing id returns error."""
+    store, docs, vecs = populated_store
+    new_vec = [0.1] * DIM
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_update_text",
+                   "arguments": {"id": 999999, "text": "x", "vec": new_vec}},
+    })[0]
+    assert "error" in r
+
+
+def test_mcp_update_text_missing_args(tmp_store):
+    """MCP mnemonics_update_text without required args returns error."""
+    r = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_update_text",
+                   "arguments": {"id": 1, "text": "x"}},
     })[0]
     assert "error" in r

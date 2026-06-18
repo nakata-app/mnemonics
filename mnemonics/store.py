@@ -686,6 +686,35 @@ class Store:
             row = self._db.execute("SELECT COUNT(*) FROM memories WHERE ns=?", (ns,)).fetchone()
         return row[0] if row else 0
 
+    def update_text(self, memory_id: int, new_text: str, new_vec: "np.ndarray") -> bool:
+        """Replace the text and embedding vector for an existing memory.
+
+        The old embedding is marked deleted in the hnswlib index and the new
+        vector is added under the same label (``memory_id``).  The SQLite row
+        is updated in the same transaction.  Returns ``True`` on success,
+        ``False`` if *memory_id* does not exist.
+        """
+        import numpy as _np_ut
+        row = self._db.execute(
+            "SELECT ns FROM memories WHERE id=?", (memory_id,)
+        ).fetchone()
+        if row is None:
+            return False
+        ns = row[0]
+        vec = _np_ut.asarray(new_vec, dtype="float32").reshape(1, -1)
+        with self._lock:
+            self._db.execute(
+                "UPDATE memories SET text=? WHERE id=?", (new_text, memory_id)
+            )
+            self._db.commit()
+            idx = self._index_for(ns)
+            try:
+                idx.mark_deleted(memory_id)
+            except Exception:
+                pass
+            idx.add_items(vec, ids=[memory_id])
+        return True
+
     def clone(self, memory_id: int, target_ns: str) -> int | None:
         """Clone a single memory to *target_ns*.
 

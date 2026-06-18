@@ -262,6 +262,20 @@ class _Handler(BaseHTTPRequestHandler):
             n_mtn = _get_store().move_to_ns([int(i) for i in mtn_ids], mtn_ns)
             self._json(200, {"moved": n_mtn, "target_ns": mtn_ns})
 
+        elif self.path == "/update-text":
+            ut_id = body.get("id")
+            ut_text = body.get("text", "").strip()
+            ut_vec = body.get("vec")
+            if ut_id is None or not ut_text or not isinstance(ut_vec, list):
+                self._json(400, {"error": "'id' (int), 'text' (str), and 'vec' (float list) are required"})
+                return
+            import numpy as _np_srv_ut
+            ok_ut = _get_store().update_text(int(ut_id), ut_text, _np_srv_ut.array(ut_vec, dtype="float32"))
+            if not ok_ut:
+                self._json(404, {"error": f"memory id={ut_id!r} not found"})
+            else:
+                self._json(200, {"id": int(ut_id), "updated": True})
+
         elif self.path == "/clone":
             cl_id = body.get("id")
             cl_ns = body.get("ns", "").strip()
@@ -827,6 +841,19 @@ def _mcp_loop() -> None:
                             "max_tier": {"type": "integer", "description": "Only return memories with tier <= this value"},
                         },
                         "required": ["query", "vector"],
+                    },
+                },
+                {
+                    "name": "mnemonics_update_text",
+                    "description": "Replace the text and embedding vector of an existing memory. The caller must supply the pre-computed embedding (float list, same dimension as the store's index). The old vector is marked deleted in the index and the new one is inserted under the same memory id. Returns error if the memory does not exist.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer", "description": "Memory ID to update"},
+                            "text": {"type": "string", "description": "New text content"},
+                            "vec": {"type": "array", "items": {"type": "number"}, "description": "New embedding vector (list of floats, must match store dimension)"},
+                        },
+                        "required": ["id", "text", "vec"],
                     },
                 },
                 {
@@ -1410,6 +1437,23 @@ def _mcp_loop() -> None:
                         if r.get("summary"):
                             lines_hs.append(f"           summary: {r['summary'][:120]}")
                     ok({"content": [{"type": "text", "text": "\n".join(lines_hs)}]})
+
+            elif name == "mnemonics_update_text":
+                ut_id_m = args.get("id")
+                ut_text_m = args.get("text", "").strip()
+                ut_vec_m = args.get("vec")
+                if ut_id_m is None or not ut_text_m or not isinstance(ut_vec_m, list):
+                    err("mnemonics_update_text: 'id', 'text', and 'vec' (float list) are required")
+                    continue
+                import numpy as _np_mcp_ut
+                ok_ut_m = _get_store().update_text(
+                    int(ut_id_m), ut_text_m,
+                    _np_mcp_ut.array(ut_vec_m, dtype="float32"),
+                )
+                if not ok_ut_m:
+                    err(f"mnemonics_update_text: id={ut_id_m!r} not found")
+                    continue
+                ok({"content": [{"type": "text", "text": f"Updated id={ut_id_m} text and vector."}]})
 
             elif name == "mnemonics_clone":
                 cl_id_m = args.get("id")

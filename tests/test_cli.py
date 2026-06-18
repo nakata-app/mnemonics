@@ -2810,3 +2810,42 @@ def test_cli_clone_not_found(tmp_path, capsys):
         with pytest.raises(SystemExit) as exc:
             main()
     assert exc.value.code == 1
+
+
+# ── update-text CLI ───────────────────────────────────────────────────────────
+
+def test_cli_update_text_ok(tmp_path, capsys):
+    """update-text calls update_text and prints confirmation."""
+    mock_store = MagicMock()
+    mock_store._dim = 4
+    mock_store.update_text.return_value = True
+    mock_enc = MagicMock()
+    import numpy as np
+    mock_enc.encode.return_value = np.zeros((1, 4), dtype="float32")
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "update-text", "7", "hello world",
+                           "--path", str(tmp_path)]),
+        patch("sentence_transformers.SentenceTransformer", return_value=mock_enc),
+    ):
+        main()
+    assert "Updated" in capsys.readouterr().out
+
+
+def test_cli_update_text_not_found(tmp_path, capsys):
+    """update-text exits 1 when update_text returns False."""
+    mock_store = MagicMock()
+    mock_store._dim = 4
+    mock_store.update_text.return_value = False
+    mock_enc = MagicMock()
+    import numpy as np
+    mock_enc.encode.return_value = np.zeros((1, 4), dtype="float32")
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "update-text", "999", "hello",
+                           "--path", str(tmp_path)]),
+        patch("sentence_transformers.SentenceTransformer", return_value=mock_enc),
+    ):
+        with pytest.raises(SystemExit) as exc:
+            main()
+    assert exc.value.code == 1
