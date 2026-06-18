@@ -662,3 +662,40 @@ def test_cli_set_summary_clear(tmp_path, capsys):
         except SystemExit:
             pass
     assert store.get(ids[0])["summary"] is None
+
+
+# ── retrieve summary output ───────────────────────────────────────────────────
+
+def test_retrieve_summary_output(tmp_path, capsys):
+    fake = {"results": [{
+        "id": 5, "score": 0.9, "raw_score": 0.9, "decay_factor": 1.0,
+        "boost": 1.0, "age_days": 0.0, "tier": 0,
+        "text": "full raw content", "summary": "short gist here",
+    }]}
+    with (
+        patch("mnemonics.store.Store"),
+        patch("mnemonics.retrieve.retrieve", return_value=fake),
+        patch("sys.argv", ["mnemonics", "retrieve", "q", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "short gist here" in out
+    assert "└─ raw:" in out
+    assert "full raw content" in out
+
+
+# ── gc no candidates ─────────────────────────────────────────────────────────
+
+def test_gc_no_candidates(tmp_path, capsys):
+    mock_store = MagicMock()
+    mock_store.gc_candidates.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "gc", "--age-days", "99", "--path", str(tmp_path)]),
+    ):
+        try:
+            main()
+        except SystemExit:
+            pass
+    out = capsys.readouterr().out
+    assert "Nothing to GC" in out
