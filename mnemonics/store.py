@@ -610,11 +610,27 @@ class Store:
             for r in rows
         ]
 
-    def update_meta(self, memory_id: int, meta: dict) -> bool:
+    def update_meta(self, memory_id: int, meta: dict, merge: bool = False) -> bool:
+        """Update (or merge into) the metadata for a memory.
+
+        If *merge=True*, provided keys are merged into the existing meta dict —
+        existing keys not mentioned are preserved. If *merge=False* (default,
+        preserved for backward compatibility), the whole meta dict is replaced.
+        Returns True if the row was found and updated, False if the ID does not exist.
+        """
+        if merge:
+            row = self._db.execute("SELECT meta FROM memories WHERE id=?", (memory_id,)).fetchone()
+            if row is None:
+                return False
+            existing = json.loads(row[0]) if row[0] else {}
+            existing.update(meta)
+            new_meta = json.dumps(existing, ensure_ascii=False)
+        else:
+            new_meta = json.dumps(meta, ensure_ascii=False)
         with self._lock:
             cur = self._db.execute(
                 "UPDATE memories SET meta=? WHERE id=?",
-                (json.dumps(meta, ensure_ascii=False), memory_id),
+                (new_meta, memory_id),
             )
             self._db.commit()
         return cur.rowcount > 0

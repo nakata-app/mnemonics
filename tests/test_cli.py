@@ -2367,3 +2367,23 @@ def test_cli_touch_many_basic(tmp_path, capsys):
         main()
     mock_store.touch_many.assert_called_once_with([1, 2, 3])
     assert "3" in capsys.readouterr().out
+
+
+
+
+
+# ── update-meta --merge flag ───────────────────────────────────────────────────
+
+def test_cli_update_meta_merge_flag(tmp_path, capsys):
+    """update-meta --merge calls update_meta with merge=True."""
+    mock_store = MagicMock()
+    mock_store.update_meta.return_value = True
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "update-meta", "5", '{"tag": "x"}',
+                           "--merge", "--path", str(tmp_path)]),
+    ):
+        with pytest.raises(SystemExit) as exc:
+            main()
+    assert exc.value.code == 0
+    mock_store.update_meta.assert_called_once_with(5, {"tag": "x"}, merge=True)

@@ -159,9 +159,11 @@ def main() -> None:
     sm.add_argument("--path", default="~/.mnemonics")
 
     # update-meta
-    um = sub.add_parser("update-meta", help="Replace metadata of a memory with JSON")
+    um = sub.add_parser("update-meta", help="Replace or merge metadata of a memory with JSON")
     um.add_argument("memory_id", type=int)
     um.add_argument("meta_json", help="New metadata as a JSON object string (e.g. '{\"tag\":\"x\"}')")
+    um.add_argument("--merge", action="store_true",
+                    help="Merge into existing meta instead of replacing it entirely")
     um.add_argument("--path", default="~/.mnemonics")
 
     # set-summary
@@ -552,7 +554,7 @@ def main() -> None:
         if not isinstance(meta, dict):
             print("meta_json must be a JSON object ({})", file=sys.stderr)
             sys.exit(2)
-        ok_ = store.update_meta(args.memory_id, meta)
+        ok_ = store.update_meta(args.memory_id, meta, merge=getattr(args, "merge", False))
         print(f"Meta updated for id={args.memory_id}" if ok_ else f"id={args.memory_id} not found")
         sys.exit(0 if ok_ else 1)
 

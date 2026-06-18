@@ -1809,3 +1809,39 @@ def test_touch_many_missing_ids_ignored(populated_store):
     store, docs, vecs = populated_store
     updated = store.touch_many([99999, 88888])
     assert updated == 0
+
+
+# ── update_meta ───────────────────────────────────────────────────────────────
+
+def test_update_meta_merge(populated_store):
+    """update_meta(merge=True) preserves existing keys while adding new ones."""
+    store, docs, vecs = populated_store
+    mid = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    store._db.execute("UPDATE memories SET meta=? WHERE id=?", ('{"a": 1}', mid))
+    store._db.commit()
+    assert store.update_meta(mid, {"b": 2}, merge=True) is True
+    row = store._db.execute("SELECT meta FROM memories WHERE id=?", (mid,)).fetchone()
+    import json as _j
+    m = _j.loads(row[0])
+    assert m["a"] == 1
+    assert m["b"] == 2
+
+
+def test_update_meta_replace(populated_store):
+    """update_meta(merge=False) replaces the whole meta dict."""
+    store, docs, vecs = populated_store
+    mid = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    store._db.execute("UPDATE memories SET meta=? WHERE id=?", ('{"a": 1, "c": 3}', mid))
+    store._db.commit()
+    assert store.update_meta(mid, {"b": 2}, merge=False) is True
+    row = store._db.execute("SELECT meta FROM memories WHERE id=?", (mid,)).fetchone()
+    import json as _j
+    m = _j.loads(row[0])
+    assert "a" not in m
+    assert m["b"] == 2
+
+
+def test_update_meta_not_found(populated_store):
+    """update_meta returns False for non-existent ID."""
+    store, docs, vecs = populated_store
+    assert store.update_meta(99999, {"x": 1}) is False

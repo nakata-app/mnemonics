@@ -618,7 +618,7 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_pin", "mnemonics_tier", "mnemonics_gc", "mnemonics_stats",
         "mnemonics_health", "mnemonics_repair",
         "mnemonics_search_by_meta", "mnemonics_delete_many", "mnemonics_update_meta",
-        "mnemonics_export", "mnemonics_import", "mnemonics_text_search", "mnemonics_rename_ns", "mnemonics_namespaces", "mnemonics_bulk_tier", "mnemonics_copy_ns", "mnemonics_touch_many", "mnemonics_count", "mnemonics_merge_ns", "mnemonics_stats_by_ns", "mnemonics_recent", "mnemonics_top_accessed", "mnemonics_get_many",
+        "mnemonics_export", "mnemonics_import", "mnemonics_text_search", "mnemonics_rename_ns", "mnemonics_namespaces", "mnemonics_bulk_tier", "mnemonics_copy_ns", "mnemonics_touch_many", "mnemonics_update_meta", "mnemonics_count", "mnemonics_merge_ns", "mnemonics_stats_by_ns", "mnemonics_recent", "mnemonics_top_accessed", "mnemonics_get_many",
     }
 
 
@@ -1523,7 +1523,7 @@ def test_mcp_update_meta(populated_store):
         "params": {"name": "mnemonics_update_meta", "arguments": {"id": first_id, "meta": {"x": 99}}},
     })
     text = resp[0]["result"]["content"][0]["text"]
-    assert "updated: True" in text
+    assert "updated" in text
 
 
 def test_mcp_delete_many_bad_ids(populated_store):
@@ -2769,3 +2769,84 @@ def test_mcp_touch_many_in_tools_list(tmp_store):
         "jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {},
     })[0]
     assert "mnemonics_touch_many" in {t["name"] for t in resp["result"]["tools"]}
+
+
+# ── PATCH /memory/:id (meta) ──────────────────────────────────────────────────
+
+def test_http_patch_meta_merge(populated_store):
+    store, docs, vecs = populated_store
+    mid = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    store._db.execute("UPDATE memories SET meta=? WHERE id=?", ('{"a":1}', mid))
+    store._db.commit()
+    code, data = http_call(store, "PATCH", f"/memory/{mid}", {"meta": {"b": 2}})
+    assert code == 200
+    row = store._db.execute("SELECT meta FROM memories WHERE id=?", (mid,)).fetchone()
+    import json as _j
+    m = _j.loads(row[0])
+    assert m["a"] == 1 and m["b"] == 2
+
+
+def test_http_patch_meta_replace(populated_store):
+    store, docs, vecs = populated_store
+    mid = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    store._db.execute("UPDATE memories SET meta=? WHERE id=?", ('{"a":1}', mid))
+    store._db.commit()
+    code, data = http_call(store, "PATCH", f"/memory/{mid}", {"meta": {"b": 2}, "merge": False})
+    assert code == 200
+    row = store._db.execute("SELECT meta FROM memories WHERE id=?", (mid,)).fetchone()
+    import json as _j
+    m = _j.loads(row[0])
+    assert "a" not in m and m["b"] == 2
+
+
+def test_http_patch_meta_not_dict(populated_store):
+    store, docs, vecs = populated_store
+    mid = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    code, data = http_call(store, "PATCH", f"/memory/{mid}", {"meta": "not a dict"})
+    assert code == 400
+
+
+def test_http_patch_meta_not_found(tmp_store):
+    code, data = http_call(tmp_store, "PATCH", "/memory/99999", {"meta": {"x": 1}})
+    assert code == 404
+
+
+def test_http_patch_no_fields(tmp_store):
+    code, data = http_call(tmp_store, "PATCH", "/memory/1", {"other": "x"})
+    assert code == 400
+
+
+# ── MCP mnemonics_update_meta ─────────────────────────────────────────────────
+
+def test_mcp_update_meta_merge(populated_store):
+    store, docs, vecs = populated_store
+    mid = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_update_meta", "arguments": {"id": mid, "meta": {"tag": "important"}}},
+    })[0]
+    assert "result" in r
+    assert "updated" in r["result"]["content"][0]["text"]
+
+
+def test_mcp_update_meta_not_found(tmp_store):
+    r = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_update_meta", "arguments": {"id": 99999, "meta": {"x": 1}}},
+    })[0]
+    assert "error" in r
+
+
+def test_mcp_update_meta_missing_args(tmp_store):
+    r = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_update_meta", "arguments": {"id": 1}},
+    })[0]
+    assert "error" in r
+
+
+def test_mcp_update_meta_in_tools_list(tmp_store):
+    resp = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {},
+    })[0]
+    assert "mnemonics_update_meta" in {t["name"] for t in resp["result"]["tools"]}

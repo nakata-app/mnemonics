@@ -548,14 +548,24 @@ class _Handler(BaseHTTPRequestHandler):
             except ValueError:
                 self._json(400, {"error": "invalid id"})
                 return
-            if "summary" not in body:
-                self._json(400, {"error": "only 'summary' field is patchable"})
+            if "summary" not in body and "meta" not in body:
+                self._json(400, {"error": "at least one of 'summary' or 'meta' is required"})
                 return
-            changed = _get_store().update_summary(mid, body.get("summary"))
-            if changed:
-                self._json(200, {"id": mid, "updated": True})
-            else:
-                self._json(404, {"error": f"memory {mid} not found"})
+            store = _get_store()
+            if "summary" in body:
+                if not store.update_summary(mid, body.get("summary")):
+                    self._json(404, {"error": f"memory {mid} not found"})
+                    return
+            if "meta" in body:
+                meta_val = body.get("meta")
+                if not isinstance(meta_val, dict):
+                    self._json(400, {"error": "'meta' must be a JSON object"})
+                    return
+                merge = bool(body.get("merge", True))
+                if not store.update_meta(mid, meta_val, merge=merge):
+                    self._json(404, {"error": f"memory {mid} not found"})
+                    return
+            self._json(200, {"id": mid, "updated": True})
         else:
             self._json(404, {"error": "not found"})
 
@@ -828,6 +838,19 @@ def _mcp_loop() -> None:
                             "tier": {"type": "integer", "enum": [0, 1, 2], "description": "Filter by tier (omit for all tiers)"},
                             "limit": {"type": "integer", "description": "Max results to return (default: 20, capped at 100)"},
                         },
+                    },
+                },
+                {
+                    "name": "mnemonics_update_meta",
+                    "description": "Update (or replace) the metadata dict on a single memory. With merge=true (default), provided keys are merged into the existing meta — existing keys not mentioned are preserved. With merge=false, the whole meta dict is replaced.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer", "description": "Memory ID to update"},
+                            "meta": {"type": "object", "description": "Key-value pairs to set on the memory's metadata"},
+                            "merge": {"type": "boolean", "description": "If true (default), merge into existing meta. If false, replace entirely."},
+                        },
+                        "required": ["id", "meta"],
                     },
                 },
                 {
@@ -1240,8 +1263,12 @@ def _mcp_loop() -> None:
                 if mid is None or not isinstance(meta, dict):
                     err("mnemonics_update_meta: 'id' and 'meta' (object) are required")
                     continue
-                changed = _get_store().update_meta(int(mid), meta)
-                ok({"content": [{"type": "text", "text": f"Meta updated: {changed}"}]})
+                merge_flag = bool(args.get("merge", True))
+                changed = _get_store().update_meta(int(mid), meta, merge=merge_flag)
+                if changed:
+                    ok({"content": [{"type": "text", "text": f"Memory {mid} meta updated (merge={merge_flag})."}]})
+                else:
+                    err(f"memory {mid} not found")
 
             elif name == "mnemonics_export":
                 ns_val = args.get("ns")
