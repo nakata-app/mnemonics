@@ -995,3 +995,40 @@ def test_doctor_no_index_status(tmp_path, capsys):
         except SystemExit:
             pass
     assert "no index" in capsys.readouterr().out
+
+
+# ── set-summary not found ─────────────────────────────────────────────────────
+
+def test_set_summary_not_found(tmp_path, capsys):
+    mock_store = MagicMock()
+    mock_store.update_summary.return_value = False
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "set-summary", "999", "gist", "--path", str(tmp_path)]),
+    ):
+        with pytest.raises(SystemExit) as exc:
+            main()
+    assert exc.value.code == 1
+    assert "not found" in capsys.readouterr().out
+
+
+# ── forget >50 candidates ─────────────────────────────────────────────────────
+
+def test_forget_many_candidates(tmp_path, capsys):
+    candidates = [
+        {"id": i, "tier": 2, "created": "2025-01-01 00:00:00", "preview": "x"} for i in range(55)
+    ]
+    mock_store = MagicMock()
+    mock_store.forget_candidates.return_value = candidates
+    mock_db = MagicMock()
+    mock_db.execute.return_value.fetchone.return_value = (0,)
+    mock_store._db = mock_db
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "forget", "--ns", "x", "--path", str(tmp_path)]),
+    ):
+        try:
+            main()
+        except SystemExit:
+            pass
+    assert "... and 5 more" in capsys.readouterr().out
