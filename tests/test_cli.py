@@ -1509,3 +1509,45 @@ def test_cli_export_jsonl_meta_filter_bad(tmp_path, capsys):
         with pytest.raises(SystemExit) as exc:
             main()
     assert exc.value.code == 2
+
+
+# ── ingest --meta ─────────────────────────────────────────────────────────────
+
+def test_cli_ingest_meta(tmp_path, capsys):
+    """ingest --meta passes dict to ingest()."""
+    with (
+        patch("mnemonics.store.Store"),
+        patch("mnemonics.ingest.ingest", return_value=1) as mock_ingest,
+        patch("sys.argv", ["mnemonics", "ingest", "hello",
+                           "--meta", '{"tag":"work"}',
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    call_kwargs = mock_ingest.call_args[1]
+    assert call_kwargs["meta"] == [{"tag": "work"}]
+
+
+def test_cli_ingest_meta_bad_json(tmp_path, capsys):
+    """ingest --meta with invalid JSON exits 2."""
+    with (
+        patch("mnemonics.store.Store"),
+        patch("sys.argv", ["mnemonics", "ingest", "hello",
+                           "--meta", "NOT_JSON",
+                           "--path", str(tmp_path)]),
+    ):
+        with pytest.raises(SystemExit) as exc:
+            main()
+    assert exc.value.code == 2
+
+
+def test_cli_ingest_meta_non_object(tmp_path, capsys):
+    """ingest --meta with a non-object JSON exits 2."""
+    with (
+        patch("mnemonics.store.Store"),
+        patch("sys.argv", ["mnemonics", "ingest", "hello",
+                           "--meta", "[1,2,3]",
+                           "--path", str(tmp_path)]),
+    ):
+        with pytest.raises(SystemExit) as exc:
+            main()
+    assert exc.value.code == 2

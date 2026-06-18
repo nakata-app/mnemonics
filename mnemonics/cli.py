@@ -32,6 +32,11 @@ def main() -> None:
         default=None,
         help="Optional one-line gist stored alongside the raw text. Searched by BM25 in addition to the chunk body.",
     )
+    i.add_argument(
+        "--meta",
+        default=None,
+        help="JSON object to attach as metadata to every chunk (e.g. '{\"tag\":\"work\"}').",
+    )
 
     # retrieve
     r = sub.add_parser("retrieve", help="Search memory")
@@ -274,7 +279,18 @@ def main() -> None:
                     print("Cancelled.")
                     sys.exit(0)
         summaries = [args.summary] if args.summary else None
-        n = ingest(texts=[joined], store=store, ns=args.ns, summaries=summaries)
+        meta_dict: dict | None = None
+        if args.meta is not None:
+            try:
+                meta_dict = json.loads(args.meta)
+            except json.JSONDecodeError as e:
+                print(f"--meta: invalid JSON: {e}", file=sys.stderr)
+                sys.exit(2)
+            if not isinstance(meta_dict, dict):
+                print("--meta: must be a JSON object", file=sys.stderr)
+                sys.exit(2)
+        metas = [meta_dict] if meta_dict is not None else None
+        n = ingest(texts=[joined], store=store, ns=args.ns, summaries=summaries, meta=metas)
         print(f"Stored {n} chunk(s).")
 
     elif args.cmd == "retrieve":
