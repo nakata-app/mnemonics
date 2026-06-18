@@ -1025,3 +1025,51 @@ def test_count_all_namespaces_with_none(tmp_store):
     assert tmp_store.count(ns=None) == 3
     assert tmp_store.count("ns1") == 1
     assert tmp_store.count("ns2") == 2
+
+
+def test_search_bm25_min_tier_filter(tmp_path):
+    """search_bm25 min_tier excludes items below threshold."""
+    from mnemonics.ingest import ingest
+    s = Store(tmp_path)
+    ids = s.add(["pinned document keyword", "ambient document keyword"], make_vecs(2))
+    s.pin(ids[0])      # tier=0
+    s.set_tier(ids[1], 2)  # tier=2
+
+    # min_tier=1 → excludes tier-0 (pinned)
+    results = s.search_bm25("keyword", min_tier=1)
+    result_ids = {r["id"] for r in results}
+    assert ids[0] not in result_ids
+    assert ids[1] in result_ids
+
+
+def test_search_bm25_max_tier_filter(tmp_path):
+    """search_bm25 max_tier excludes items above threshold."""
+    s = Store(tmp_path)
+    ids = s.add(["pinned document keyword", "ambient document keyword"], make_vecs(2))
+    s.pin(ids[0])      # tier=0
+    s.set_tier(ids[1], 2)  # tier=2
+
+    # max_tier=1 → excludes tier-2 (ambient)
+    results = s.search_bm25("keyword", max_tier=1)
+    result_ids = {r["id"] for r in results}
+    assert ids[0] in result_ids
+    assert ids[1] not in result_ids
+
+
+def test_search_bm25_tier_range_filter(tmp_path):
+    """search_bm25 min_tier + max_tier narrow to exact tier."""
+    s = Store(tmp_path)
+    ids = s.add(
+        ["pin keyword", "def keyword", "amb keyword"],
+        make_vecs(3),
+    )
+    s.pin(ids[0])
+    # ids[1] stays tier=1 (default)
+    s.set_tier(ids[2], 2)
+
+    # only tier=1 (default)
+    results = s.search_bm25("keyword", min_tier=1, max_tier=1)
+    result_ids = {r["id"] for r in results}
+    assert ids[1] in result_ids
+    assert ids[0] not in result_ids
+    assert ids[2] not in result_ids

@@ -359,15 +359,31 @@ class Store:
         # underscores, mixed-case identifiers like "PR1490" or "v0_2_1").
         return " OR ".join(f'"{t}"' for t in tokens if t)
 
-    def search_bm25(self, query: str, ns: str = "default", top_k: int = 20) -> list[dict[str, Any]]:
+    def search_bm25(
+        self,
+        query: str,
+        ns: str = "default",
+        top_k: int = 20,
+        min_tier: int | None = None,
+        max_tier: int | None = None,
+    ) -> list[dict[str, Any]]:
         """BM25 keyword search via SQLite FTS5. Returns rows ordered best-first.
 
         score is negated so that higher = better, matching the vector path.
         Empty / punctuation-only queries return [].
+        min_tier / max_tier filter by tier (0=pinned, 1=default, 2=ambient).
         """
         match = self._fts_sanitize(query)
         if not match:
             return []
+        tier_clause = ""
+        tier_params: list[int] = []
+        if min_tier is not None:
+            tier_clause += " AND m.tier >= ?"
+            tier_params.append(min_tier)
+        if max_tier is not None:
+            tier_clause += " AND m.tier <= ?"
+            tier_params.append(max_tier)
         with self._lock:
             try:
                 # MATCH without a column qualifier searches every indexed
@@ -378,9 +394,9 @@ class Store:
                     "m.last_accessed, m.access_count, bm25(memories_fts) AS bm25_raw "
                     "FROM memories_fts "
                     "JOIN memories m ON m.id = memories_fts.rowid "
-                    "WHERE memories_fts MATCH ? AND m.ns = ? "
+                    f"WHERE memories_fts MATCH ? AND m.ns = ?{tier_clause} "
                     "ORDER BY bm25_raw LIMIT ?",
-                    (match, ns, top_k),
+                    (match, ns, *tier_params, top_k),
                 ).fetchall()
             except sqlite3.OperationalError:
                 # Malformed MATCH expression (rare; sanitizer should prevent it).
