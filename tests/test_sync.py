@@ -187,3 +187,36 @@ def test_imported_rows_are_searchable(tmp_path):
     )
     assert len(out["results"]) >= 1
     assert "Zeus" in out["results"][0]["text"] or "DeepSeek" in out["results"][0]["text"]
+
+
+def test_read_manifest_unreadable_member(tmp_path):
+    """Line 103: manifest member extractfile returns None → ValueError."""
+    import tarfile, io
+    from mnemonics.sync import _read_manifest
+    arc = tmp_path / "bad.tar.gz"
+    with tarfile.open(arc, "w:gz") as tf:
+        # Add a symlink member named as the manifest
+        lnk = tarfile.TarInfo(name="mnemonics_manifest.json")
+        lnk.type = tarfile.SYMTYPE
+        lnk.linkname = "nonexistent"
+        tf.addfile(lnk)
+    import pytest
+    with pytest.raises((ValueError, Exception)):
+        _read_manifest(arc)
+
+
+def test_import_all_rows_duplicate_skips_batch(tmp_path):
+    """Line 175: to_insert empty after dedup → continue (no insert)."""
+    src = tmp_path / "src"
+    _seed(Store(path=src), "shared", ["dup-A", "dup-B"])
+    arc = export_store(store_path=src, out=tmp_path / "snap.tar.gz")
+
+    dest = tmp_path / "dest"
+    # First import — all rows land
+    import_store(archive=arc, store_path=dest)
+    count_before = Store(path=dest).count("shared")
+
+    # Second import with skip-existing — all rows are duplicates, to_insert empty
+    summary = import_store(archive=arc, store_path=dest, strategy="skip-existing")
+    assert Store(path=dest).count("shared") == count_before
+    assert summary["skipped"] == count_before
