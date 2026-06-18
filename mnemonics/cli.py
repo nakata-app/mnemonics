@@ -86,6 +86,13 @@ def main() -> None:
     ft.add_argument("--apply", action="store_true", help="Actually delete (default: dry-run)")
     ft.add_argument("--path", default="~/.mnemonics")
 
+    # list
+    ls = sub.add_parser("list", help="Browse memories in a namespace, newest first")
+    ls.add_argument("--ns", default="default", help="Namespace to list (default: 'default')")
+    ls.add_argument("--limit", type=int, default=20, help="Max rows to show (default: 20)")
+    ls.add_argument("--offset", type=int, default=0, help="Pagination offset (default: 0)")
+    ls.add_argument("--path", default="~/.mnemonics")
+
     # sync export / import (peer transport)
     sy = sub.add_parser("sync", help="Export/import portable transport archive between stores")
     sy_sub = sy.add_subparsers(dest="sync_cmd")
@@ -232,6 +239,21 @@ def main() -> None:
                 print(f"      └─ raw: {r['text'][:120]}")
             else:
                 print(f"{header} {r['text'][:120]}")
+
+    elif args.cmd == "list":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        rows = store.list_memories(ns=args.ns, limit=args.limit, offset=args.offset)
+        if not rows:
+            print(f"No memories in ns={args.ns!r} (offset={args.offset}).")
+        else:
+            tier_label = {0: "pin", 1: "def", 2: "amb"}
+            print(f"ns={args.ns!r}  offset={args.offset}  showing {len(rows)} row(s)")
+            for r in rows:
+                snippet = (r["text"] or "")[:120].replace("\n", " ")
+                tl = tier_label.get(r["tier"], "?")
+                summary = f"  [{r['summary'][:60]}]" if r["summary"] else ""
+                print(f"  [{r['id']}] {tl} {r['created']}  {snippet}{summary}")
 
     elif args.cmd == "stats":
         from mnemonics.store import Store

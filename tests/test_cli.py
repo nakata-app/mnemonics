@@ -529,3 +529,35 @@ def test_restore_calls_restore(tmp_path, capsys):
     mock_rs.assert_called_once()
     out = capsys.readouterr().out
     assert "memories.db" in out or "Restored" in out
+
+
+# ── list ──────────────────────────────────────────────────────────────────────
+
+def test_cli_list_empty(tmp_path, capsys):
+    from mnemonics.store import Store
+    Store(tmp_path)  # init empty store
+    with patch("sys.argv", ["mnemonics", "list", "--ns", "default", "--path", str(tmp_path)]):
+        try:
+            main()
+        except SystemExit:
+            pass
+    out = capsys.readouterr().out
+    assert "No memories" in out
+
+
+def test_cli_list_shows_rows(tmp_path, capsys):
+    import numpy as np
+    from mnemonics.store import Store, DIM
+    store = Store(tmp_path)
+    rng = np.random.default_rng(0)
+    vecs = rng.random((3, DIM)).astype("float32")
+    vecs = vecs / np.linalg.norm(vecs, axis=1, keepdims=True)
+    store.add(["alpha", "beta", "gamma"], vecs, ns="default")
+    with patch("sys.argv", ["mnemonics", "list", "--ns", "default", "--path", str(tmp_path)]):
+        try:
+            main()
+        except SystemExit:
+            pass
+    out = capsys.readouterr().out
+    assert "showing 3 row(s)" in out
+    assert "alpha" in out or "beta" in out or "gamma" in out
