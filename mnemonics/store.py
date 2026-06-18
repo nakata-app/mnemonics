@@ -419,6 +419,14 @@ class Store:
         row = self._db.execute("SELECT COUNT(*) FROM memories WHERE ns=?", (ns,)).fetchone()
         return row[0] if row else 0
 
+    def update_summary(self, memory_id: int, summary: str | None) -> bool:
+        with self._lock:
+            cur = self._db.execute(
+                "UPDATE memories SET summary=? WHERE id=?", (summary, memory_id)
+            )
+            self._db.commit()
+        return cur.rowcount > 0
+
     def list_memories(
         self, ns: str = "default", limit: int = 20, offset: int = 0
     ) -> list[dict]:

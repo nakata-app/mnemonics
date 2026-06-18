@@ -88,6 +88,8 @@ def http_call(store, method: str, path: str, body: dict | None = None) -> tuple[
             handler.do_GET()
         elif method == "POST":
             handler.do_POST()
+        elif method == "PATCH":
+            handler.do_PATCH()
         elif method == "DELETE":
             handler.do_DELETE()
 
@@ -100,6 +102,39 @@ def test_health(tmp_store):
     code, data = http_call(tmp_store, "GET", "/health")
     assert code == 200
     assert data["status"] == "ok"
+
+
+# ── PATCH /memory/<id> ────────────────────────────────────────────────────────
+
+def test_http_patch_summary(populated_store):
+    store, docs, vecs = populated_store
+    first_id = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    code, data = http_call(store, "PATCH", f"/memory/{first_id}", {"summary": "updated gist"})
+    assert code == 200
+    assert data["updated"] is True
+    row = store.get(first_id)
+    assert row["summary"] == "updated gist"
+
+
+def test_http_patch_summary_clear(populated_store):
+    store, docs, vecs = populated_store
+    first_id = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    store.update_summary(first_id, "some summary")
+    code, data = http_call(store, "PATCH", f"/memory/{first_id}", {"summary": None})
+    assert code == 200
+    assert store.get(first_id)["summary"] is None
+
+
+def test_http_patch_not_found(tmp_store):
+    code, data = http_call(tmp_store, "PATCH", "/memory/9999", {"summary": "x"})
+    assert code == 404
+
+
+def test_http_patch_no_summary_field(populated_store):
+    store, docs, vecs = populated_store
+    first_id = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    code, data = http_call(store, "PATCH", f"/memory/{first_id}", {"tier": 2})
+    assert code == 400
 
 
 # ── GET /memory/<id> ──────────────────────────────────────────────────────────
@@ -491,8 +526,8 @@ def test_mcp_tools_list(tmp_store):
     resp = _mcp(tmp_store, {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
     names = {t["name"] for t in resp[0]["result"]["tools"]}
     assert names == {
-        "mnemonics_ingest", "mnemonics_retrieve", "mnemonics_list",
-        "mnemonics_get", "mnemonics_forget", "mnemonics_forget_ns",
+        "mnemonics_ingest", "mnemonics_retrieve", "mnemonics_update_summary",
+        "mnemonics_list", "mnemonics_get", "mnemonics_forget", "mnemonics_forget_ns",
         "mnemonics_rebuild_index", "mnemonics_pin", "mnemonics_tier",
         "mnemonics_gc", "mnemonics_stats", "mnemonics_health", "mnemonics_repair",
     }
@@ -581,6 +616,37 @@ def test_mcp_get_missing_id(tmp_store):
         "jsonrpc": "2.0", "id": 82,
         "method": "tools/call",
         "params": {"name": "mnemonics_get", "arguments": {}},
+    })
+    assert "error" in resp[0]
+
+
+def test_mcp_update_summary(populated_store):
+    store, docs, vecs = populated_store
+    first_id = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    resp = _mcp(store, {
+        "jsonrpc": "2.0", "id": 95,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_update_summary", "arguments": {"id": first_id, "summary": "new gist"}},
+    })
+    text = resp[0]["result"]["content"][0]["text"]
+    assert "updated" in text
+    assert store.get(first_id)["summary"] == "new gist"
+
+
+def test_mcp_update_summary_not_found(tmp_store):
+    resp = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 96,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_update_summary", "arguments": {"id": 9999, "summary": "x"}},
+    })
+    assert "error" in resp[0]
+
+
+def test_mcp_update_summary_missing_id(tmp_store):
+    resp = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 97,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_update_summary", "arguments": {}},
     })
     assert "error" in resp[0]
 

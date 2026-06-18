@@ -275,6 +275,29 @@ class _Handler(BaseHTTPRequestHandler):
         else:
             self._json(404, {"error": "not found"})
 
+    def do_PATCH(self) -> None:
+        try:
+            body = self._body()
+        except Exception:
+            self._json(400, {"error": "invalid JSON"})
+            return
+        if self.path.startswith("/memory/"):
+            try:
+                mid = int(self.path.split("/memory/")[1])
+            except ValueError:
+                self._json(400, {"error": "invalid id"})
+                return
+            if "summary" not in body:
+                self._json(400, {"error": "only 'summary' field is patchable"})
+                return
+            changed = _get_store().update_summary(mid, body.get("summary"))
+            if changed:
+                self._json(200, {"id": mid, "updated": True})
+            else:
+                self._json(404, {"error": f"memory {mid} not found"})
+        else:
+            self._json(404, {"error": "not found"})
+
     def do_DELETE(self) -> None:
         if self.path.startswith("/memory/"):
             try:
@@ -351,6 +374,18 @@ def _mcp_loop() -> None:
                             "rerank": {"type": "boolean", "description": "Cross-encoder rerank via AdaptMem over the candidate band (default false)"},
                         },
                         "required": ["query"],
+                    },
+                },
+                {
+                    "name": "mnemonics_update_summary",
+                    "description": "Set or clear the summary field of an existing memory. The summary is a short gist indexed by BM25 alongside the raw text. Pass summary=null to clear. Returns error if the id doesn't exist.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer", "description": "Memory id to update"},
+                            "summary": {"type": ["string", "null"], "description": "New summary text, or null to clear"},
+                        },
+                        "required": ["id"],
                     },
                 },
                 {
@@ -535,6 +570,19 @@ def _mcp_loop() -> None:
                     else:
                         lines.append(f"{header} {r['text'][:200]}")
                 ok({"content": [{"type": "text", "text": "\n".join(lines)}]})
+
+            elif name == "mnemonics_update_summary":
+                mid = args.get("id")
+                if mid is None:
+                    err("mnemonics_update_summary: 'id' is required")
+                    continue
+                summary_val = args.get("summary")  # None clears it
+                changed = _get_store().update_summary(int(mid), summary_val)
+                if changed:
+                    action = "cleared" if summary_val is None else "updated"
+                    ok({"content": [{"type": "text", "text": f"Summary {action} for id={mid}."}]})
+                else:
+                    err(f"mnemonics_update_summary: memory {mid} not found")
 
             elif name == "mnemonics_list":
                 ns_val = args.get("ns", "default")
