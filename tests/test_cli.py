@@ -2352,3 +2352,18 @@ def test_cli_merge_ns_basic(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "5" in out
     assert "dst" in out
+
+
+# ── touch-many ─────────────────────────────────────────────────────────────────
+
+def test_cli_touch_many_basic(tmp_path, capsys):
+    mock_store = MagicMock()
+    mock_store.touch_many.return_value = 3
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "touch-many", "1", "2", "3",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.touch_many.assert_called_once_with([1, 2, 3])
+    assert "3" in capsys.readouterr().out

@@ -177,6 +177,14 @@ class _Handler(BaseHTTPRequestHandler):
                 n = store.forget(ns=ns, before=before, tier=tier_filter)
                 self._json(200, {"deleted": n, "dry_run": False})
 
+        elif self.path == "/touch-many":
+            ids_arg_t = body.get("ids")
+            if not isinstance(ids_arg_t, list):
+                self._json(400, {"error": "'ids' (list of ints) is required"})
+                return
+            updated_t = _get_store().touch_many([int(i) for i in ids_arg_t])
+            self._json(200, {"touched": updated_t})
+
         elif self.path == "/bulk-tier":
             ids_arg = body.get("ids")
             tier_arg = body.get("tier")
@@ -823,6 +831,17 @@ def _mcp_loop() -> None:
                     },
                 },
                 {
+                    "name": "mnemonics_touch_many",
+                    "description": "Mark multiple memories as accessed right now: updates last_accessed = now() and increments access_count for each ID. Useful after get_many() or any retrieval path that doesn't auto-touch. Returns the number of rows actually updated.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ids": {"type": "array", "items": {"type": "integer"}, "description": "Memory IDs to mark as accessed"},
+                        },
+                        "required": ["ids"],
+                    },
+                },
+                {
                     "name": "mnemonics_bulk_tier",
                     "description": "Set tier for multiple memories in a single operation. Useful for bulk-pinning or bulk-archiving a set of results. Returns how many rows were actually updated.",
                     "inputSchema": {
@@ -1299,6 +1318,14 @@ def _mcp_loop() -> None:
                     ok({"content": [{"type": "text", "text": "\n".join(lines_r)}]})
                 else:
                     ok({"content": [{"type": "text", "text": "(no recently accessed memories)"}]})
+
+            elif name == "mnemonics_touch_many":
+                ids_arg_tm = args.get("ids")
+                if not isinstance(ids_arg_tm, list):
+                    err("mnemonics_touch_many: 'ids' (list of ints) is required")
+                    continue
+                touched = _get_store().touch_many([int(i) for i in ids_arg_tm])
+                ok({"content": [{"type": "text", "text": f"Touched {touched} memory/memories (last_accessed + access_count updated)."}]})
 
             elif name == "mnemonics_bulk_tier":
                 ids_arg = args.get("ids", [])

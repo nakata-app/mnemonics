@@ -445,6 +445,25 @@ class Store:
     def pin(self, memory_id: int) -> bool:
         return self.set_tier(memory_id, 0)
 
+    def touch_many(self, memory_ids: list[int]) -> int:
+        """Update last_accessed = now() and increment access_count for the given IDs.
+
+        Returns the number of rows actually updated (non-existent IDs are skipped).
+        Useful for marking a batch of memories as accessed after retrieval via
+        get_many() or any other method that doesn't auto-touch.
+        """
+        if not memory_ids:
+            return 0
+        placeholders = ",".join("?" * len(memory_ids))
+        with self._lock:
+            cur = self._db.execute(
+                f"UPDATE memories SET last_accessed = datetime('now'), "
+                f"access_count = access_count + 1 WHERE id IN ({placeholders})",
+                memory_ids,
+            )
+            self._db.commit()
+        return cur.rowcount
+
     def recent_accessed(
         self,
         ns: str | None = "default",

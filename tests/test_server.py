@@ -618,7 +618,7 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_pin", "mnemonics_tier", "mnemonics_gc", "mnemonics_stats",
         "mnemonics_health", "mnemonics_repair",
         "mnemonics_search_by_meta", "mnemonics_delete_many", "mnemonics_update_meta",
-        "mnemonics_export", "mnemonics_import", "mnemonics_text_search", "mnemonics_rename_ns", "mnemonics_namespaces", "mnemonics_bulk_tier", "mnemonics_copy_ns", "mnemonics_count", "mnemonics_merge_ns", "mnemonics_stats_by_ns", "mnemonics_recent", "mnemonics_top_accessed", "mnemonics_get_many",
+        "mnemonics_export", "mnemonics_import", "mnemonics_text_search", "mnemonics_rename_ns", "mnemonics_namespaces", "mnemonics_bulk_tier", "mnemonics_copy_ns", "mnemonics_touch_many", "mnemonics_count", "mnemonics_merge_ns", "mnemonics_stats_by_ns", "mnemonics_recent", "mnemonics_top_accessed", "mnemonics_get_many",
     }
 
 
@@ -2726,3 +2726,46 @@ def test_mcp_merge_ns_in_tools_list(tmp_store):
         "jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {},
     })[0]
     assert "mnemonics_merge_ns" in {t["name"] for t in resp["result"]["tools"]}
+
+
+# ── POST /touch-many ──────────────────────────────────────────────────────────
+
+def test_http_touch_many_basic(populated_store):
+    store, docs, vecs = populated_store
+    ids = [r[0] for r in store._db.execute("SELECT id FROM memories LIMIT 2").fetchall()]
+    code, data = http_call(store, "POST", "/touch-many", {"ids": ids})
+    assert code == 200
+    assert data["touched"] == 2
+
+
+def test_http_touch_many_missing_ids(tmp_store):
+    code, data = http_call(tmp_store, "POST", "/touch-many", {"other": "x"})
+    assert code == 400
+
+
+# ── MCP mnemonics_touch_many ──────────────────────────────────────────────────
+
+def test_mcp_touch_many_basic(populated_store):
+    store, docs, vecs = populated_store
+    ids = [r[0] for r in store._db.execute("SELECT id FROM memories LIMIT 2").fetchall()]
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_touch_many", "arguments": {"ids": ids}},
+    })[0]
+    assert "result" in r
+    assert "2" in r["result"]["content"][0]["text"]
+
+
+def test_mcp_touch_many_missing_args(tmp_store):
+    r = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_touch_many", "arguments": {"other": "x"}},
+    })[0]
+    assert "error" in r
+
+
+def test_mcp_touch_many_in_tools_list(tmp_store):
+    resp = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {},
+    })[0]
+    assert "mnemonics_touch_many" in {t["name"] for t in resp["result"]["tools"]}

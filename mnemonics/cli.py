@@ -252,6 +252,11 @@ def main() -> None:
     rc.add_argument("--json", dest="json_out", action="store_true", help="Output as JSON array")
     rc.add_argument("--path", default="~/.mnemonics", help="Store directory")
 
+    # touch-many
+    tm = sub.add_parser("touch-many", help="Mark memories as accessed now (updates last_accessed + access_count)")
+    tm.add_argument("ids", type=int, nargs="+", help="Memory IDs to touch")
+    tm.add_argument("--path", default="~/.mnemonics", help="Store directory")
+
     # bulk-tier
     bt = sub.add_parser("bulk-tier", help="Set tier for multiple memories in one operation")
     bt.add_argument("tier", type=int, choices=[0, 1, 2], help="Target tier: 0=pin, 1=default, 2=ambient")
@@ -936,6 +941,12 @@ def main() -> None:
                 accessed = r.get("last_accessed") or "never"
                 snippet = r["text"][:100].replace("\n", " ")
                 print(f"  [{tl}] id={r['id']} accessed={accessed}  {snippet}")
+
+    elif args.cmd == "touch-many":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        touched = store.touch_many(args.ids)
+        print(f"Touched {touched} memory/memories.")
 
     elif args.cmd == "bulk-tier":
         from mnemonics.store import Store

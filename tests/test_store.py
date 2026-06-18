@@ -1782,3 +1782,30 @@ def test_merge_ns_cache_invalidated(populated_store):
     store.merge_ns("default", "merged_dst")
     assert "default" not in store._index
     assert "merged_dst" not in store._index
+
+
+# ── touch_many ────────────────────────────────────────────────────────────────
+
+def test_touch_many_updates_access_fields(populated_store):
+    """touch_many increments access_count and sets last_accessed."""
+    store, docs, vecs = populated_store
+    ids = [r[0] for r in store._db.execute("SELECT id FROM memories").fetchall()]
+    updated = store.touch_many(ids[:2])
+    assert updated == 2
+    for mid in ids[:2]:
+        row = store._db.execute(
+            "SELECT last_accessed, access_count FROM memories WHERE id=?", (mid,)
+        ).fetchone()
+        assert row[0] is not None
+        assert row[1] > 0
+
+
+def test_touch_many_empty_list(populated_store):
+    store, docs, vecs = populated_store
+    assert store.touch_many([]) == 0
+
+
+def test_touch_many_missing_ids_ignored(populated_store):
+    store, docs, vecs = populated_store
+    updated = store.touch_many([99999, 88888])
+    assert updated == 0
