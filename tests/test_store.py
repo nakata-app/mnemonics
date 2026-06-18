@@ -2751,3 +2751,76 @@ def test_word_frequency_respects_top_n(populated_store):
     store, docs, vecs = populated_store
     words = store.word_frequency(ns="default", top_n=2)
     assert len(words) <= 2
+
+
+# ── get_tags ──────────────────────────────────────────────────────────────────
+
+def test_get_tags_returns_tags(populated_store):
+    """get_tags returns the tags list for a tagged memory."""
+    store, docs, vecs = populated_store
+    mid = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    store.tag(mid, "alpha")
+    store.tag(mid, "beta")
+    tags = store.get_tags(mid)
+    assert tags is not None
+    assert set(tags) == {"alpha", "beta"}
+
+
+def test_get_tags_no_tags(populated_store):
+    """get_tags returns empty list for a memory with no tags."""
+    store, docs, vecs = populated_store
+    mid = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    assert store.get_tags(mid) == []
+
+
+def test_get_tags_nonexistent_returns_none(tmp_store):
+    """get_tags returns None for a missing ID."""
+    assert tmp_store.get_tags(99999) is None
+
+
+# ── search_date_range ─────────────────────────────────────────────────────────
+
+def test_search_date_range_returns_all_without_bounds(populated_store):
+    """search_date_range with no bounds returns all memories in ns."""
+    store, docs, vecs = populated_store
+    hits = store.search_date_range(ns="default")
+    assert len(hits) == len(docs)
+
+
+def test_search_date_range_after_filter(populated_store):
+    """search_date_range after='9999-01-01' returns empty."""
+    store, docs, vecs = populated_store
+    hits = store.search_date_range(ns="default", after="9999-01-01")
+    assert hits == []
+
+
+def test_search_date_range_before_filter(populated_store):
+    """search_date_range before='1970-01-01' returns empty."""
+    store, docs, vecs = populated_store
+    hits = store.search_date_range(ns="default", before="1970-01-01")
+    assert hits == []
+
+
+def test_search_date_range_tier_filter(populated_store):
+    """search_date_range tier=2 returns only tier-2 memories."""
+    store, docs, vecs = populated_store
+    ids = [r[0] for r in store._db.execute("SELECT id FROM memories LIMIT 2").fetchall()]
+    for mid in ids:
+        store.set_tier(mid, 2)
+    hits = store.search_date_range(ns="default", tier=2)
+    assert all(h["tier"] == 2 for h in hits)
+
+
+def test_search_date_range_all_ns(populated_store):
+    """search_date_range ns=None spans all namespaces."""
+    store, docs, vecs = populated_store
+    store.add(["extra"], vecs[:1], ns="other")
+    hits_all = store.search_date_range(ns=None)
+    assert len(hits_all) == len(docs) + 1
+
+
+def test_search_date_range_limit(populated_store):
+    """search_date_range respects limit."""
+    store, docs, vecs = populated_store
+    hits = store.search_date_range(ns="default", limit=2)
+    assert len(hits) <= 2

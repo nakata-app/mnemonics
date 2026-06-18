@@ -3108,3 +3108,93 @@ def test_cli_word_frequency_all_ns(tmp_path, capsys):
     ):
         main()
     mock_store.word_frequency.assert_called_once_with(None, 20)
+
+
+# ── get-tags CLI ──────────────────────────────────────────────────────────────
+
+def test_cli_get_tags_with_tags(tmp_path, capsys):
+    """get-tags prints comma-separated tags."""
+    mock_store = MagicMock()
+    mock_store.get_tags.return_value = ["alpha", "beta"]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "get-tags", "7", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "alpha" in out and "beta" in out
+
+
+def test_cli_get_tags_no_tags(tmp_path, capsys):
+    """get-tags prints 'no tags' when list is empty."""
+    mock_store = MagicMock()
+    mock_store.get_tags.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "get-tags", "7", "--path", str(tmp_path)]),
+    ):
+        main()
+    assert "no tags" in capsys.readouterr().out
+
+
+def test_cli_get_tags_not_found(tmp_path, capsys):
+    """get-tags exits 1 when ID not found."""
+    mock_store = MagicMock()
+    mock_store.get_tags.return_value = None
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "get-tags", "999", "--path", str(tmp_path)]),
+    ):
+        with pytest.raises(SystemExit) as exc:
+            main()
+    assert exc.value.code == 1
+
+
+# ── search-date-range CLI ─────────────────────────────────────────────────────
+
+def test_cli_search_date_range_ok(tmp_path, capsys):
+    """search-date-range prints results."""
+    mock_store = MagicMock()
+    mock_store.search_date_range.return_value = [
+        {"id": 1, "ns": "default", "text": "hello", "summary": None,
+         "tier": 1, "created": "2026-06-01T12:00:00"},
+    ]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "search-date-range",
+                           "--ns", "default", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "1 result" in out and "hello" in out
+
+
+def test_cli_search_date_range_json(tmp_path, capsys):
+    """search-date-range --json outputs valid JSON."""
+    mock_store = MagicMock()
+    mock_store.search_date_range.return_value = [
+        {"id": 2, "ns": "default", "text": "world", "summary": None,
+         "tier": 0, "created": "2026-01-01T00:00:00"},
+    ]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "search-date-range", "--json",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    parsed = json.loads(capsys.readouterr().out)
+    assert parsed[0]["id"] == 2
+
+
+def test_cli_search_date_range_all_ns(tmp_path, capsys):
+    """search-date-range --all-ns passes ns=None."""
+    mock_store = MagicMock()
+    mock_store.search_date_range.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "search-date-range", "--all-ns",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    call_kwargs = mock_store.search_date_range.call_args
+    assert call_kwargs.kwargs.get("ns") is None or call_kwargs.args[0] is None

@@ -637,6 +637,8 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_find_by_tag",
         "mnemonics_list_tags",
         "mnemonics_word_frequency",
+        "mnemonics_get_tags",
+        "mnemonics_search_date_range",
     }
 
 
@@ -3751,3 +3753,109 @@ def test_mcp_word_frequency_empty(tmp_store):
     })[0]
     assert "result" in r
     assert "No words" in r["result"]["content"][0]["text"]
+
+
+# ── get-tags / search-date-range REST + MCP ───────────────────────────────────
+
+def test_http_get_tags_ok(populated_store):
+    """GET /get-tags/<id> returns tags list."""
+    store, docs, vecs = populated_store
+    mid = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    store.tag(mid, "srv-tag")
+    code, data = http_call(store, "GET", f"/get-tags/{mid}", {})
+    assert code == 200
+    assert "srv-tag" in data["tags"]
+
+
+def test_http_get_tags_not_found(tmp_store):
+    """GET /get-tags/<id> with missing id returns 404."""
+    code, data = http_call(tmp_store, "GET", "/get-tags/999999", {})
+    assert code == 404
+
+
+def test_http_get_tags_invalid_id(tmp_store):
+    """GET /get-tags/abc returns 400."""
+    code, data = http_call(tmp_store, "GET", "/get-tags/abc", {})
+    assert code == 400
+
+
+def test_http_search_date_range_ok(populated_store):
+    """GET /search-date-range?ns=default returns results."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/search-date-range?ns=default", {})
+    assert code == 200
+    assert len(data["results"]) == len(docs)
+
+
+def test_http_search_date_range_after_empty(populated_store):
+    """GET /search-date-range?after=9999-01-01 returns empty results."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/search-date-range?after=9999-01-01", {})
+    assert code == 200
+    assert data["results"] == []
+
+
+def test_mcp_get_tags_ok(populated_store):
+    """MCP mnemonics_get_tags returns tags."""
+    store, docs, vecs = populated_store
+    mid = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    store.tag(mid, "mcp-gtag")
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_get_tags", "arguments": {"id": mid}},
+    })[0]
+    assert "result" in r
+    assert "mcp-gtag" in r["result"]["content"][0]["text"]
+
+
+def test_mcp_get_tags_not_found(tmp_store):
+    """MCP mnemonics_get_tags with missing id returns error."""
+    r = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_get_tags", "arguments": {"id": 999999}},
+    })[0]
+    assert "error" in r
+
+
+def test_mcp_get_tags_missing_arg(tmp_store):
+    """MCP mnemonics_get_tags without id returns error."""
+    r = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_get_tags", "arguments": {}},
+    })[0]
+    assert "error" in r
+
+
+def test_mcp_search_date_range_ok(populated_store):
+    """MCP mnemonics_search_date_range returns formatted results."""
+    store, docs, vecs = populated_store
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_search_date_range",
+                   "arguments": {"ns": "default"}},
+    })[0]
+    assert "result" in r
+    assert "Found" in r["result"]["content"][0]["text"]
+
+
+def test_mcp_search_date_range_empty(populated_store):
+    """MCP mnemonics_search_date_range with no results returns 'no memories'."""
+    store, docs, vecs = populated_store
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_search_date_range",
+                   "arguments": {"ns": "default", "after": "9999-01-01"}},
+    })[0]
+    assert "result" in r
+    assert "No memories" in r["result"]["content"][0]["text"]
+
+
+def test_mcp_search_date_range_with_tier(populated_store):
+    """MCP mnemonics_search_date_range with tier filter passes tier to store."""
+    store, docs, vecs = populated_store
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_search_date_range",
+                   "arguments": {"ns": "default", "tier": 1}},
+    })[0]
+    assert "result" in r

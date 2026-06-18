@@ -531,6 +531,33 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(200, _get_store().health_check())
         elif path == "/namespaces":
             self._json(200, {"namespaces": _get_store().list_namespaces()})
+        elif path.startswith("/get-tags/"):
+            from urllib.parse import unquote_plus as _uqp_gtag
+            raw_id_gt = path[len("/get-tags/"):]
+            if not raw_id_gt.isdigit():
+                self._json(400, {"error": "memory id must be a positive integer"})
+                return
+            tags_gt = _get_store().get_tags(int(raw_id_gt))
+            if tags_gt is None:
+                self._json(404, {"error": f"memory id={raw_id_gt!r} not found"})
+            else:
+                self._json(200, {"id": int(raw_id_gt), "tags": tags_gt})
+        elif path.startswith("/search-date-range"):
+            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_sdr
+            qs_sdr = parse_qs(urlparse(self.path).query)
+            ns_sdr_raw = qs_sdr.get("ns", [None])[0]
+            ns_sdr = _uqp_sdr(ns_sdr_raw) if ns_sdr_raw is not None else None
+            after_sdr = qs_sdr.get("after", [None])[0]
+            before_sdr = qs_sdr.get("before", [None])[0]
+            limit_sdr = int(qs_sdr.get("limit", ["100"])[0])
+            tier_sdr_raw = qs_sdr.get("tier", [None])[0]
+            tier_sdr = int(tier_sdr_raw) if tier_sdr_raw is not None else None
+            hits_sdr = _get_store().search_date_range(
+                ns=ns_sdr, after=after_sdr, before=before_sdr,
+                limit=limit_sdr, tier=tier_sdr,
+            )
+            self._json(200, {"ns": ns_sdr, "after": after_sdr, "before": before_sdr,
+                              "results": hits_sdr})
         elif path.startswith("/word-frequency"):
             from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_wf
             qs_wf = parse_qs(urlparse(self.path).query)
@@ -896,6 +923,31 @@ def _mcp_loop() -> None:
                             "max_tier": {"type": "integer", "description": "Only return memories with tier <= this value"},
                         },
                         "required": ["query", "vector"],
+                    },
+                },
+                {
+                    "name": "mnemonics_get_tags",
+                    "description": "Return the tags list from a memory's meta JSON. Returns an empty list if the memory has no tags, or an error if the memory does not exist.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer", "description": "Memory ID"},
+                        },
+                        "required": ["id"],
+                    },
+                },
+                {
+                    "name": "mnemonics_search_date_range",
+                    "description": "Return memories whose created timestamp falls within an optional date range (ISO-8601 strings for 'after' and 'before'). Both bounds are optional. Optionally filter by tier. Results ordered by created DESC.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ns": {"type": "string", "description": "Namespace (omit for all)"},
+                            "after": {"type": "string", "description": "Lower bound, e.g. '2026-01-01'"},
+                            "before": {"type": "string", "description": "Upper bound, e.g. '2026-12-31'"},
+                            "limit": {"type": "integer", "default": 100},
+                            "tier": {"type": "integer", "description": "Filter by tier (0=pinned, 1=default, 2=ambient)"},
+                        },
                     },
                 },
                 {
@@ -1560,6 +1612,43 @@ def _mcp_loop() -> None:
                         if r.get("summary"):
                             lines_hs.append(f"           summary: {r['summary'][:120]}")
                     ok({"content": [{"type": "text", "text": "\n".join(lines_hs)}]})
+
+            elif name == "mnemonics_get_tags":
+                gt_id = args.get("id")
+                if gt_id is None:
+                    err("mnemonics_get_tags: 'id' is required")
+                    continue
+                gt_tags = _get_store().get_tags(int(gt_id))
+                if gt_tags is None:
+                    err(f"mnemonics_get_tags: id={gt_id!r} not found")
+                    continue
+                ok({"content": [{"type": "text", "text":
+                    f"Tags for id={gt_id}: {gt_tags if gt_tags else '(none)'}"}]})
+
+            elif name == "mnemonics_search_date_range":
+                sdr_ns = args.get("ns")
+                sdr_after = args.get("after")
+                sdr_before = args.get("before")
+                sdr_limit = int(args.get("limit", 100))
+                sdr_tier = args.get("tier")
+                if sdr_tier is not None:
+                    sdr_tier = int(sdr_tier)
+                sdr_hits = _get_store().search_date_range(
+                    ns=sdr_ns, after=sdr_after, before=sdr_before,
+                    limit=sdr_limit, tier=sdr_tier,
+                )
+                sdr_ns_label = repr(sdr_ns) if sdr_ns is not None else "(all)"
+                if not sdr_hits:
+                    ok({"content": [{"type": "text", "text":
+                        f"No memories found in ns={sdr_ns_label} for that date range."}]})
+                    continue
+                lines_sdr = [f"Found {len(sdr_hits)} memor{'y' if len(sdr_hits)==1 else 'ies'} in ns={sdr_ns_label}:"]
+                tier_labels = {0: "pinned", 1: "default", 2: "ambient"}
+                for h in sdr_hits[:20]:
+                    tl = tier_labels.get(h["tier"], str(h["tier"]))
+                    snippet = h["text"][:70].replace("\n", " ")
+                    lines_sdr.append(f"  [{h['created'][:10]}] [{tl}] id={h['id']} {snippet}")
+                ok({"content": [{"type": "text", "text": "\n".join(lines_sdr)}]})
 
             elif name == "mnemonics_word_frequency":
                 wf_ns = args.get("ns")

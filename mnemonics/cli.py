@@ -80,6 +80,22 @@ def main() -> None:
     ts.add_argument("--json", dest="json_out", action="store_true", help="Output results as JSON array")
     ts.add_argument("--path", default="~/.mnemonics")
 
+    # get-tags
+    gtp = sub.add_parser("get-tags", help="Show tags for a specific memory")
+    gtp.add_argument("id", type=int, help="Memory ID")
+    gtp.add_argument("--path", default="~/.mnemonics")
+
+    # search-date-range
+    sdr = sub.add_parser("search-date-range", help="Find memories by creation date range")
+    sdr.add_argument("--ns", default="default")
+    sdr.add_argument("--all-ns", action="store_true")
+    sdr.add_argument("--after", default=None, help="ISO date lower bound, e.g. 2026-01-01")
+    sdr.add_argument("--before", default=None, help="ISO date upper bound, e.g. 2026-12-31")
+    sdr.add_argument("--tier", type=int, default=None, choices=[0, 1, 2])
+    sdr.add_argument("--limit", type=int, default=20)
+    sdr.add_argument("--json", dest="json_out", action="store_true")
+    sdr.add_argument("--path", default="~/.mnemonics")
+
     # word-frequency
     wfp = sub.add_parser("word-frequency", help="Show most frequent words in a namespace")
     wfp.add_argument("--ns", default="default")
@@ -576,6 +592,37 @@ def main() -> None:
                 print(line)
                 if r.get("summary"):
                     print(f"           summary: {r['summary']}")
+
+    elif args.cmd == "get-tags":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        tags = store.get_tags(args.id)
+        if tags is None:
+            print(f"Error: memory id={args.id} not found.", file=sys.stderr)
+            sys.exit(1)
+        if tags:
+            print(f"Tags for id={args.id}: {', '.join(tags)}")
+        else:
+            print(f"id={args.id} has no tags.")
+
+    elif args.cmd == "search-date-range":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        ns_q = None if args.all_ns else args.ns
+        hits = store.search_date_range(
+            ns=ns_q, after=args.after, before=args.before,
+            limit=args.limit, tier=args.tier,
+        )
+        if args.json_out:
+            print(json.dumps(hits, default=str, ensure_ascii=False))
+        else:
+            tier_labels = {0: "pinned", 1: "default", 2: "ambient"}
+            ns_label = repr(ns_q) if ns_q is not None else "(all)"
+            print(f"Found {len(hits)} result(s) in ns={ns_label}:")
+            for h in hits:
+                tl = tier_labels.get(h["tier"], str(h["tier"]))
+                snippet = h["text"][:70].replace("\n", " ")
+                print(f"  [{h['created'][:10]}] [{tl}] id={h['id']}  {snippet}")
 
     elif args.cmd == "word-frequency":
         from mnemonics.store import Store

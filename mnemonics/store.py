@@ -769,6 +769,64 @@ class Store:
             self._db.commit()
         return cur.rowcount
 
+    def get_tags(self, memory_id: int) -> list[str] | None:
+        """Return the ``tags`` list from a memory's meta JSON.
+
+        Returns an empty list if the memory exists but has no tags, or
+        ``None`` if *memory_id* does not exist.
+        """
+        import json as _j_gt
+        row = self._db.execute(
+            "SELECT meta FROM memories WHERE id=?", (memory_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        meta = _j_gt.loads(row[0]) if row[0] else {}
+        return list(meta.get("tags", []))
+
+    def search_date_range(
+        self,
+        ns: str | None = "default",
+        after: str | None = None,
+        before: str | None = None,
+        limit: int = 100,
+        tier: int | None = None,
+    ) -> list[dict]:
+        """Return memories whose ``created`` timestamp falls within a date range.
+
+        *after* and *before* are ISO-8601 strings (``YYYY-MM-DD`` or full
+        datetime).  Both are optional — omitting both returns everything in
+        *ns* up to *limit*.  When *ns* is ``None`` the search spans all
+        namespaces.  Optionally filter by *tier*.
+        """
+        limit = max(1, min(int(limit), 1000))
+        clauses: list[str] = []
+        params: list = []
+        if ns is not None:
+            clauses.append("ns=?")
+            params.append(ns)
+        if after is not None:
+            clauses.append("created >= ?")
+            params.append(after)
+        if before is not None:
+            clauses.append("created <= ?")
+            params.append(before)
+        if tier is not None:
+            clauses.append("tier=?")
+            params.append(int(tier))
+        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+        params.append(limit)
+        rows = self._db.execute(
+            f"SELECT id, ns, text, summary, tier, created "
+            f"FROM memories {where} ORDER BY created DESC LIMIT ?",
+            params,
+        ).fetchall()
+        return [
+            {"id": r[0], "ns": r[1], "text": r[2], "summary": r[3],
+             "tier": r[4], "created": r[5]}
+            for r in rows
+        ]
+
     def word_frequency(self, ns: str | None = "default", top_n: int = 20) -> list[dict]:
         """Return the most frequent words across all memory texts in *ns*.
 
