@@ -1317,3 +1317,62 @@ def test_serve_http_path(monkeypatch, tmp_path):
         with pytest.raises(SystemExit):
             srv.serve(port=9999, mcp=False)
     monkeypatch.setattr(srv, "_store", None)
+
+
+# ── _Handler methods: _body, _json, log_message ───────────────────────────────
+
+def test_handler_body_reads_content_length():
+    """lines 70-73: _body reads rfile using Content-Length header."""
+    handler = srv._Handler.__new__(srv._Handler)
+    body_data = b'{"key": "value"}'
+    handler.headers = {"Content-Length": str(len(body_data))}
+    handler.rfile = io.BufferedReader(io.BytesIO(body_data))
+    result = handler._body()
+    assert result == {"key": "value"}
+
+
+def test_handler_body_returns_empty_when_no_content_length():
+    """lines 71-72: _body returns {} when Content-Length is 0."""
+    handler = srv._Handler.__new__(srv._Handler)
+    handler.headers = {}
+    handler.rfile = io.BufferedReader(io.BytesIO(b""))
+    result = handler._body()
+    assert result == {}
+
+
+def test_handler_json_sends_response():
+    """lines 76-81: _json writes HTTP response with JSON body."""
+    handler = srv._Handler.__new__(srv._Handler)
+    sent = {"code": None, "headers": [], "body": b""}
+
+    handler.send_response = lambda code: sent.__setitem__("code", code)
+    handler.send_header = lambda k, v: sent["headers"].append((k, v))
+    handler.end_headers = lambda: None
+    wfile = io.BytesIO()
+    handler.wfile = wfile
+
+    handler._json(200, {"ok": True})
+
+    assert sent["code"] == 200
+    assert any(k == "Content-Type" for k, _ in sent["headers"])
+    wfile.seek(0)
+    result = json.loads(wfile.read())
+    assert result == {"ok": True}
+
+
+def test_handler_log_message_suppressed():
+    """line 67: log_message is a no-op (suppresses HTTP access logs)."""
+    handler = srv._Handler.__new__(srv._Handler)
+    handler.log_message("GET %s HTTP/1.1", "/health")  # must not raise
+
+
+def test_version_fallback(monkeypatch):
+    """lines 44-45: _VERSION falls back when package not installed."""
+    import importlib.metadata
+    import importlib as _il
+    with patch("importlib.metadata.version",
+               side_effect=importlib.metadata.PackageNotFoundError("mnemonics")):
+        import mnemonics.server as _fresh
+        import importlib
+        importlib.reload(_fresh)
+        assert _fresh._VERSION == "0.3.0"
