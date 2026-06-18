@@ -80,6 +80,12 @@ def main() -> None:
     ts.add_argument("--json", dest="json_out", action="store_true", help="Output results as JSON array")
     ts.add_argument("--path", default="~/.mnemonics")
 
+    # move-to-ns
+    mtn = sub.add_parser("move-to-ns", help="Move specific memories to a different namespace")
+    mtn.add_argument("ns", help="Target namespace")
+    mtn.add_argument("ids", nargs="+", type=int, help="Memory IDs to move")
+    mtn.add_argument("--path", default="~/.mnemonics")
+
     # namespace-info
     nsi = sub.add_parser("namespace-info", help="Show detailed stats for a single namespace")
     nsi.add_argument("ns", help="Namespace to inspect")
@@ -515,6 +521,12 @@ def main() -> None:
                 print(line)
                 if r.get("summary"):
                     print(f"           summary: {r['summary']}")
+
+    elif args.cmd == "move-to-ns":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        n = store.move_to_ns(args.ids, args.ns)
+        print(f"Moved {n} memories to ns={args.ns!r}. Rebuild indexes with: mnemonics reindex-all")
 
     elif args.cmd == "namespace-info":
         from mnemonics.store import Store

@@ -2447,3 +2447,31 @@ def test_namespace_info_total_words(populated_store):
     store, docs, vecs = populated_store
     info = store.namespace_info("default")
     assert info["total_words"] > 0
+
+
+# ── move_to_ns ────────────────────────────────────────────────────────────────
+
+def test_move_to_ns_changes_namespace(populated_store):
+    """move_to_ns updates ns column for specified IDs."""
+    store, docs, vecs = populated_store
+    ids = [r[0] for r in store._db.execute("SELECT id FROM memories ORDER BY id LIMIT 2").fetchall()]
+    n = store.move_to_ns(ids, "archive")
+    assert n == 2
+    moved = store._db.execute(
+        "SELECT id FROM memories WHERE ns=?", ("archive",)
+    ).fetchall()
+    assert {r[0] for r in moved} == set(ids)
+
+
+def test_move_to_ns_skips_missing(populated_store):
+    """move_to_ns silently skips IDs that don't exist."""
+    store, docs, vecs = populated_store
+    n = store.move_to_ns([999999, 888888], "archive")
+    assert n == 0
+
+
+def test_move_to_ns_empty_list(populated_store):
+    """move_to_ns with empty list returns 0."""
+    store, docs, vecs = populated_store
+    n = store.move_to_ns([], "target")
+    assert n == 0

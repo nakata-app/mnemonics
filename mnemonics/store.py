@@ -686,6 +686,27 @@ class Store:
             row = self._db.execute("SELECT COUNT(*) FROM memories WHERE ns=?", (ns,)).fetchone()
         return row[0] if row else 0
 
+    def move_to_ns(self, memory_ids: list[int], target_ns: str) -> int:
+        """Move a list of memories to *target_ns* by updating their ``ns`` column.
+
+        Vector index files are NOT updated here — the source namespace index
+        may now contain orphan labels (the moved IDs) and the destination
+        namespace index will be missing them. Run :meth:`rebuild_ns_index`
+        on both source and destination namespaces after moving to keep the
+        indexes consistent. Returns the count of rows actually moved
+        (missing IDs are silently skipped).
+        """
+        if not memory_ids:
+            return 0
+        placeholders = ",".join("?" * len(memory_ids))
+        with self._lock:
+            cur = self._db.execute(
+                f"UPDATE memories SET ns=? WHERE id IN ({placeholders})",
+                [target_ns, *memory_ids],
+            )
+            self._db.commit()
+        return cur.rowcount
+
     def namespace_info(self, ns: str) -> dict | None:
         """Return a summary dict for a single namespace, or None if it doesn't exist.
 

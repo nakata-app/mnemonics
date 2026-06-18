@@ -253,6 +253,15 @@ class _Handler(BaseHTTPRequestHandler):
             )
             self._json(200, {"query": query, "ns": ns_val, "results": hits})
 
+        elif self.path == "/move-to-ns":
+            mtn_ids = body.get("ids")
+            mtn_ns = body.get("ns", "").strip()
+            if not isinstance(mtn_ids, list) or not mtn_ns:
+                self._json(400, {"error": "'ids' (list of ints) and 'ns' (target namespace) are required"})
+                return
+            n_mtn = _get_store().move_to_ns([int(i) for i in mtn_ids], mtn_ns)
+            self._json(200, {"moved": n_mtn, "target_ns": mtn_ns})
+
         elif self.path == "/sample":
             smp_ns = body.get("ns", "default")
             smp_n = min(int(body.get("n", 5)), 100)
@@ -806,6 +815,18 @@ def _mcp_loop() -> None:
                             "max_tier": {"type": "integer", "description": "Only return memories with tier <= this value"},
                         },
                         "required": ["query", "vector"],
+                    },
+                },
+                {
+                    "name": "mnemonics_move_to_ns",
+                    "description": "Move specific memories to a different namespace by updating their ns field. Does not update vector indexes — run mnemonics_rebuild_index on both source and target namespaces afterward to keep indexes consistent. Returns count of rows moved.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ids": {"type": "array", "items": {"type": "integer"}, "description": "Memory IDs to move"},
+                            "ns": {"type": "string", "description": "Target namespace to move memories into"},
+                        },
+                        "required": ["ids", "ns"],
                     },
                 },
                 {
@@ -1365,6 +1386,15 @@ def _mcp_loop() -> None:
                         if r.get("summary"):
                             lines_hs.append(f"           summary: {r['summary'][:120]}")
                     ok({"content": [{"type": "text", "text": "\n".join(lines_hs)}]})
+
+            elif name == "mnemonics_move_to_ns":
+                mtn_ids_m = args.get("ids")
+                mtn_ns_m = args.get("ns", "").strip()
+                if not isinstance(mtn_ids_m, list) or not mtn_ns_m:
+                    err("mnemonics_move_to_ns: 'ids' (list) and 'ns' (str) are required")
+                    continue
+                n_mtn_m = _get_store().move_to_ns([int(i) for i in mtn_ids_m], mtn_ns_m)
+                ok({"content": [{"type": "text", "text": f"Moved {n_mtn_m} memories to ns={mtn_ns_m!r}."}]})
 
             elif name == "mnemonics_namespace_info":
                 ns_ni = args.get("ns", "").strip()

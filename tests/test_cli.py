@@ -2764,3 +2764,19 @@ def test_cli_namespace_info_json(tmp_path, capsys):
         main()
     parsed = json.loads(capsys.readouterr().out)
     assert parsed["ns"] == "default"
+
+
+# ── move-to-ns CLI ────────────────────────────────────────────────────────────
+
+def test_cli_move_to_ns_ok(tmp_path, capsys):
+    """move-to-ns prints moved count."""
+    mock_store = MagicMock()
+    mock_store.move_to_ns.return_value = 2
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "move-to-ns", "archive", "1", "2",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.move_to_ns.assert_called_once_with([1, 2], "archive")
+    assert "2" in capsys.readouterr().out

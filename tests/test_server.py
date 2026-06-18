@@ -627,6 +627,7 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_sample",
         "mnemonics_reindex_all",
         "mnemonics_namespace_info",
+        "mnemonics_move_to_ns",
     }
 
 
@@ -3282,5 +3283,46 @@ def test_mcp_namespace_info_missing_arg(tmp_store):
     r = _mcp(tmp_store, {
         "jsonrpc": "2.0", "id": 1, "method": "tools/call",
         "params": {"name": "mnemonics_namespace_info", "arguments": {}},
+    })[0]
+    assert "error" in r
+
+
+# ── move-to-ns REST + MCP ─────────────────────────────────────────────────────
+
+def test_http_move_to_ns_ok(populated_store):
+    """POST /move-to-ns moves memories and returns count."""
+    store, docs, vecs = populated_store
+    ids = [r[0] for r in store._db.execute("SELECT id FROM memories LIMIT 2").fetchall()]
+    code, data = http_call(store, "POST", "/move-to-ns", {"ids": ids, "ns": "archive"})
+    assert code == 200
+    assert data["moved"] == 2
+    assert data["target_ns"] == "archive"
+
+
+def test_http_move_to_ns_missing_params(populated_store):
+    """POST /move-to-ns without required params returns 400."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/move-to-ns", {"ids": [1]})
+    assert code == 400
+
+
+def test_mcp_move_to_ns_ok(populated_store):
+    """MCP mnemonics_move_to_ns moves memories."""
+    store, docs, vecs = populated_store
+    ids = [r[0] for r in store._db.execute("SELECT id FROM memories LIMIT 1").fetchall()]
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_move_to_ns",
+                   "arguments": {"ids": ids, "ns": "work"}},
+    })[0]
+    assert "result" in r
+    assert "Moved" in r["result"]["content"][0]["text"]
+
+
+def test_mcp_move_to_ns_missing_args(tmp_store):
+    """MCP mnemonics_move_to_ns without required args returns error."""
+    r = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_move_to_ns", "arguments": {"ids": [1]}},
     })[0]
     assert "error" in r
