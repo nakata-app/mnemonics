@@ -1315,6 +1315,45 @@ class Store:
 
         return result
 
+    def expire(
+        self,
+        ns: str | None = None,
+        age_days: int = 30,
+        min_age_days: int | None = None,
+    ) -> int:
+        """Downgrade tier-1 memories to tier-2 (ambient) based on staleness.
+
+        A tier-1 memory is demoted to tier-2 when it has NOT been accessed in
+        the last *age_days* days (based on last_accessed; falls back to created
+        if last_accessed is NULL). Pinned memories (tier=0) are never touched.
+
+        If *min_age_days* is given, only memories older than that many days
+        (based on the created timestamp) are eligible — useful to protect
+        recently-added memories from premature demotion.
+
+        Returns the count of rows demoted.
+        """
+        age_clause = (
+            "COALESCE(last_accessed, created) <= datetime('now', ? || ' days')"
+        )
+        params: list = [f"-{age_days}"]
+        ns_clause = ""
+        if ns is not None:
+            ns_clause = " AND ns = ?"
+            params.append(ns)
+        min_age_clause = ""
+        if min_age_days is not None:
+            min_age_clause = " AND created <= datetime('now', ? || ' days')"
+            params.append(f"-{min_age_days}")
+        with self._lock:
+            cur = self._db.execute(
+                f"UPDATE memories SET tier = 2 "
+                f"WHERE tier = 1 AND {age_clause}{ns_clause}{min_age_clause}",
+                params,
+            )
+            self._db.commit()
+        return cur.rowcount
+
     def gc_candidates(self, ns: str | None = None, age_days: int = 30, tier: int = 2) -> list[dict[str, Any]]:
         """Rows eligible for garbage collection.
 

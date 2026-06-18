@@ -621,6 +621,7 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_export", "mnemonics_import", "mnemonics_text_search", "mnemonics_rename_ns", "mnemonics_namespaces", "mnemonics_bulk_tier", "mnemonics_copy_ns", "mnemonics_touch_many", "mnemonics_count", "mnemonics_merge_ns", "mnemonics_stats_by_ns", "mnemonics_recent", "mnemonics_top_accessed", "mnemonics_get_many",
         "mnemonics_hybrid_search",
         "mnemonics_similar_to",
+        "mnemonics_expire",
     }
 
 
@@ -3026,3 +3027,39 @@ def test_mcp_similar_to_with_summary(populated_store):
     assert "result" in r
     text = r["result"]["content"][0]["text"]
     assert text  # non-empty result
+
+
+# ── expire REST + MCP ─────────────────────────────────────────────────────────
+
+def test_http_expire_ok(populated_store):
+    """POST /expire demotes stale memories and returns count."""
+    store, docs, vecs = populated_store
+    store._db.execute("UPDATE memories SET last_accessed=datetime('now', '-60 days')")
+    store._db.commit()
+    code, data = http_call(store, "POST", "/expire", {"age_days": 30})
+    assert code == 200
+    assert "demoted" in data
+    assert data["demoted"] >= 0
+
+
+def test_http_expire_with_ns(populated_store):
+    """POST /expire with ns targets only that namespace."""
+    store, docs, vecs = populated_store
+    store._db.execute("UPDATE memories SET last_accessed=datetime('now', '-60 days')")
+    store._db.commit()
+    code, data = http_call(store, "POST", "/expire", {"ns": "default", "age_days": 1})
+    assert code == 200
+
+
+def test_mcp_expire_ok(populated_store):
+    """MCP mnemonics_expire demotes memories."""
+    store, docs, vecs = populated_store
+    store._db.execute("UPDATE memories SET last_accessed=datetime('now', '-60 days')")
+    store._db.commit()
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_expire",
+                   "arguments": {"age_days": 30}},
+    })[0]
+    assert "result" in r
+    assert "Demoted" in r["result"]["content"][0]["text"]

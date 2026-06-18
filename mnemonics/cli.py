@@ -80,6 +80,15 @@ def main() -> None:
     ts.add_argument("--json", dest="json_out", action="store_true", help="Output results as JSON array")
     ts.add_argument("--path", default="~/.mnemonics")
 
+    # expire
+    exp = sub.add_parser("expire", help="Demote stale tier-1 memories to tier-2 (ambient)")
+    exp.add_argument("--ns", default=None, help="Target namespace (default: all)")
+    exp.add_argument("--age-days", type=int, default=30,
+                     help="Memories not accessed within N days are demoted (default: 30)")
+    exp.add_argument("--min-age-days", type=int, default=None,
+                     help="Only demote memories older than N days (based on created)")
+    exp.add_argument("--path", default="~/.mnemonics")
+
     # similar-to
     smt = sub.add_parser("similar-to", help="Find memories most similar to an existing memory by ID")
     smt.add_argument("memory_id", type=int, help="Reference memory ID")
@@ -467,6 +476,13 @@ def main() -> None:
                 print(line)
                 if r.get("summary"):
                     print(f"           summary: {r['summary']}")
+
+    elif args.cmd == "expire":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        n = store.expire(ns=args.ns, age_days=args.age_days,
+                         min_age_days=args.min_age_days)
+        print(f"Demoted {n} memories to tier-2 (age_days={args.age_days}, ns={args.ns or 'all'})")
 
     elif args.cmd == "similar-to":
         from mnemonics.store import Store

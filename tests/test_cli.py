@@ -2498,3 +2498,31 @@ def test_cli_similar_to_json(tmp_path, capsys):
     out = capsys.readouterr().out
     data = _j.loads(out.strip())
     assert data[0]["id"] == 3
+
+
+# ── expire CLI ────────────────────────────────────────────────────────────────
+
+def test_cli_expire_ok(tmp_path, capsys):
+    """expire prints demoted count."""
+    mock_store = MagicMock()
+    mock_store.expire.return_value = 3
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "expire", "--age-days", "30", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "3" in out and "Demoted" in out
+
+
+def test_cli_expire_with_ns(tmp_path, capsys):
+    """expire --ns targets specific namespace."""
+    mock_store = MagicMock()
+    mock_store.expire.return_value = 0
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "expire", "--ns", "proj:test",
+                           "--age-days", "7", "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.expire.assert_called_once_with(ns="proj:test", age_days=7, min_age_days=None)

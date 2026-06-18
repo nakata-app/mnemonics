@@ -2070,3 +2070,77 @@ def test_similar_to_fetch_n_zero(tmp_store):
     with patch.object(tmp_store, "_index_for", return_value=mock_idx):
         result = tmp_store.similar_to(ids[0])
     assert result == []
+
+
+# ── expire ────────────────────────────────────────────────────────────────────
+
+def test_expire_demotes_stale_memories(populated_store):
+    """expire demotes tier-1 memories not accessed within age_days."""
+    store, docs, vecs = populated_store
+    # Force last_accessed to be 60 days ago for all
+    store._db.execute(
+        "UPDATE memories SET last_accessed=datetime('now', '-60 days') WHERE tier=1"
+    )
+    store._db.commit()
+    n = store.expire(age_days=30)
+    assert n > 0
+    # All should now be tier-2
+    rows = store._db.execute("SELECT tier FROM memories WHERE tier = 1").fetchall()
+    assert len(rows) == 0
+
+
+def test_expire_respects_age_days(populated_store):
+    """expire only demotes memories beyond the age threshold."""
+    store, docs, vecs = populated_store
+    # Set half to old, half to recent
+    ids = [r[0] for r in store._db.execute("SELECT id FROM memories WHERE tier=1").fetchall()]
+    for i, mid in enumerate(ids):
+        if i % 2 == 0:
+            store._db.execute(
+                "UPDATE memories SET last_accessed=datetime('now', '-100 days') WHERE id=?", (mid,)
+            )
+        else:
+            store._db.execute(
+                "UPDATE memories SET last_accessed=datetime('now', '-1 days') WHERE id=?", (mid,)
+            )
+    store._db.commit()
+    n = store.expire(age_days=50)
+    assert n == len([i for i in range(len(ids)) if i % 2 == 0])
+
+
+def test_expire_skips_pinned(populated_store):
+    """expire never demotes pinned (tier=0) memories."""
+    store, docs, vecs = populated_store
+    mid = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    store.pin(mid)
+    store._db.execute("UPDATE memories SET last_accessed=datetime('now', '-100 days')")
+    store._db.commit()
+    store.expire(age_days=1)
+    row = store._db.execute("SELECT tier FROM memories WHERE id=?", (mid,)).fetchone()
+    assert row[0] == 0  # still pinned
+
+
+def test_expire_ns_filter(populated_store):
+    """expire with ns only demotes memories in that namespace."""
+    store, docs, vecs = populated_store
+    rng = __import__("numpy").random.default_rng(99)
+    from mnemonics.store import DIM
+    v = rng.random((1, DIM)).astype("float32")
+    v /= __import__("numpy").linalg.norm(v)
+    other_ids = store.add(["other ns doc"], v, ns="other")
+    store._db.execute("UPDATE memories SET last_accessed=datetime('now', '-100 days')")
+    store._db.commit()
+    n = store.expire(ns="default", age_days=1)
+    # other namespace not affected
+    row = store._db.execute("SELECT tier FROM memories WHERE id=?", (other_ids[0],)).fetchone()
+    assert row[0] == 1  # still tier-1 in other ns
+
+
+def test_expire_min_age_days(populated_store):
+    """expire with min_age_days protects recently-created memories."""
+    store, docs, vecs = populated_store
+    store._db.execute("UPDATE memories SET last_accessed=datetime('now', '-100 days')")
+    store._db.commit()
+    # min_age_days=365: only demote if created more than a year ago
+    n = store.expire(age_days=1, min_age_days=365)
+    assert n == 0  # all were created recently (in this test session)

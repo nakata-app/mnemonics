@@ -249,6 +249,16 @@ class _Handler(BaseHTTPRequestHandler):
             )
             self._json(200, {"query": query, "ns": ns_val, "results": hits})
 
+        elif self.path == "/expire":
+            exp_ns = body.get("ns") or None
+            exp_age = int(body.get("age_days", 30))
+            exp_min_age = body.get("min_age_days")
+            demoted = _get_store().expire(
+                ns=exp_ns, age_days=exp_age,
+                min_age_days=int(exp_min_age) if exp_min_age is not None else None,
+            )
+            self._json(200, {"demoted": demoted, "age_days": exp_age})
+
         elif self.path == "/similar-to":
             sim_id = body.get("id")
             if sim_id is None:
@@ -706,6 +716,18 @@ def _mcp_loop() -> None:
                             "max_tier": {"type": "integer", "description": "Only return memories with tier <= this value"},
                         },
                         "required": ["query"],
+                    },
+                },
+                {
+                    "name": "mnemonics_expire",
+                    "description": "Demote stale tier-1 memories to tier-2 (ambient) based on last-access age. Memories not accessed within age_days are downgraded so gc can later remove them. Pinned memories (tier=0) are never touched. Returns count demoted.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ns": {"type": "string", "description": "Namespace to target (omit for all namespaces)"},
+                            "age_days": {"type": "integer", "description": "Memories not accessed within this many days are demoted (default: 30)"},
+                            "min_age_days": {"type": "integer", "description": "Only demote memories older than this many days (based on created)"},
+                        },
                     },
                 },
                 {
@@ -1183,6 +1205,16 @@ def _mcp_loop() -> None:
                         if r.get("summary"):
                             lines.append(f"           summary: {r['summary'][:120]}")
                     ok({"content": [{"type": "text", "text": "\n".join(lines)}]})
+
+            elif name == "mnemonics_expire":
+                exp_ns_m = args.get("ns") or None
+                exp_age_m = int(args.get("age_days", 30))
+                exp_min_m = args.get("min_age_days")
+                demoted_m = _get_store().expire(
+                    ns=exp_ns_m, age_days=exp_age_m,
+                    min_age_days=int(exp_min_m) if exp_min_m is not None else None,
+                )
+                ok({"content": [{"type": "text", "text": f"Demoted {demoted_m} memories to tier-2 (age_days={exp_age_m})."}]})
 
             elif name == "mnemonics_similar_to":
                 sim_id_m = args.get("id")
