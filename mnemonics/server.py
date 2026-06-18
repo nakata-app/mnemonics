@@ -262,6 +262,18 @@ class _Handler(BaseHTTPRequestHandler):
             n_mtn = _get_store().move_to_ns([int(i) for i in mtn_ids], mtn_ns)
             self._json(200, {"moved": n_mtn, "target_ns": mtn_ns})
 
+        elif self.path == "/clone":
+            cl_id = body.get("id")
+            cl_ns = body.get("ns", "").strip()
+            if cl_id is None or not cl_ns:
+                self._json(400, {"error": "'id' (int) and 'ns' (target namespace) are required"})
+                return
+            new_id = _get_store().clone(int(cl_id), cl_ns)
+            if new_id is None:
+                self._json(404, {"error": f"memory id={cl_id!r} not found or vector unreadable"})
+            else:
+                self._json(201, {"cloned_id": new_id, "source_id": int(cl_id), "target_ns": cl_ns})
+
         elif self.path == "/sample":
             smp_ns = body.get("ns", "default")
             smp_n = min(int(body.get("n", 5)), 100)
@@ -815,6 +827,18 @@ def _mcp_loop() -> None:
                             "max_tier": {"type": "integer", "description": "Only return memories with tier <= this value"},
                         },
                         "required": ["query", "vector"],
+                    },
+                },
+                {
+                    "name": "mnemonics_clone",
+                    "description": "Clone a single memory (identified by id) to a different namespace. Creates a new row in target_ns with the same text, summary, meta, and tier, and copies the vector into the target namespace index. Returns the new memory id. Run mnemonics_rebuild_index on both namespaces afterward to fully sync vector indexes.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer", "description": "Memory ID to clone"},
+                            "ns": {"type": "string", "description": "Target namespace for the clone"},
+                        },
+                        "required": ["id", "ns"],
                     },
                 },
                 {
@@ -1386,6 +1410,18 @@ def _mcp_loop() -> None:
                         if r.get("summary"):
                             lines_hs.append(f"           summary: {r['summary'][:120]}")
                     ok({"content": [{"type": "text", "text": "\n".join(lines_hs)}]})
+
+            elif name == "mnemonics_clone":
+                cl_id_m = args.get("id")
+                cl_ns_m = args.get("ns", "").strip()
+                if cl_id_m is None or not cl_ns_m:
+                    err("mnemonics_clone: 'id' (int) and 'ns' (str) are required")
+                    continue
+                new_cl_id = _get_store().clone(int(cl_id_m), cl_ns_m)
+                if new_cl_id is None:
+                    err(f"mnemonics_clone: id={cl_id_m!r} not found or vector unreadable")
+                    continue
+                ok({"content": [{"type": "text", "text": f"Cloned id={cl_id_m} → new id={new_cl_id} in ns={cl_ns_m!r}."}]})
 
             elif name == "mnemonics_move_to_ns":
                 mtn_ids_m = args.get("ids")

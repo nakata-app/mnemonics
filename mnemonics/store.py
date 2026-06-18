@@ -686,6 +686,39 @@ class Store:
             row = self._db.execute("SELECT COUNT(*) FROM memories WHERE ns=?", (ns,)).fetchone()
         return row[0] if row else 0
 
+    def clone(self, memory_id: int, target_ns: str) -> int | None:
+        """Clone a single memory to *target_ns*.
+
+        Creates a new row in *target_ns* with the same ``text``, ``summary``,
+        ``meta``, and ``tier`` as *memory_id*, resets ``access_count`` and
+        ``last_accessed`` to their initial values, and copies the stored
+        embedding vector into the target namespace index.
+
+        Returns the new memory ID on success, or ``None`` if *memory_id* is
+        not found or its vector cannot be read.
+        """
+        row = self._db.execute(
+            "SELECT ns, text, summary, meta, tier FROM memories WHERE id=?",
+            (memory_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        src_ns, text, summary, meta_json, tier = row
+        import json as _json_clone
+        meta = _json_clone.loads(meta_json) if meta_json else {}
+        try:
+            src_idx = self._index_for(src_ns)
+            vec_list = src_idx.get_items([memory_id])[0]
+        except Exception:
+            return None
+        import numpy as _np_clone
+        vec = _np_clone.array(vec_list, dtype="float32").reshape(1, -1)
+        new_ids = self.add(
+            [text], vec, ns=target_ns,
+            meta=[meta], summaries=[summary], tier=tier,
+        )
+        return new_ids[0] if new_ids else None
+
     def move_to_ns(self, memory_ids: list[int], target_ns: str) -> int:
         """Move a list of memories to *target_ns* by updating their ``ns`` column.
 

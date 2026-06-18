@@ -628,6 +628,7 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_reindex_all",
         "mnemonics_namespace_info",
         "mnemonics_move_to_ns",
+        "mnemonics_clone",
     }
 
 
@@ -3324,5 +3325,65 @@ def test_mcp_move_to_ns_missing_args(tmp_store):
     r = _mcp(tmp_store, {
         "jsonrpc": "2.0", "id": 1, "method": "tools/call",
         "params": {"name": "mnemonics_move_to_ns", "arguments": {"ids": [1]}},
+    })[0]
+    assert "error" in r
+
+
+# ── clone REST + MCP ──────────────────────────────────────────────────────────
+
+def test_http_clone_ok(populated_store):
+    """POST /clone creates a clone in the target namespace."""
+    store, docs, vecs = populated_store
+    src_id = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    code, data = http_call(store, "POST", "/clone", {"id": src_id, "ns": "backup"})
+    assert code == 201
+    assert data["source_id"] == src_id
+    assert data["target_ns"] == "backup"
+    assert isinstance(data["cloned_id"], int)
+
+
+def test_http_clone_not_found(populated_store):
+    """POST /clone with a missing id returns 404."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/clone", {"id": 999999, "ns": "backup"})
+    assert code == 404
+
+
+def test_http_clone_missing_params(populated_store):
+    """POST /clone without required params returns 400."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/clone", {"id": 1})
+    assert code == 400
+
+
+def test_mcp_clone_ok(populated_store):
+    """MCP mnemonics_clone clones a memory and returns new id."""
+    store, docs, vecs = populated_store
+    src_id = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_clone",
+                   "arguments": {"id": src_id, "ns": "backup"}},
+    })[0]
+    assert "result" in r
+    assert "Cloned" in r["result"]["content"][0]["text"]
+
+
+def test_mcp_clone_not_found(populated_store):
+    """MCP mnemonics_clone with missing id returns error."""
+    store, docs, vecs = populated_store
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_clone",
+                   "arguments": {"id": 999999, "ns": "backup"}},
+    })[0]
+    assert "error" in r
+
+
+def test_mcp_clone_missing_args(tmp_store):
+    """MCP mnemonics_clone without required args returns error."""
+    r = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_clone", "arguments": {"id": 1}},
     })[0]
     assert "error" in r

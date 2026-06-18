@@ -2475,3 +2475,53 @@ def test_move_to_ns_empty_list(populated_store):
     store, docs, vecs = populated_store
     n = store.move_to_ns([], "target")
     assert n == 0
+
+
+# ── clone ─────────────────────────────────────────────────────────────────────
+
+def test_clone_creates_new_memory_in_target_ns(populated_store):
+    """clone creates a new row in target_ns with same text."""
+    store, docs, vecs = populated_store
+    src_id = store._db.execute("SELECT id FROM memories ORDER BY id LIMIT 1").fetchone()[0]
+    orig = store.get(src_id)
+    new_id = store.clone(src_id, "clone-target")
+    assert new_id is not None
+    assert new_id != src_id
+    cloned = store.get(new_id)
+    assert cloned is not None
+    assert cloned["text"] == orig["text"]
+    assert cloned["ns"] == "clone-target"
+
+
+def test_clone_nonexistent_returns_none(tmp_store):
+    """clone returns None for an ID that doesn't exist."""
+    assert tmp_store.clone(999999, "target") is None
+
+
+def test_clone_vector_unreadable_returns_none(populated_store):
+    """clone returns None when vector cannot be read from source index."""
+    from unittest.mock import MagicMock, patch
+    store, docs, vecs = populated_store
+    src_id = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    mock_idx = MagicMock()
+    mock_idx.get_items.side_effect = RuntimeError("index error")
+    with patch.object(store, "_index_for", return_value=mock_idx):
+        result = store.clone(src_id, "target")
+    assert result is None
+
+
+def test_clone_preserves_meta_and_tier(populated_store):
+    """clone preserves meta and tier from source."""
+    store, docs, vecs = populated_store
+    src_id = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    store.update_meta(src_id, {"tag": "important"})
+    store.set_tier(src_id, 0)
+    new_id = store.clone(src_id, "archive")
+    # get() doesn't return meta — query DB directly
+    row = store._db.execute(
+        "SELECT meta, tier FROM memories WHERE id=?", (new_id,)
+    ).fetchone()
+    import json as _j
+    meta = _j.loads(row[0]) if row[0] else {}
+    assert meta.get("tag") == "important"
+    assert row[1] == 0

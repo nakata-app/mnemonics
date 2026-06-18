@@ -2780,3 +2780,33 @@ def test_cli_move_to_ns_ok(tmp_path, capsys):
         main()
     mock_store.move_to_ns.assert_called_once_with([1, 2], "archive")
     assert "2" in capsys.readouterr().out
+
+
+# ── clone CLI ─────────────────────────────────────────────────────────────────
+
+def test_cli_clone_ok(tmp_path, capsys):
+    """clone prints new id."""
+    mock_store = MagicMock()
+    mock_store.clone.return_value = 42
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "clone", "7", "backup",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.clone.assert_called_once_with(7, "backup")
+    assert "42" in capsys.readouterr().out
+
+
+def test_cli_clone_not_found(tmp_path, capsys):
+    """clone exits 1 when clone returns None."""
+    mock_store = MagicMock()
+    mock_store.clone.return_value = None
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "clone", "999", "backup",
+                           "--path", str(tmp_path)]),
+    ):
+        with pytest.raises(SystemExit) as exc:
+            main()
+    assert exc.value.code == 1

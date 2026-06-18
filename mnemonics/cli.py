@@ -80,6 +80,12 @@ def main() -> None:
     ts.add_argument("--json", dest="json_out", action="store_true", help="Output results as JSON array")
     ts.add_argument("--path", default="~/.mnemonics")
 
+    # clone
+    cln = sub.add_parser("clone", help="Clone a single memory to a different namespace (copies text + vector)")
+    cln.add_argument("id", type=int, help="Memory ID to clone")
+    cln.add_argument("ns", help="Target namespace")
+    cln.add_argument("--path", default="~/.mnemonics")
+
     # move-to-ns
     mtn = sub.add_parser("move-to-ns", help="Move specific memories to a different namespace")
     mtn.add_argument("ns", help="Target namespace")
@@ -521,6 +527,15 @@ def main() -> None:
                 print(line)
                 if r.get("summary"):
                     print(f"           summary: {r['summary']}")
+
+    elif args.cmd == "clone":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        new_id = store.clone(args.id, args.ns)
+        if new_id is None:
+            print(f"Error: memory id={args.id} not found or vector unreadable.", file=sys.stderr)
+            sys.exit(1)
+        print(f"Cloned id={args.id} → new id={new_id} in ns={args.ns!r}. Rebuild indexes: mnemonics reindex-all")
 
     elif args.cmd == "move-to-ns":
         from mnemonics.store import Store
