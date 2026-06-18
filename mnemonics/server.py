@@ -133,6 +133,10 @@ class _Handler(BaseHTTPRequestHandler):
         if self.path == "/repair":
             self._json(200, _get_store().repair())
 
+        elif self.path == "/reindex-all":
+            results_ra = _get_store().reindex_all()
+            self._json(200, {"namespaces": results_ra, "count": len(results_ra)})
+
         elif self.path == "/rebuild-index":
             ns = body.get("ns", "").strip()
             if not ns:
@@ -926,6 +930,11 @@ def _mcp_loop() -> None:
                     },
                 },
                 {
+                    "name": "mnemonics_reindex_all",
+                    "description": "Rebuild the hnswlib vector index for every namespace in the store. Useful after bulk imports, data corruption, or when health_check reports orphan vectors across multiple namespaces. Returns per-namespace old/new element counts.",
+                    "inputSchema": {"type": "object", "properties": {}},
+                },
+                {
                     "name": "mnemonics_rebuild_index",
                     "description": "Rebuild the hnswlib vector index for a specific namespace from the SQL source of truth. Use when doctor reports 'orphan vectors' (idx > sql) for a namespace. Reads stored vectors by ID — no re-encoding needed. Returns old and new vector counts.",
                     "inputSchema": {
@@ -1467,6 +1476,16 @@ def _mcp_loop() -> None:
                     n = store.gc(ns=ns, age_days=age_days, tier=tier)
                     text = f"Deleted {n} row(s) (tier={tier})."
                 ok({"content": [{"type": "text", "text": text}]})
+
+            elif name == "mnemonics_reindex_all":
+                results_ra_m = _get_store().reindex_all()
+                lines_ra = [f"Rebuilt {len(results_ra_m)} namespace(s):"]
+                for r in results_ra_m:
+                    if "error" in r:
+                        lines_ra.append(f"  {r['ns']}: ERROR — {r['error']}")
+                    else:
+                        lines_ra.append(f"  {r['ns']}: {r['old_count']} → {r['new_count']}")
+                ok({"content": [{"type": "text", "text": "\n".join(lines_ra)}]})
 
             elif name == "mnemonics_rebuild_index":
                 ns_val = args.get("ns", "").strip()

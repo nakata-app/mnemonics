@@ -625,6 +625,7 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_bulk_update_summary",
         "mnemonics_deduplicate",
         "mnemonics_sample",
+        "mnemonics_reindex_all",
     }
 
 
@@ -3190,3 +3191,41 @@ def test_mcp_sample_empty(tmp_store):
     })[0]
     assert "result" in r
     assert "No memories" in r["result"]["content"][0]["text"]
+
+
+# ── reindex-all REST + MCP ────────────────────────────────────────────────────
+
+def test_http_reindex_all_ok(populated_store):
+    """POST /reindex-all rebuilds all namespace indexes."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/reindex-all", {})
+    assert code == 200
+    assert "namespaces" in data
+    assert data["count"] >= 1
+
+
+def test_mcp_reindex_all_ok(populated_store):
+    """MCP mnemonics_reindex_all returns rebuild summary."""
+    store, docs, vecs = populated_store
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_reindex_all", "arguments": {}},
+    })[0]
+    assert "result" in r
+    assert "Rebuilt" in r["result"]["content"][0]["text"]
+
+
+def test_mcp_reindex_all_with_error(populated_store):
+    """MCP mnemonics_reindex_all shows ERROR line for failed namespaces."""
+    from unittest.mock import patch
+    store, docs, vecs = populated_store
+    with patch.object(store, "reindex_all", return_value=[
+        {"ns": "broken", "error": "disk full"},
+        {"ns": "ok", "old_count": 3, "new_count": 3},
+    ]):
+        r = _mcp(store, {
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": {"name": "mnemonics_reindex_all", "arguments": {}},
+        })[0]
+    assert "result" in r
+    assert "ERROR" in r["result"]["content"][0]["text"]

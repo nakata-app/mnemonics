@@ -80,6 +80,10 @@ def main() -> None:
     ts.add_argument("--json", dest="json_out", action="store_true", help="Output results as JSON array")
     ts.add_argument("--path", default="~/.mnemonics")
 
+    # reindex-all
+    ria = sub.add_parser("reindex-all", help="Rebuild vector indexes for all namespaces")
+    ria.add_argument("--path", default="~/.mnemonics")
+
     # sample
     smp = sub.add_parser("sample", help="Return N randomly sampled memories from a namespace")
     smp.add_argument("--ns", default="default", help="Namespace to sample from (default: 'default')")
@@ -505,6 +509,18 @@ def main() -> None:
                 print(line)
                 if r.get("summary"):
                     print(f"           summary: {r['summary']}")
+
+    elif args.cmd == "reindex-all":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        results = store.reindex_all()
+        if not results:
+            print("No namespaces found.")
+        for r in results:
+            if "error" in r:
+                print(f"  {r['ns']}: ERROR — {r['error']}")
+            else:
+                print(f"  {r['ns']}: {r['old_count']} → {r['new_count']}")
 
     elif args.cmd == "sample":
         from mnemonics.store import Store

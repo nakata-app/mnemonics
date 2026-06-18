@@ -2365,3 +2365,45 @@ def test_sample_is_random(populated_store):
     ids_b = [r["id"] for r in store.sample(n=5)]
     # Not guaranteed to differ (could match by chance), but sets should be same
     assert set(ids_a) == set(ids_b)  # same pool, same ns
+
+
+# ── reindex_all ───────────────────────────────────────────────────────────────
+
+def test_reindex_all_rebuilds_all_namespaces(tmp_store):
+    """reindex_all rebuilds indexes for every namespace."""
+    import numpy as np
+    from mnemonics.store import DIM
+    rng = np.random.default_rng(10)
+    v1 = rng.random((2, DIM)).astype("float32")
+    v1 /= np.linalg.norm(v1, axis=1, keepdims=True)
+    v2 = rng.random((3, DIM)).astype("float32")
+    v2 /= np.linalg.norm(v2, axis=1, keepdims=True)
+    tmp_store.add(["a1", "a2"], v1, ns="alpha")
+    tmp_store.add(["b1", "b2", "b3"], v2, ns="beta")
+    results = tmp_store.reindex_all()
+    assert len(results) == 2
+    ns_set = {r["ns"] for r in results}
+    assert "alpha" in ns_set and "beta" in ns_set
+    assert all("error" not in r for r in results)
+
+
+def test_reindex_all_empty_store(tmp_store):
+    """reindex_all on empty store returns empty list."""
+    results = tmp_store.reindex_all()
+    assert results == []
+
+
+def test_reindex_all_reports_error(tmp_store):
+    """reindex_all catches per-namespace errors and includes them in result."""
+    import numpy as np
+    from mnemonics.store import DIM
+    from unittest.mock import patch
+    rng = np.random.default_rng(20)
+    v = rng.random((2, DIM)).astype("float32")
+    v /= np.linalg.norm(v, axis=1, keepdims=True)
+    tmp_store.add(["x", "y"], v, ns="boom")
+    with patch.object(tmp_store, "rebuild_ns_index", side_effect=RuntimeError("disk full")):
+        results = tmp_store.reindex_all()
+    assert len(results) == 1
+    assert "error" in results[0]
+    assert "disk full" in results[0]["error"]

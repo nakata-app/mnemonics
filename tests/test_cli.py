@@ -2667,3 +2667,46 @@ def test_cli_sample_json(tmp_path, capsys):
     out = capsys.readouterr().out
     parsed = json.loads(out.strip())
     assert parsed["id"] == 2
+
+
+# ── reindex-all CLI ───────────────────────────────────────────────────────────
+
+def test_cli_reindex_all_ok(tmp_path, capsys):
+    """reindex-all prints per-namespace result."""
+    mock_store = MagicMock()
+    mock_store.reindex_all.return_value = [
+        {"ns": "default", "old_count": 5, "new_count": 5},
+    ]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "reindex-all", "--path", str(tmp_path)]),
+    ):
+        main()
+    out = capsys.readouterr().out
+    assert "default" in out
+
+
+def test_cli_reindex_all_empty(tmp_path, capsys):
+    """reindex-all on empty store prints 'No namespaces found'."""
+    mock_store = MagicMock()
+    mock_store.reindex_all.return_value = []
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "reindex-all", "--path", str(tmp_path)]),
+    ):
+        main()
+    assert "No namespaces" in capsys.readouterr().out
+
+
+def test_cli_reindex_all_with_error(tmp_path, capsys):
+    """reindex-all prints ERROR for namespaces that fail."""
+    mock_store = MagicMock()
+    mock_store.reindex_all.return_value = [
+        {"ns": "broken", "error": "disk full"},
+    ]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "reindex-all", "--path", str(tmp_path)]),
+    ):
+        main()
+    assert "ERROR" in capsys.readouterr().out

@@ -1064,6 +1064,23 @@ class Store:
 
         return old_count, len(ids)
 
+    def reindex_all(self) -> list[dict]:
+        """Rebuild the hnswlib vector index for every namespace.
+
+        Calls :meth:`rebuild_ns_index` for each namespace found in the DB.
+        Returns a list of per-namespace result dicts with keys ``ns``,
+        ``old_count``, ``new_count``, and optionally ``error`` when a
+        namespace rebuild fails.
+        """
+        results: list[dict] = []
+        for ns in self.list_namespaces():
+            try:
+                old_n, new_n = self.rebuild_ns_index(ns)
+                results.append({"ns": ns, "old_count": old_n, "new_count": new_n})
+            except Exception as exc:
+                results.append({"ns": ns, "error": str(exc)})
+        return results
+
     def forget_candidates(
         self,
         ns: str,
