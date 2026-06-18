@@ -1729,3 +1729,56 @@ def test_stats_by_ns_oldest_update_trigger(tmp_store):
     s = stats[0]
     assert s["oldest"] == "2024-01-01 00:00:00"
     assert s["newest"] == "2026-12-01 00:00:00"
+
+
+# ── merge_ns ──────────────────────────────────────────────────────────────────
+
+def test_merge_ns_basic(populated_store):
+    """merge_ns moves all rows from src to dst and empties src."""
+    import numpy as np
+    store, docs, vecs = populated_store
+    v = np.random.rand(384).astype("float32"); v /= np.linalg.norm(v)
+    store.add(["dst doc"], v[None], ns="dst")
+    n_src = len(docs)
+    moved = store.merge_ns("default", "dst")
+    assert moved == n_src
+    assert store.count("default") == 0
+    assert store.count("dst") == n_src + 1
+
+
+def test_merge_ns_into_empty_dst(populated_store):
+    """merge_ns works when dst does not yet exist."""
+    store, docs, vecs = populated_store
+    moved = store.merge_ns("default", "newdst")
+    assert moved == len(docs)
+    assert store.count("default") == 0
+    assert store.count("newdst") == len(docs)
+
+
+def test_merge_ns_empty_src(populated_store):
+    """merge_ns returns 0 and leaves dst untouched when src is empty."""
+    store, docs, vecs = populated_store
+    moved = store.merge_ns("nonexistent", "default")
+    assert moved == 0
+    assert store.count("default") == len(docs)
+
+
+def test_merge_ns_removes_src_bin(populated_store):
+    """merge_ns removes the source .bin index file."""
+    import numpy as np
+    store, docs, vecs = populated_store
+    v = np.random.rand(384).astype("float32"); v /= np.linalg.norm(v)
+    store.add(["extra"], v[None], ns="src2")
+    # ensure .bin exists
+    _ = store.search(v, ns="src2", top_k=1)
+    assert (store.root / "index_src2.bin").exists()
+    store.merge_ns("src2", "default")
+    assert not (store.root / "index_src2.bin").exists()
+
+
+def test_merge_ns_cache_invalidated(populated_store):
+    """merge_ns removes both src and dst from the in-memory index cache."""
+    store, docs, vecs = populated_store
+    store.merge_ns("default", "merged_dst")
+    assert "default" not in store._index
+    assert "merged_dst" not in store._index

@@ -203,6 +203,15 @@ class _Handler(BaseHTTPRequestHandler):
                 return
             self._json(200, {"old_ns": old_ns, "new_ns": new_ns, "moved": moved})
 
+        elif self.path == "/merge-ns":
+            src_ns_m = body.get("src_ns", "").strip()
+            dst_ns_m = body.get("dst_ns", "").strip()
+            if not src_ns_m or not dst_ns_m:
+                self._json(400, {"error": "'src_ns' and 'dst_ns' are required"})
+                return
+            moved_m = _get_store().merge_ns(src_ns_m, dst_ns_m)
+            self._json(200, {"src_ns": src_ns_m, "dst_ns": dst_ns_m, "moved": moved_m})
+
         elif self.path == "/copy-ns":
             src_ns = body.get("src_ns", "").strip()
             dst_ns = body.get("dst_ns", "").strip()
@@ -883,6 +892,18 @@ def _mcp_loop() -> None:
                     "inputSchema": {"type": "object", "properties": {}},
                 },
                 {
+                    "name": "mnemonics_merge_ns",
+                    "description": "Move all memories from src_ns into dst_ns, then remove src_ns. Unlike rename_ns, dst_ns is allowed to already contain memories — the source is appended. The source index file is removed; the destination index is rebuilt on next search.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "src_ns": {"type": "string", "description": "Source namespace to merge from (will be deleted)"},
+                            "dst_ns": {"type": "string", "description": "Destination namespace to merge into (may already exist)"},
+                        },
+                        "required": ["src_ns", "dst_ns"],
+                    },
+                },
+                {
                     "name": "mnemonics_copy_ns",
                     "description": "Copy all memories from one namespace into a new namespace, leaving the source intact. access_count and last_accessed are reset on the copies. Fails if the destination namespace already exists.",
                     "inputSchema": {
@@ -1329,6 +1350,15 @@ def _mcp_loop() -> None:
                     ok({"content": [{"type": "text", "text": "\n".join(ns_list)}]})
                 else:
                     ok({"content": [{"type": "text", "text": "(no namespaces)"}]})
+
+            elif name == "mnemonics_merge_ns":
+                src_ns_mg = args.get("src_ns", "").strip()
+                dst_ns_mg = args.get("dst_ns", "").strip()
+                if not src_ns_mg or not dst_ns_mg:
+                    err("mnemonics_merge_ns: 'src_ns' and 'dst_ns' are required")
+                    continue
+                moved_mg = _get_store().merge_ns(src_ns_mg, dst_ns_mg)
+                ok({"content": [{"type": "text", "text": f"Merged {src_ns_mg!r} → {dst_ns_mg!r}: {moved_mg} memories moved."}]})
 
             elif name == "mnemonics_copy_ns":
                 src_ns_c = args.get("src_ns", "").strip()

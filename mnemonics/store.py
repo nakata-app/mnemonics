@@ -990,6 +990,33 @@ class Store:
             self._db.commit()
         return count
 
+    def merge_ns(self, src_ns: str, dst_ns: str) -> int:
+        """Move all memories from *src_ns* into *dst_ns*, then delete *src_ns*.
+
+        Unlike rename_ns, *dst_ns* is allowed to already exist — memories from
+        *src_ns* are appended to it. access_count and last_accessed are preserved.
+        The source namespace (including its .bin index) is removed after the move.
+        Returns the number of rows moved (0 if src_ns is empty).
+        """
+        count = self._db.execute(
+            "SELECT COUNT(*) FROM memories WHERE ns=?", (src_ns,)
+        ).fetchone()[0]
+        if count == 0:
+            return 0
+        with self._lock:
+            self._db.execute("UPDATE memories SET ns=? WHERE ns=?", (dst_ns, src_ns))
+            self._db.commit()
+        # Remove source index file (dst index is rebuilt lazily on next search)
+        src_bin = self.root / f"index_{src_ns}.bin"
+        if src_bin.exists():
+            src_bin.unlink()
+        # Invalidate cached indexes for both namespaces so they are reloaded
+        self._index.pop(src_ns, None)
+        self._index_mtime.pop(src_ns, None)
+        self._index.pop(dst_ns, None)
+        self._index_mtime.pop(dst_ns, None)
+        return count
+
     def stats_by_ns(self) -> list[dict]:
         """Return a lightweight per-namespace stats summary (SQL only, no index I/O).
 

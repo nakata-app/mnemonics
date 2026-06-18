@@ -618,7 +618,7 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_pin", "mnemonics_tier", "mnemonics_gc", "mnemonics_stats",
         "mnemonics_health", "mnemonics_repair",
         "mnemonics_search_by_meta", "mnemonics_delete_many", "mnemonics_update_meta",
-        "mnemonics_export", "mnemonics_import", "mnemonics_text_search", "mnemonics_rename_ns", "mnemonics_namespaces", "mnemonics_bulk_tier", "mnemonics_copy_ns", "mnemonics_count", "mnemonics_stats_by_ns", "mnemonics_recent", "mnemonics_top_accessed", "mnemonics_get_many",
+        "mnemonics_export", "mnemonics_import", "mnemonics_text_search", "mnemonics_rename_ns", "mnemonics_namespaces", "mnemonics_bulk_tier", "mnemonics_copy_ns", "mnemonics_count", "mnemonics_merge_ns", "mnemonics_stats_by_ns", "mnemonics_recent", "mnemonics_top_accessed", "mnemonics_get_many",
     }
 
 
@@ -2677,3 +2677,52 @@ def test_mcp_stats_by_ns_in_tools_list(tmp_store):
         "jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {},
     })[0]
     assert "mnemonics_stats_by_ns" in {t["name"] for t in resp["result"]["tools"]}
+
+
+# ── POST /merge-ns ────────────────────────────────────────────────────────────
+
+def test_http_merge_ns_basic(populated_store):
+    import numpy as np
+    store, docs, vecs = populated_store
+    v = np.random.rand(384).astype("float32"); v /= np.linalg.norm(v)
+    store.add(["dst doc"], v[None], ns="dst_m")
+    code, data = http_call(store, "POST", "/merge-ns", {"src_ns": "default", "dst_ns": "dst_m"})
+    assert code == 200
+    assert data["moved"] == len(docs)
+    assert store.count("default") == 0
+    assert store.count("dst_m") == len(docs) + 1
+
+
+def test_http_merge_ns_missing_fields(tmp_store):
+    code, data = http_call(tmp_store, "POST", "/merge-ns", {"src_ns": "x"})
+    assert code == 400
+
+
+# ── MCP mnemonics_merge_ns ────────────────────────────────────────────────────
+
+def test_mcp_merge_ns_basic(populated_store):
+    import numpy as np
+    store, docs, vecs = populated_store
+    v = np.random.rand(384).astype("float32"); v /= np.linalg.norm(v)
+    store.add(["dst doc"], v[None], ns="mgdst")
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_merge_ns", "arguments": {"src_ns": "default", "dst_ns": "mgdst"}},
+    })[0]
+    assert "result" in r
+    assert "moved" in r["result"]["content"][0]["text"]
+
+
+def test_mcp_merge_ns_missing_args(tmp_store):
+    r = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_merge_ns", "arguments": {"src_ns": "x"}},
+    })[0]
+    assert "error" in r
+
+
+def test_mcp_merge_ns_in_tools_list(tmp_store):
+    resp = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {},
+    })[0]
+    assert "mnemonics_merge_ns" in {t["name"] for t in resp["result"]["tools"]}

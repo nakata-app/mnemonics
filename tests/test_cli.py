@@ -2335,3 +2335,20 @@ def test_cli_stats_by_ns_empty(tmp_path, capsys):
     ):
         main()
     assert "no namespaces" in capsys.readouterr().out
+
+
+# ── merge-ns ───────────────────────────────────────────────────────────────────
+
+def test_cli_merge_ns_basic(tmp_path, capsys):
+    mock_store = MagicMock()
+    mock_store.merge_ns.return_value = 5
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "merge-ns", "src", "dst",
+                           "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.merge_ns.assert_called_once_with("src", "dst")
+    out = capsys.readouterr().out
+    assert "5" in out
+    assert "dst" in out
