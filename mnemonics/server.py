@@ -262,6 +262,15 @@ class _Handler(BaseHTTPRequestHandler):
             n_mtn = _get_store().move_to_ns([int(i) for i in mtn_ids], mtn_ns)
             self._json(200, {"moved": n_mtn, "target_ns": mtn_ns})
 
+        elif self.path == "/bulk-tag":
+            bt_ids = body.get("ids")
+            bt_tags = body.get("tags")
+            if not isinstance(bt_ids, list) or not isinstance(bt_tags, list) or not bt_tags:
+                self._json(400, {"error": "'ids' (list of ints) and 'tags' (non-empty list of str) are required"})
+                return
+            n_bt = _get_store().bulk_tag([int(i) for i in bt_ids], [str(t) for t in bt_tags])
+            self._json(200, {"updated": n_bt, "tags": bt_tags})
+
         elif self.path == "/tag":
             tg_id = body.get("id")
             tg_tag = body.get("tag", "").strip()
@@ -531,6 +540,16 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(200, _get_store().health_check())
         elif path == "/namespaces":
             self._json(200, {"namespaces": _get_store().list_namespaces()})
+        elif path.startswith("/export-ns/"):
+            from urllib.parse import unquote_plus as _uqp_exp
+            raw_ns_exp = path[len("/export-ns/"):]
+            if not raw_ns_exp:
+                self._json(400, {"error": "namespace name required: /export-ns/<ns>"})
+                return
+            ns_exp = _uqp_exp(raw_ns_exp)
+            records = _get_store().export_ns(ns_exp)
+            self._json(200, {"ns": ns_exp, "count": len(records), "records": records})
+
         elif path.startswith("/get-tags/"):
             from urllib.parse import unquote_plus as _uqp_gtag
             raw_id_gt = path[len("/get-tags/"):]
@@ -923,6 +942,29 @@ def _mcp_loop() -> None:
                             "max_tier": {"type": "integer", "description": "Only return memories with tier <= this value"},
                         },
                         "required": ["query", "vector"],
+                    },
+                },
+                {
+                    "name": "mnemonics_export_ns",
+                    "description": "Export all memories in a namespace as a JSON-serialisable list of dicts (no vectors). Each record includes id, ns, text, summary, meta (dict), tier, created, last_accessed, and access_count.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ns": {"type": "string", "description": "Namespace to export"},
+                        },
+                        "required": ["ns"],
+                    },
+                },
+                {
+                    "name": "mnemonics_bulk_tag",
+                    "description": "Add one or more tags to multiple memories at once. Tags already present on a memory are not duplicated. Returns count of memories updated.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ids": {"type": "array", "items": {"type": "integer"}, "description": "Memory IDs to tag"},
+                            "tags": {"type": "array", "items": {"type": "string"}, "description": "Tags to add"},
+                        },
+                        "required": ["ids", "tags"],
                     },
                 },
                 {
@@ -1612,6 +1654,27 @@ def _mcp_loop() -> None:
                         if r.get("summary"):
                             lines_hs.append(f"           summary: {r['summary'][:120]}")
                     ok({"content": [{"type": "text", "text": "\n".join(lines_hs)}]})
+
+            elif name == "mnemonics_export_ns":
+                exp_ns = args.get("ns", "").strip()
+                if not exp_ns:
+                    err("mnemonics_export_ns: 'ns' is required")
+                    continue
+                exp_records = _get_store().export_ns(exp_ns)
+                import json as _j_mcp_exp
+                ok({"content": [{"type": "text", "text":
+                    f"Exported {len(exp_records)} memories from ns={exp_ns!r}.\n" +
+                    _j_mcp_exp.dumps(exp_records, default=str, ensure_ascii=False)}]})
+
+            elif name == "mnemonics_bulk_tag":
+                bt_ids_m = args.get("ids")
+                bt_tags_m = args.get("tags")
+                if not isinstance(bt_ids_m, list) or not isinstance(bt_tags_m, list) or not bt_tags_m:
+                    err("mnemonics_bulk_tag: 'ids' (list) and 'tags' (non-empty list) are required")
+                    continue
+                n_bt_m = _get_store().bulk_tag([int(i) for i in bt_ids_m], [str(t) for t in bt_tags_m])
+                ok({"content": [{"type": "text", "text":
+                    f"Added tags {bt_tags_m} to {n_bt_m} memories."}]})
 
             elif name == "mnemonics_get_tags":
                 gt_id = args.get("id")

@@ -80,6 +80,17 @@ def main() -> None:
     ts.add_argument("--json", dest="json_out", action="store_true", help="Output results as JSON array")
     ts.add_argument("--path", default="~/.mnemonics")
 
+    # export-ns
+    exp = sub.add_parser("export-ns", help="Export all memories in a namespace as JSON")
+    exp.add_argument("ns", help="Namespace to export")
+    exp.add_argument("--path", default="~/.mnemonics")
+
+    # bulk-tag
+    btg = sub.add_parser("bulk-tag", help="Add tags to multiple memories at once")
+    btg.add_argument("ids", nargs="+", type=int, help="Memory IDs")
+    btg.add_argument("--tags", nargs="+", required=True, help="Tags to add")
+    btg.add_argument("--path", default="~/.mnemonics")
+
     # get-tags
     gtp = sub.add_parser("get-tags", help="Show tags for a specific memory")
     gtp.add_argument("id", type=int, help="Memory ID")
@@ -592,6 +603,18 @@ def main() -> None:
                 print(line)
                 if r.get("summary"):
                     print(f"           summary: {r['summary']}")
+
+    elif args.cmd == "export-ns":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        records = store.export_ns(args.ns)
+        print(json.dumps(records, default=str, ensure_ascii=False))
+
+    elif args.cmd == "bulk-tag":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        n = store.bulk_tag(args.ids, args.tags)
+        print(f"Added tags {args.tags} to {n} memories.")
 
     elif args.cmd == "get-tags":
         from mnemonics.store import Store

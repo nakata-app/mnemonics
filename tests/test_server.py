@@ -639,6 +639,8 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_word_frequency",
         "mnemonics_get_tags",
         "mnemonics_search_date_range",
+        "mnemonics_export_ns",
+        "mnemonics_bulk_tag",
     }
 
 
@@ -3859,3 +3861,79 @@ def test_mcp_search_date_range_with_tier(populated_store):
                    "arguments": {"ns": "default", "tier": 1}},
     })[0]
     assert "result" in r
+
+
+# ── export-ns / bulk-tag REST + MCP ──────────────────────────────────────────
+
+def test_http_export_ns_ok(populated_store):
+    """GET /export-ns/<ns> returns all memory records."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "GET", "/export-ns/default", {})
+    assert code == 200
+    assert data["count"] == len(docs)
+    assert len(data["records"]) == len(docs)
+
+
+def test_http_export_ns_empty_path(tmp_store):
+    """GET /export-ns/ without namespace name returns 400."""
+    code, data = http_call(tmp_store, "GET", "/export-ns/", {})
+    assert code == 400
+
+
+def test_http_bulk_tag_ok(populated_store):
+    """POST /bulk-tag tags multiple memories."""
+    store, docs, vecs = populated_store
+    ids = [r[0] for r in store._db.execute("SELECT id FROM memories LIMIT 2").fetchall()]
+    code, data = http_call(store, "POST", "/bulk-tag", {"ids": ids, "tags": ["batch"]})
+    assert code == 200
+    assert data["updated"] == 2
+
+
+def test_http_bulk_tag_missing_params(populated_store):
+    """POST /bulk-tag without required params returns 400."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/bulk-tag", {"ids": [1]})
+    assert code == 400
+
+
+def test_mcp_export_ns_ok(populated_store):
+    """MCP mnemonics_export_ns returns count and records."""
+    store, docs, vecs = populated_store
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_export_ns", "arguments": {"ns": "default"}},
+    })[0]
+    assert "result" in r
+    text = r["result"]["content"][0]["text"]
+    assert f"Exported {len(docs)}" in text
+
+
+def test_mcp_export_ns_missing_arg(tmp_store):
+    """MCP mnemonics_export_ns without ns returns error."""
+    r = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_export_ns", "arguments": {}},
+    })[0]
+    assert "error" in r
+
+
+def test_mcp_bulk_tag_ok(populated_store):
+    """MCP mnemonics_bulk_tag adds tags to multiple memories."""
+    store, docs, vecs = populated_store
+    ids = [r[0] for r in store._db.execute("SELECT id FROM memories LIMIT 2").fetchall()]
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_bulk_tag",
+                   "arguments": {"ids": ids, "tags": ["batch-mcp"]}},
+    })[0]
+    assert "result" in r
+    assert "2" in r["result"]["content"][0]["text"]
+
+
+def test_mcp_bulk_tag_missing_args(tmp_store):
+    """MCP mnemonics_bulk_tag without tags returns error."""
+    r = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_bulk_tag", "arguments": {"ids": [1]}},
+    })[0]
+    assert "error" in r

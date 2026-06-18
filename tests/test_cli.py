@@ -3198,3 +3198,38 @@ def test_cli_search_date_range_all_ns(tmp_path, capsys):
         main()
     call_kwargs = mock_store.search_date_range.call_args
     assert call_kwargs.kwargs.get("ns") is None or call_kwargs.args[0] is None
+
+
+# ── export-ns CLI ─────────────────────────────────────────────────────────────
+
+def test_cli_export_ns_ok(tmp_path, capsys):
+    """export-ns outputs JSON array."""
+    mock_store = MagicMock()
+    mock_store.export_ns.return_value = [
+        {"id": 1, "ns": "default", "text": "hello", "summary": None,
+         "meta": {}, "tier": 1, "created": "2026-01-01",
+         "last_accessed": None, "access_count": 0},
+    ]
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "export-ns", "default", "--path", str(tmp_path)]),
+    ):
+        main()
+    parsed = json.loads(capsys.readouterr().out)
+    assert parsed[0]["id"] == 1
+
+
+# ── bulk-tag CLI ──────────────────────────────────────────────────────────────
+
+def test_cli_bulk_tag_ok(tmp_path, capsys):
+    """bulk-tag prints count of updated memories."""
+    mock_store = MagicMock()
+    mock_store.bulk_tag.return_value = 3
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "bulk-tag", "1", "2", "3",
+                           "--tags", "alpha", "beta", "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.bulk_tag.assert_called_once_with([1, 2, 3], ["alpha", "beta"])
+    assert "3" in capsys.readouterr().out

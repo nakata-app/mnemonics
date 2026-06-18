@@ -2824,3 +2824,60 @@ def test_search_date_range_limit(populated_store):
     store, docs, vecs = populated_store
     hits = store.search_date_range(ns="default", limit=2)
     assert len(hits) <= 2
+
+
+# ── export_ns ─────────────────────────────────────────────────────────────────
+
+def test_export_ns_returns_records(populated_store):
+    """export_ns returns a record for each memory in the namespace."""
+    store, docs, vecs = populated_store
+    records = store.export_ns("default")
+    assert len(records) == len(docs)
+    for r in records:
+        assert all(k in r for k in ("id", "ns", "text", "summary", "meta", "tier", "created"))
+
+
+def test_export_ns_meta_is_dict(populated_store):
+    """export_ns parses meta from JSON string to dict."""
+    store, docs, vecs = populated_store
+    records = store.export_ns("default")
+    for r in records:
+        assert isinstance(r["meta"], dict)
+
+
+def test_export_ns_empty(tmp_store):
+    """export_ns returns empty list for an empty namespace."""
+    assert tmp_store.export_ns("ghost") == []
+
+
+# ── bulk_tag ──────────────────────────────────────────────────────────────────
+
+def test_bulk_tag_adds_tags_to_all(populated_store):
+    """bulk_tag adds all specified tags to every memory in ids."""
+    store, docs, vecs = populated_store
+    ids = [r[0] for r in store._db.execute("SELECT id FROM memories LIMIT 3").fetchall()]
+    n = store.bulk_tag(ids, ["a", "b"])
+    assert n == 3
+    import json as _j
+    for mid in ids:
+        row = store._db.execute("SELECT meta FROM memories WHERE id=?", (mid,)).fetchone()
+        meta = _j.loads(row[0])
+        assert "a" in meta["tags"] and "b" in meta["tags"]
+
+
+def test_bulk_tag_idempotent(populated_store):
+    """bulk_tag is idempotent — existing tags not duplicated."""
+    store, docs, vecs = populated_store
+    mid = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
+    store.bulk_tag([mid], ["dup"])
+    store.bulk_tag([mid], ["dup"])
+    import json as _j
+    row = store._db.execute("SELECT meta FROM memories WHERE id=?", (mid,)).fetchone()
+    assert _j.loads(row[0])["tags"].count("dup") == 1
+
+
+def test_bulk_tag_skips_missing_ids(populated_store):
+    """bulk_tag skips IDs that don't exist."""
+    store, docs, vecs = populated_store
+    n = store.bulk_tag([999998, 999999], ["x"])
+    assert n == 0

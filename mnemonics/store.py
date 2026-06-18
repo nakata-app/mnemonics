@@ -769,6 +769,59 @@ class Store:
             self._db.commit()
         return cur.rowcount
 
+    def export_ns(self, ns: str) -> list[dict]:
+        """Export all memories in *ns* as a list of dicts (no vectors).
+
+        Each dict has ``id``, ``ns``, ``text``, ``summary``, ``meta``
+        (as parsed dict, not JSON string), ``tier``, ``created``,
+        ``last_accessed``, and ``access_count``.  Suitable for JSON
+        serialisation with ``json.dumps``.
+        """
+        import json as _j_exp
+        rows = self._db.execute(
+            "SELECT id, ns, text, summary, meta, tier, created, last_accessed, access_count "
+            "FROM memories WHERE ns=? ORDER BY id",
+            (ns,),
+        ).fetchall()
+        return [
+            {
+                "id": r[0], "ns": r[1], "text": r[2], "summary": r[3],
+                "meta": _j_exp.loads(r[4]) if r[4] else {},
+                "tier": r[5], "created": r[6],
+                "last_accessed": r[7], "access_count": r[8],
+            }
+            for r in rows
+        ]
+
+    def bulk_tag(self, memory_ids: list[int], tags: list[str]) -> int:
+        """Add one or more *tags* to multiple memories at once.
+
+        Each tag is added to every memory in *memory_ids*.  IDs that do
+        not exist are silently skipped.  Returns the count of memories that
+        were actually updated (had at least one new tag added or confirmed).
+        """
+        import json as _j_btag
+        updated = 0
+        for mid in memory_ids:
+            row = self._db.execute(
+                "SELECT meta FROM memories WHERE id=?", (mid,)
+            ).fetchone()
+            if row is None:
+                continue
+            meta = _j_btag.loads(row[0]) if row[0] else {}
+            existing: list = meta.get("tags", [])
+            new_tags = [t for t in tags if t not in existing]
+            existing.extend(new_tags)
+            meta["tags"] = existing
+            with self._lock:
+                self._db.execute(
+                    "UPDATE memories SET meta=? WHERE id=?",
+                    (_j_btag.dumps(meta, ensure_ascii=False), mid),
+                )
+                self._db.commit()
+            updated += 1
+        return updated
+
     def get_tags(self, memory_id: int) -> list[str] | None:
         """Return the ``tags`` list from a memory's meta JSON.
 
