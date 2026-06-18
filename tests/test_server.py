@@ -646,6 +646,9 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_count_by_tier",
         "mnemonics_import_records",
         "mnemonics_text_stats",
+        "mnemonics_rename_ns",
+        "mnemonics_merge_ns",
+        "mnemonics_bulk_delete",
     }
 
 
@@ -4160,3 +4163,116 @@ def test_mcp_text_stats_all_ns(populated_store):
         "params": {"name": "mnemonics_text_stats", "arguments": {}},
     })[0]
     assert "result" in r
+
+
+# ── rename-ns / merge-ns / bulk-delete REST + MCP ─────────────────────────────
+
+def test_http_rename_ns_ok(populated_store):
+    """POST /rename-ns renames namespace."""
+    store, docs, vecs = populated_store
+    code, data = http_call(store, "POST", "/rename-ns",
+                           {"old_ns": "default", "new_ns": "renamed"})
+    assert code == 200
+    assert data["moved"] == len(docs)
+
+
+def test_http_rename_ns_missing_params(tmp_store):
+    """POST /rename-ns without params returns 400."""
+    code, data = http_call(tmp_store, "POST", "/rename-ns", {"old_ns": "x"})
+    assert code == 400
+
+
+def test_http_merge_ns_ok(populated_store):
+    """POST /merge-ns merges source into target."""
+    import numpy as np
+    store, docs, vecs = populated_store
+    store.add(["extra"], [np.zeros(384, dtype=np.float32)], ns="target-ns")
+    code, data = http_call(store, "POST", "/merge-ns",
+                           {"src_ns": "default", "dst_ns": "target-ns"})
+    assert code == 200
+    assert data["moved"] == len(docs)
+
+
+def test_http_merge_ns_missing_params(tmp_store):
+    """POST /merge-ns without params returns 400."""
+    code, data = http_call(tmp_store, "POST", "/merge-ns", {"src_ns": "x"})
+    assert code == 400
+
+
+def test_http_bulk_delete_ok(populated_store):
+    """POST /bulk-delete removes specified IDs."""
+    store, docs, vecs = populated_store
+    ids = [r[0] for r in store._db.execute("SELECT id FROM memories LIMIT 2").fetchall()]
+    code, data = http_call(store, "POST", "/bulk-delete", {"ids": ids})
+    assert code == 200
+    assert data["deleted"] == 2
+
+
+def test_http_bulk_delete_missing_param(tmp_store):
+    """POST /bulk-delete without ids returns 400."""
+    code, data = http_call(tmp_store, "POST", "/bulk-delete", {})
+    assert code == 400
+
+
+def test_mcp_rename_ns_ok(populated_store):
+    """MCP mnemonics_rename_ns renames namespace."""
+    store, docs, vecs = populated_store
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_rename_ns",
+                   "arguments": {"old_ns": "default", "new_ns": "renamed-mcp"}},
+    })[0]
+    assert "result" in r
+    assert "renamed-mcp" in r["result"]["content"][0]["text"]
+
+
+def test_mcp_rename_ns_missing_args(tmp_store):
+    """MCP mnemonics_rename_ns without args returns error."""
+    r = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_rename_ns", "arguments": {}},
+    })[0]
+    assert "error" in r
+
+
+def test_mcp_merge_ns_ok(populated_store):
+    """MCP mnemonics_merge_ns merges source into target."""
+    import numpy as np
+    store, docs, vecs = populated_store
+    store.add(["tgt"], [np.zeros(384, dtype=np.float32)], ns="tgt-mcp")
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_merge_ns",
+                   "arguments": {"src_ns": "default", "dst_ns": "tgt-mcp"}},
+    })[0]
+    assert "result" in r
+
+
+def test_mcp_merge_ns_missing_args(tmp_store):
+    """MCP mnemonics_merge_ns without args returns error."""
+    r = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_merge_ns", "arguments": {}},
+    })[0]
+    assert "error" in r
+
+
+def test_mcp_bulk_delete_ok(populated_store):
+    """MCP mnemonics_bulk_delete removes memories."""
+    store, docs, vecs = populated_store
+    ids = [r[0] for r in store._db.execute("SELECT id FROM memories LIMIT 2").fetchall()]
+    r = _mcp(store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_bulk_delete", "arguments": {"ids": ids}},
+    })[0]
+    assert "result" in r
+    assert "2" in r["result"]["content"][0]["text"]
+
+
+def test_mcp_bulk_delete_missing_arg(tmp_store):
+    """MCP mnemonics_bulk_delete without ids returns error."""
+    r = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "mnemonics_bulk_delete", "arguments": {}},
+    })[0]
+    assert "error" in r

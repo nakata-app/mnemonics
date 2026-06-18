@@ -262,6 +262,14 @@ class _Handler(BaseHTTPRequestHandler):
             n_mtn = _get_store().move_to_ns([int(i) for i in mtn_ids], mtn_ns)
             self._json(200, {"moved": n_mtn, "target_ns": mtn_ns})
 
+        elif self.path == "/bulk-delete":
+            bd_ids = body.get("ids")
+            if not isinstance(bd_ids, list):
+                self._json(400, {"error": "'ids' (list of ints) is required"})
+                return
+            n_bd = _get_store().bulk_delete([int(i) for i in bd_ids])
+            self._json(200, {"deleted": n_bd})
+
         elif self.path == "/import-records":
             ir_records = body.get("records")
             ir_ns_override = body.get("ns")
@@ -983,6 +991,17 @@ def _mcp_loop() -> None:
                             "max_tier": {"type": "integer", "description": "Only return memories with tier <= this value"},
                         },
                         "required": ["query", "vector"],
+                    },
+                },
+                {
+                    "name": "mnemonics_bulk_delete",
+                    "description": "Delete multiple memories by ID in a single transaction. Returns count of rows deleted. Vectors are also removed from the hnswlib index.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ids": {"type": "array", "items": {"type": "integer"}},
+                        },
+                        "required": ["ids"],
                     },
                 },
                 {
@@ -1754,6 +1773,14 @@ def _mcp_loop() -> None:
                         if r.get("summary"):
                             lines_hs.append(f"           summary: {r['summary'][:120]}")
                     ok({"content": [{"type": "text", "text": "\n".join(lines_hs)}]})
+
+            elif name == "mnemonics_bulk_delete":
+                bd_ids_m = args.get("ids")
+                if not isinstance(bd_ids_m, list):
+                    err("mnemonics_bulk_delete: 'ids' (list of ints) is required")
+                    continue
+                n_bd_m = _get_store().bulk_delete([int(i) for i in bd_ids_m])
+                ok({"content": [{"type": "text", "text": f"Deleted {n_bd_m} memories."}]})
 
             elif name == "mnemonics_import_records":
                 ir_recs = args.get("records")

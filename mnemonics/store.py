@@ -769,6 +769,52 @@ class Store:
             self._db.commit()
         return cur.rowcount
 
+    def bulk_delete(self, memory_ids: list[int]) -> int:
+        """Delete multiple memories by ID in a single transaction.
+
+        Vectors are marked deleted in the hnswlib index for each namespace
+        touched.  Returns the count of rows actually deleted from the DB.
+        """
+        if not memory_ids:
+            return 0
+
+        # Determine which namespace each id belongs to (for index cleanup)
+        placeholders = ",".join("?" * len(memory_ids))
+        rows = self._db.execute(
+            f"SELECT id, ns FROM memories WHERE id IN ({placeholders})",
+            memory_ids,
+        ).fetchall()
+        if not rows:
+            return 0
+
+        from collections import defaultdict
+
+        by_ns: dict[str, list[int]] = defaultdict(list)
+        for mid, ns in rows:
+            by_ns[ns].append(mid)
+
+        with self._lock:
+            self._db.execute(
+                f"DELETE FROM memories WHERE id IN ({placeholders})",
+                memory_ids,
+            )
+            self._db.commit()
+
+        # Mark deleted in each namespace's index
+        for ns, ids in by_ns.items():
+            try:
+                idx = self._index_for(ns)
+                for mid in ids:
+                    try:
+                        idx.mark_deleted(mid)
+                    except Exception:
+                        pass
+                self._save_index(ns)
+            except Exception:
+                pass
+
+        return len(rows)
+
     def import_records(
         self,
         records: list[dict],

@@ -3024,3 +3024,77 @@ def test_text_stats_empty_ns(tmp_store):
     stats = tmp_store.text_stats("ghost")
     assert stats["count"] == 0
     assert stats["total_chars"] == 0
+
+
+# ── rename_ns ─────────────────────────────────────────────────────────────────
+
+def test_rename_ns_moves_rows(populated_store):
+    """rename_ns moves all memories to the new namespace."""
+    store, docs, vecs = populated_store
+    n = store.rename_ns("default", "renamed-ns")
+    assert n == len(docs)
+    assert store._db.execute("SELECT COUNT(*) FROM memories WHERE ns='default'").fetchone()[0] == 0
+    assert store._db.execute("SELECT COUNT(*) FROM memories WHERE ns='renamed-ns'").fetchone()[0] == len(docs)
+
+
+def test_rename_ns_empty_source(tmp_store):
+    """rename_ns returns 0 when source namespace is empty."""
+    assert tmp_store.rename_ns("ghost", "new-ghost") == 0
+
+
+# ── merge_ns ──────────────────────────────────────────────────────────────────
+
+def test_merge_ns_moves_all(populated_store):
+    """merge_ns moves all memories from source to target."""
+    store, docs, vecs = populated_store
+    # Add some memories to target first
+    import numpy as np
+    store.add(["extra"], [np.zeros(384, dtype=np.float32)], ns="target-ns")
+    n = store.merge_ns("default", "target-ns")
+    assert n == len(docs)
+    assert store._db.execute("SELECT COUNT(*) FROM memories WHERE ns='default'").fetchone()[0] == 0
+    assert store._db.execute("SELECT COUNT(*) FROM memories WHERE ns='target-ns'").fetchone()[0] == len(docs) + 1
+
+
+def test_merge_ns_empty_source(populated_store):
+    """merge_ns returns 0 when source is empty."""
+    store, docs, vecs = populated_store
+    assert store.merge_ns("nonexistent", "default") == 0
+
+
+# ── bulk_delete ───────────────────────────────────────────────────────────────
+
+def test_bulk_delete_removes_rows(populated_store):
+    """bulk_delete removes all specified memory IDs."""
+    store, docs, vecs = populated_store
+    all_ids = [r[0] for r in store._db.execute("SELECT id FROM memories").fetchall()]
+    to_delete = all_ids[:2]
+    n = store.bulk_delete(to_delete)
+    assert n == 2
+    remaining = store._db.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
+    assert remaining == len(docs) - 2
+
+
+def test_bulk_delete_empty_list(populated_store):
+    """bulk_delete returns 0 for an empty list."""
+    store, docs, vecs = populated_store
+    assert store.bulk_delete([]) == 0
+
+
+def test_bulk_delete_missing_ids(populated_store):
+    """bulk_delete skips IDs that don't exist."""
+    store, docs, vecs = populated_store
+    n = store.bulk_delete([999997, 999998, 999999])
+    assert n == 0
+
+
+def test_bulk_delete_mark_deleted_exception_swallowed(populated_store):
+    """bulk_delete swallows mark_deleted errors and still returns deleted count."""
+    from unittest.mock import patch, MagicMock
+    store, docs, vecs = populated_store
+    ids_to_del = [r[0] for r in store._db.execute("SELECT id FROM memories LIMIT 1").fetchall()]
+    mock_idx = MagicMock()
+    mock_idx.mark_deleted.side_effect = Exception("simulated")
+    with patch.object(store, "_index_for", return_value=mock_idx):
+        n = store.bulk_delete(ids_to_del)
+    assert n == 1

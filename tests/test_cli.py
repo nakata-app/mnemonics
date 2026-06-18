@@ -3394,3 +3394,48 @@ def test_cli_import_records_from_stdin(tmp_path, capsys):
     ):
         main()
     assert "1" in capsys.readouterr().out
+
+
+# ── rename-ns CLI ─────────────────────────────────────────────────────────────
+
+def test_cli_rename_ns_ok(tmp_path, capsys):
+    """rename-ns prints count of moved memories."""
+    mock_store = MagicMock()
+    mock_store.rename_ns.return_value = 5
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "rename-ns", "old", "new", "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.rename_ns.assert_called_once_with("old", "new")
+    assert "5" in capsys.readouterr().out
+
+
+# ── merge-ns CLI ──────────────────────────────────────────────────────────────
+
+def test_cli_merge_ns_ok(tmp_path, capsys):
+    """merge-ns prints count of merged memories."""
+    mock_store = MagicMock()
+    mock_store.merge_ns.return_value = 3
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "merge-ns", "src", "tgt", "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.merge_ns.assert_called_once_with("src", "tgt")
+    assert "3" in capsys.readouterr().out
+
+
+# ── bulk-delete CLI ───────────────────────────────────────────────────────────
+
+def test_cli_bulk_delete_ok(tmp_path, capsys):
+    """bulk-delete prints count of deleted memories."""
+    mock_store = MagicMock()
+    mock_store.bulk_delete.return_value = 2
+    with (
+        patch("mnemonics.store.Store", return_value=mock_store),
+        patch("sys.argv", ["mnemonics", "bulk-delete", "1", "2", "--path", str(tmp_path)]),
+    ):
+        main()
+    mock_store.bulk_delete.assert_called_once_with([1, 2])
+    assert "2" in capsys.readouterr().out

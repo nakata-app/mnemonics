@@ -80,6 +80,11 @@ def main() -> None:
     ts.add_argument("--json", dest="json_out", action="store_true", help="Output results as JSON array")
     ts.add_argument("--path", default="~/.mnemonics")
 
+    # bulk-delete
+    bdk = sub.add_parser("bulk-delete", help="Delete multiple memories by ID")
+    bdk.add_argument("ids", nargs="+", type=int, help="Memory IDs to delete")
+    bdk.add_argument("--path", default="~/.mnemonics")
+
     # import-records
     irec = sub.add_parser("import-records", help="Import memories from a JSON file (produced by export-ns)")
     irec.add_argument("file", help="JSON file path (or '-' for stdin)")
@@ -634,6 +639,12 @@ def main() -> None:
                 print(line)
                 if r.get("summary"):
                     print(f"           summary: {r['summary']}")
+
+    elif args.cmd == "bulk-delete":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        n = store.bulk_delete(args.ids)
+        print(f"Deleted {n} memories.")
 
     elif args.cmd == "import-records":
         from mnemonics.store import Store
