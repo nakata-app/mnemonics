@@ -52,6 +52,7 @@ dev = [
     "pytest>=9.0.3",
     "mypy>=1.10",
     "hypothesis>=6.155.3",
+    "ruff>=0.15.12",
 ]
 
 [tool.coverage.run]
@@ -76,6 +77,14 @@ files = [
     "mnemonics/backup.py",
     "mnemonics/sync.py",
 ]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP"]
+ignore = ["E501"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

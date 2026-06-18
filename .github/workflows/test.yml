@@ -38,6 +38,9 @@ jobs:
           uv run coverage run -m pytest tests/ --ignore=tests/test_encryption.py -q
           uv run coverage report --include="mnemonics/*.py" --omit="mnemonics/migrate.py" --fail-under=99
 
+      - name: Lint
+        run: uv run ruff check mnemonics/
+
       - name: Type check
         run: |
           uv run mypy mnemonics/store.py mnemonics/retrieve.py mnemonics/ingest.py mnemonics/server.py mnemonics/backup.py mnemonics/sync.py --ignore-missing-imports
