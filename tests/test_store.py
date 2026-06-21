@@ -4802,3 +4802,19 @@ def test_get_access_stats_top_n(tmp_store):
     tmp_store.add(["a", "b", "c", "d", "e"], vecs, ns="default")
     stats = tmp_store.get_access_stats(ns="default", top_n=2)
     assert len(stats["top"]) <= 2
+
+
+def test_merge_memories_skips_unparseable_meta(tmp_store):
+    """A source row whose meta is not valid JSON must not break the merge: the
+    meta-combine step swallows the parse error and continues."""
+    import numpy as np
+    vecs = np.zeros((2, 384), dtype=np.float32)
+    ids = tmp_store.add(["alpha piece", "beta piece"], vecs, ns="default")
+    tmp_store._db.execute(
+        "UPDATE memories SET meta = ? WHERE id = ?", ("{not valid json", ids[0])
+    )
+    tmp_store._db.commit()
+    new_id = tmp_store.merge_memories(ids)
+    assert new_id is not None
+    merged = tmp_store.get(new_id)
+    assert "alpha piece" in merged["text"] and "beta piece" in merged["text"]

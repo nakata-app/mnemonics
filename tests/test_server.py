@@ -6541,3 +6541,16 @@ def test_mcp_get_access_stats_all_ns(populated_store):
         "params": {"name": "mnemonics_get_access_stats", "arguments": {}},
     })[0]
     assert "total accesses" in resp["result"]["content"][0]["text"]
+
+
+def test_mcp_search_by_date_range_tier_arg(tmp_store):
+    """The MCP handler must coerce an explicit tier argument to int."""
+    import numpy as np
+    tmp_store.add(["dated entry"], np.zeros((1, DIM), dtype=np.float32), ns="default")
+    resp = _mcp(tmp_store, {
+        "jsonrpc": "2.0", "id": 99,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_search_by_date_range",
+                   "arguments": {"start": "2000-01-01", "end": "2099-12-31", "tier": 0}},
+    })[0]
+    assert "result" in resp
