@@ -1,0 +1,15 @@
+{
+  "n": 500,
+  "R@1": 0.958,
+  "R@5": 1.0,
+  "R@10": 1.0,
+  "by_type": null,
+  "date": "2026-06-21T15:00:05+00:00",
+  "config": "--mode rerank --chunk-mode turn --temporal-aware --augment-preferences --candidate-k 50 --seed 42",
+  "ce_model": "BAAI/bge-reranker-v2-m3",
+  "encoder": "all-MiniLM-L6-v2",
+  "dataset": "longmemeval_s_cleaned (500q)",
+  "deterministic": true,
+  "source": "commit ca53594 measurement: Kaggle T4 GPU, MNEMONICS_DETERMINISTIC=1, R@1=0.958 reproduced on 3 runs / 2 kernels (one non-deterministic run hit 0.976 with trust-gate firing 86x vs 9x). R@5/R@10 stayed 1.0 across all runs.",
+  "notes": "by_type breakdown was not captured to a retrievable file at champion time (the run printed to stdout and exited; eval/results/champion_run.log was truncated before the score). Aggregate numbers above are from the deterministic-fix commit measurement. Re-run benchmarks/kaggle_champion.py on a GPU to regenerate by_type."
+}
