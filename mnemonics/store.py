@@ -13,6 +13,14 @@ import numpy as np
 
 from mnemonics import crypto
 
+# Reproducible HNSW: hnswlib multi-threaded add_items builds a non-deterministic
+# graph (insertion order varies with thread scheduling / core count), which makes
+# retrieval — and thus benchmark R@1 — vary run-to-run across machines. When
+# MNEMONICS_DETERMINISTIC=1, force single-threaded index construction so the graph
+# (and the score) are reproducible. Off by default (single-thread is slower on
+# bulk ingest); opt in for benchmarking.
+_DETERMINISTIC = os.environ.get("MNEMONICS_DETERMINISTIC") == "1"
+
 # Swap in sqlcipher3 only when the caller has opted into encryption. Keeping
 # the stdlib path as default means existing plain-text DBs and the 155-test
 # suite are untouched; opt-in is an explicit env-var flip.
@@ -241,6 +249,8 @@ class Store:
         idx = hnswlib.Index(space="cosine", dim=self.dim)
         idx.load_index(str(idx_path))
         idx.set_ef(64)
+        if _DETERMINISTIC:
+            idx.set_num_threads(1)  # reproducible graph (see _DETERMINISTIC)
         self._index[ns] = idx
         self._index_mtime[ns] = disk_mtime
 
@@ -255,6 +265,8 @@ class Store:
             else:
                 idx.init_index(max_elements=100_000, ef_construction=200, M=16)
                 idx.set_ef(64)
+            if _DETERMINISTIC:
+                idx.set_num_threads(1)  # reproducible graph (see _DETERMINISTIC)
             self._index[ns] = idx
         return self._index[ns]
 
@@ -3280,6 +3292,8 @@ class Store:
                 M=16,
             )
             new_idx.set_ef(64)
+            if _DETERMINISTIC:
+                new_idx.set_num_threads(1)  # reproducible graph (see _DETERMINISTIC)
 
             if old_idx is not None:
                 # Retrieve stored vectors in batches; skip IDs absent from index.
