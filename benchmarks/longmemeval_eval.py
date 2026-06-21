@@ -172,27 +172,56 @@ _EV_MONTH_YEAR_RE = re.compile(
 _EV_IN_YEAR_RE = re.compile(r"\b(?:in|since|back in)\s+((?:19|20)\d{2})\b", re.IGNORECASE)
 _EV_LAST_UNIT_RE = re.compile(r"\blast\s+(week|month|year)\b", re.IGNORECASE)
 
+# temporal-v4 sanity bound. An event the user "did/visited/attended" sits near
+# the session. Measured on the 52 ordinal temporal-reasoning questions: 489
+# non-gold sessions parse an in-text date that differs from the session date,
+# and the worst gold cases parse content years (a museum chunk citing 1939, a
+# concert chunk citing 2015) that are NOT the event date. Dropping absolute
+# dates outside [session-180d, session+30d] back to the session date kills that
+# noise while keeping the genuine event refinements (deltas of 7-60 days).
+_EVENT_DATE_BOUND_BACK = 180
+_EVENT_DATE_BOUND_FWD = 30
 
-def _event_date_of(text: str | None, session_date: datetime | None) -> datetime | None:
-    """First explicit in-text date cue -> datetime; else session_date."""
+
+def _event_date_of(text: str | None, session_date: datetime | None,
+                   bound_back: int | None = None,
+                   bound_fwd: int | None = None) -> datetime | None:
+    """First explicit in-text date cue -> datetime; else session_date.
+
+    bound_back/bound_fwd (temporal-v4): when set, an extracted ABSOLUTE date
+    outside [session-bound_back, session+bound_fwd] days is treated as content
+    noise (e.g. a year cited inside the chunk) and the session date is used
+    instead. Relative cues ('N units ago', 'last month') are session-anchored
+    so they can never fall out of bound. bound_back=None keeps the unbounded
+    v3 behavior unchanged.
+    """
     t = text or ""
+    cand = None
     m = _EV_MONTH_YEAR_RE.search(t)
     if m:
-        return datetime(int(m.group(2)), _MONTHS[m.group(1).lower()], 1)
-    m = _EV_IN_YEAR_RE.search(t)
-    if m:
-        return datetime(int(m.group(1)), 1, 1)
-    if session_date is not None:
-        m = _REL_TIME_RE.search(t)
-        if m and m.group(1) is not None:
-            num = _WORD_TO_NUM.get(m.group(1).lower(),
-                                   int(m.group(1)) if m.group(1).isdigit() else 1)
-            return session_date - timedelta(days=num * _UNIT_DAYS[m.group(2).lower()])
-        m = _EV_LAST_UNIT_RE.search(t)
+        cand = datetime(int(m.group(2)), _MONTHS[m.group(1).lower()], 1)
+    else:
+        m = _EV_IN_YEAR_RE.search(t)
         if m:
-            return session_date - timedelta(
-                days={"week": 7, "month": 30, "year": 365}[m.group(1).lower()])
-    return session_date
+            cand = datetime(int(m.group(1)), 1, 1)
+        elif session_date is not None:
+            m = _REL_TIME_RE.search(t)
+            if m and m.group(1) is not None:
+                num = _WORD_TO_NUM.get(m.group(1).lower(),
+                                       int(m.group(1)) if m.group(1).isdigit() else 1)
+                cand = session_date - timedelta(days=num * _UNIT_DAYS[m.group(2).lower()])
+            else:
+                m = _EV_LAST_UNIT_RE.search(t)
+                if m:
+                    cand = session_date - timedelta(
+                        days={"week": 7, "month": 30, "year": 365}[m.group(1).lower()])
+    if cand is None:
+        return session_date
+    if (bound_back is not None and session_date is not None
+            and not (session_date - timedelta(days=bound_back)
+                     <= cand <= session_date + timedelta(days=bound_fwd or 0))):
+        return session_date
+    return cand
 
 
 # Cached LLM client for --llm-rerank and --hyde. Built lazily on first use.
@@ -506,6 +535,7 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                        temporal_aware: bool = False,
                        temporal_v2: bool = False,
                        temporal_v3: bool = False,
+                       temporal_v4: bool = False,
                        llm_rerank_top_n: int = 0,
                        llm_rerank_margin: float = 0.0,
                        rerank_fusion: bool = False,
@@ -531,6 +561,8 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
 
     if temporal_v3:
         temporal_v2 = True  # v3, v2 düzeltmelerini kapsar
+    if temporal_v4:
+        temporal_v2 = True  # v4 = v2 + bounded event-date ordinal (no weekday window)
 
     gate_ce = None
     if trust_gate_ce:
@@ -696,6 +728,13 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                             # to the session date.
                             def _odate(r):
                                 sd = _rdate(r)
+                                if temporal_v4:
+                                    # bounded event-date: content years (1939,
+                                    # 2015) fall back to the session date.
+                                    return _event_date_of(
+                                        r.get("text"), sd,
+                                        bound_back=_EVENT_DATE_BOUND_BACK,
+                                        bound_fwd=_EVENT_DATE_BOUND_FWD)
                                 if temporal_v3:
                                     return _event_date_of(r.get("text"), sd)
                                 return sd
@@ -871,6 +910,8 @@ def main():
                     help="Temporal-aware refinements: (1) 'how many days ago' no longer fabricates a 1-day window (count questions need an explicit number), (2) 'from latest to earliest' phrases set the sort direction explicitly and earlier-mentioned cue wins ties, (3) ordinal chronological sort is scoped to the top-5 relevant candidates instead of the whole list.")
     ap.add_argument("--temporal-v3", action="store_true",
                     help="Implies --temporal-v2, plus: (1) ordinal sort uses EVENT dates parsed from chunk text (explicit 'May 2023'/'in 2019', or 'N units ago'/'last month' resolved against the session date) with session-date fallback, (2) 'last Saturday'/'yesterday' queries get a day-window promotion like the proven 'N units ago' path.")
+    ap.add_argument("--temporal-v4", action="store_true",
+                    help="Implies --temporal-v2, plus bounded event-date ordinal sort: same EVENT-date parsing as v3 but an absolute in-text date outside [session-180d, session+30d] is treated as content noise (e.g. a museum chunk citing 1939) and falls back to the session date. Excludes v3's weekday-window (the half that regressed). Isolated lever for the resistant ordinal fails.")
     ap.add_argument("--llm-rerank-top-n", type=int, default=0,
                     help="If >0, send the top-N session-unique candidates to an LLM judge (NVIDIA NIM Llama 3.3 70B by default) which picks the index containing the answer. Requires NVIDIA_API_KEY. 0 disables.")
     ap.add_argument("--llm-rerank-margin", type=float, default=0.0,
@@ -926,6 +967,7 @@ def main():
             temporal_aware=args.temporal_aware,
             temporal_v2=args.temporal_v2,
             temporal_v3=args.temporal_v3,
+            temporal_v4=args.temporal_v4,
             llm_rerank_top_n=args.llm_rerank_top_n,
             llm_rerank_margin=args.llm_rerank_margin,
             rerank_fusion=args.rerank_fusion,
@@ -948,6 +990,7 @@ def main():
             temporal_aware=args.temporal_aware,
             temporal_v2=args.temporal_v2,
             temporal_v3=args.temporal_v3,
+            temporal_v4=args.temporal_v4,
             llm_rerank_top_n=args.llm_rerank_top_n,
             llm_rerank_margin=args.llm_rerank_margin,
             rerank_fusion=args.rerank_fusion,
