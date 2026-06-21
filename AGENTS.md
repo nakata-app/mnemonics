@@ -263,4 +263,15 @@ Evaluated on [LongMemEval](https://github.com/xiaowu0162/LongMemEval) (500-quest
 | **Mnemonics (CE rerank)** | **0.920+** | n/a | n/a |
 
 CE rerank = AdaptMem cross-encoder reranking over the candidate band.
-Full 500-question results in progress.
+
+**Canonical score, do not re-run blindly.** The table above is illustrative and
+may lag. The single source of truth is `benchmarks/CHAMPION.json`, written
+automatically after every eval. Before re-running the benchmark just to "check
+the score", read the recorded champion first:
+
+    python benchmarks/champion.py
+
+Every `longmemeval_eval.py` run now auto-records its result: champion when it
+beats the prior best for the same question count, always appended to
+`benchmarks/eval_ledger.jsonl` for audit. You do not need to re-run to learn the
+current best.

@@ -303,4 +303,38 @@ def ingest(
     vecs = enc.encode(all_chunks, batch_size=64, show_progress_bar=False,
                       normalize_embeddings=True, convert_to_numpy=True)
     store.add(all_chunks, vecs, ns=ns, meta=all_meta, summaries=all_summaries, tier=tier)
+    # Version stamp: bu vektorleri hangi encoder gomdu, kalici isaretle. Encoder
+    # ileride degisip re-embed atlanirsa retrieve drift'i fark eder.
+    try:
+        from mnemonics import embed_manifest as _em
+        _em.write(store.root, _em.encoder_fingerprint(_resolve_model(model), store.dim))
+    except Exception:
+        pass
     return len(all_chunks)
+
+
+def reembed_all(store, model: str = _encoder_name, batch_size: int = 256) -> list[dict]:
+    """Re-encode the whole store with the (possibly swapped) encoder and rebuild
+    every namespace index. Run this after dropping a new AdaptMem checkpoint in
+    via MNEMONICS_ADAPTMEM_PATH: stored vectors are stale in the new model's
+    space until recomputed. Re-stamps the encoder fingerprint so retrieve() stops
+    flagging drift. Returns per-namespace ``{ns, n}``.
+    """
+    enc = _get_encoder(model)
+    resolved = _resolve_model(model)
+
+    def _encode(texts):
+        return enc.encode(texts, batch_size=batch_size, show_progress_bar=False,
+                          normalize_embeddings=True, convert_to_numpy=True)
+
+    results = []
+    for ns in store.list_namespaces():
+        n = store.reembed_ns(ns, _encode, batch_size=batch_size)
+        if n:
+            results.append({"ns": ns, "n": n})
+    try:
+        from mnemonics import embed_manifest as _em
+        _em.write(store.root, _em.encoder_fingerprint(resolved, store.dim))
+    except Exception:
+        pass
+    return results

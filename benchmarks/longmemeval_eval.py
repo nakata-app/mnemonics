@@ -526,7 +526,10 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
     # stay at 384d and hnswlib would refuse the larger vectors.
     enc = _get_encoder()
     store_dim = enc.get_sentence_embedding_dimension()
-    print(f"  encoder dim={store_dim} (model={getattr(enc, '_first_module', lambda: None)() and ''}{os.environ.get('MNEMONICS_ENCODER_MODEL') or 'all-MiniLM-L6-v2'})", flush=True)
+    _enc_label = (os.environ.get("MNEMONICS_ENCODER_MODEL")
+                  or os.environ.get("MNEMONICS_ADAPTMEM_PATH")
+                  or "all-MiniLM-L6-v2")
+    print(f"  encoder dim={store_dim} (model={_enc_label})", flush=True)
     from mnemonics.retrieve import retrieve
 
     if temporal_v3:
@@ -971,6 +974,32 @@ def main():
             f"{key:25} n={v.get('n') or 0:<4} "
             f"R@1={v.get('R@1')}  R@5={v.get('R@5')}  R@10={v.get('R@10')}"
         )
+
+    # Champion auto-save: skor bir daha ucup gitmesin. Bu olmadigi icin her
+    # instance bastan kosup ayni skoru yeniden kanitliyordu. try/except ile
+    # sarili: kayit patlasa bile eval ciktisi korunur.
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import champion as _champ
+        _best = results.get("mnemonics_rerank") or results.get("mnemonics_no_rerank")
+        if _best:
+            _r = _champ.update(_best, {
+                "config": (f"mode={args.mode} chunk={args.chunk_mode} "
+                           f"temporal_aware={args.temporal_aware} "
+                           f"augment_prefs={args.augment_preferences} "
+                           f"cand_k={args.candidate_k} seed={args.seed}"),
+                "ce_model": os.environ.get("MNEMONICS_RERANK_MODEL", "default"),
+                "encoder": (os.environ.get("MNEMONICS_ADAPTMEM_PATH")
+                            or os.environ.get("MNEMONICS_ENCODER_MODEL")
+                            or "all-MiniLM-L6-v2"),
+                "dataset": "longmemeval_s",
+                "source": "longmemeval_eval.py",
+            })
+            _tag = "YENI SAMPIYON" if _r["champion"] else "kaydedildi"
+            print(f"\n[champion] {_tag}: R@1={_best.get('R@1')} -> {_champ.CHAMPION}",
+                  flush=True)
+    except Exception as _e:
+        print(f"[champion] kayit atlandi (eval sonucu korundu): {_e}", flush=True)
 
 
 if __name__ == "__main__":

@@ -582,6 +582,12 @@ def main() -> None:
     ria = sub.add_parser("reindex-all", help="Rebuild vector indexes for all namespaces")
     ria.add_argument("--path", default="~/.mnemonics")
 
+    # reembed
+    rem = sub.add_parser("reembed", help="Re-encode ALL memories with the current encoder and rebuild indexes. Use after an AdaptMem/encoder swap: unlike reindex-all (which copies stale vectors) this RECOMPUTES them, then re-stamps the encoder manifest.")
+    rem.add_argument("--path", default="~/.mnemonics")
+    rem.add_argument("--model", default="all-MiniLM-L6-v2",
+                     help="Base model id; env MNEMONICS_ADAPTMEM_PATH / MNEMONICS_ENCODER_MODEL override it")
+
     # sample
     smp = sub.add_parser("sample", help="Return N randomly sampled memories from a namespace")
     smp.add_argument("--ns", default="default", help="Namespace to sample from (default: 'default')")
@@ -1587,6 +1593,17 @@ def main() -> None:
                 print(f"  {r['ns']}: ERROR — {r['error']}")
             else:
                 print(f"  {r['ns']}: {r['old_count']} → {r['new_count']}")
+
+    elif args.cmd == "reembed":
+        from mnemonics.ingest import reembed_all
+        from mnemonics.store import Store
+        store = Store(args.path)
+        results = reembed_all(store, model=args.model)
+        if not results:
+            print("No namespaces found.")
+        for r in results:
+            print(f"  {r['ns']}: {r['n']} re-embedded")
+        print(f"Re-embedded {sum(r['n'] for r in results)} memories; encoder manifest updated.")
 
     elif args.cmd == "sample":
         from mnemonics.store import Store

@@ -7,7 +7,7 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 
-from mnemonics.ingest import _get_encoder
+from mnemonics.ingest import _get_encoder, _resolve_model
 from mnemonics.store import Store
 
 # Question-signal extractors. Lifted from longmemeval analysis: quoted phrases
@@ -213,6 +213,26 @@ def retrieve(
     """
     enc = _get_encoder(model)
     qvec = enc.encode([query], normalize_embeddings=True, convert_to_numpy=True)[0]
+    # Encoder drift kontrolu: stored vektorler farkli encoder ile gomulduyse
+    # sessiz kalite kaybini gorunur uyariya cevir. Bir kez (cached), hard fail
+    # YOK (canli retrieval'i kirmaz). Eski (damgasiz) DB'leri ilk kullanimda damgalar.
+    try:
+        from mnemonics import embed_manifest as _em
+        _resolved = _resolve_model(model)
+        _key = (str(store.root), _resolved, store.dim)
+        _seen = retrieve.__dict__.setdefault("_enc_checked", set())
+        if _key not in _seen:
+            _seen.add(_key)
+            _live = _em.encoder_fingerprint(_resolved, store.dim)
+            _st, _why = _em.verify(store.root, _live)
+            if _st == "missing":
+                _em.write(store.root, _live)
+            elif _st == "mismatch":
+                import logging
+                logging.getLogger("mnemonics").warning(
+                    "ENCODER DRIFT: %s. Re-embed gerekli (store.reindex_all()).", _why)
+    except Exception:
+        pass
     fusion_top = candidate_k if rerank else top_k
     if hybrid:
         vec_results = store.search(qvec, ns=ns, top_k=candidate_k, min_tier=min_tier, max_tier=max_tier)

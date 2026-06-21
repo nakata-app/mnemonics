@@ -3317,6 +3317,48 @@ class Store:
 
         return old_count, len(ids)
 
+    def reembed_ns(self, ns: str, encode_fn, batch_size: int = 256) -> int:
+        """Re-encode every memory in *ns* with `encode_fn` and rebuild the index.
+
+        Unlike :meth:`rebuild_ns_index` (which copies the stored vectors), this
+        RECOMPUTES them from the SQL text, which is the source of truth. Use
+        after swapping the embedding model: the old vectors live in the old
+        model's coordinate space and are stale until recomputed.
+
+        `encode_fn(texts) -> (n, dim) float32` must align with SQL row order.
+        Builds a fresh index and swaps it in under the per-ns lock. The caller
+        updates the embed manifest after all namespaces finish.
+        """
+        with self._ns_file_lock(ns, exclusive=True), self._lock:
+            rows = self._db.execute(
+                "SELECT id, text FROM memories WHERE ns=? ORDER BY id ASC", (ns,)
+            ).fetchall()
+            if not rows:
+                return 0
+            ids = [r[0] for r in rows]
+            texts = [r[1] for r in rows]
+            vecs = np.asarray(encode_fn(texts), dtype="float32")
+            if vecs.shape[0] != len(ids):
+                raise ValueError(
+                    f"encode_fn returned {vecs.shape[0]} vectors for {len(ids)} texts"
+                )
+            if vecs.ndim != 2 or vecs.shape[1] != self.dim:
+                raise ValueError(
+                    f"encoder dim {vecs.shape[1] if vecs.ndim == 2 else '?'} != "
+                    f"store dim {self.dim}; a dim change needs a fresh store, not reembed"
+                )
+            idx_path = self.root / f"index_{ns}.bin"
+            new_idx = hnswlib.Index(space="cosine", dim=self.dim)
+            new_idx.init_index(
+                max_elements=max(100_000, len(ids) * 2), ef_construction=200, M=16
+            )
+            new_idx.set_ef(64)
+            new_idx.add_items(vecs, ids)
+            new_idx.save_index(str(idx_path))
+            self._index[ns] = new_idx
+            self._index_mtime[ns] = idx_path.stat().st_mtime
+        return len(ids)
+
     def reindex_all(self) -> list[dict]:
         """Rebuild the hnswlib vector index for every namespace.
 

@@ -1,0 +1,11 @@
+Loading /Users/macmini/Projects/metis-pair/benchmarks/data/longmemeval/longmemeval_s_cleaned.json...
+Eval set: 500 questions (of 500)
+MNEMONICS_ADAPTMEM_PATH = /Users/macmini/.mnemonics/adaptmem-model/model
+
+=== Mnemonics (CE rerank) augment_prefs=False augment_facts=False cand_k=50 chunk=200/40 mode=turn dates=False temporal_aware=True llm_rerank_top_n=0 hyde=False ===
+Loading weights:   0%|          | 0/103 [00:00<?, ?it/s]Loading weights: 100%|██████████| 103/103 [00:00<00:00, 9103.83it/s]
+/Users/macmini/Projects/mnemonics/benchmarks/longmemeval_eval.py:528: FutureWarning: The `get_sentence_embedding_dimension` method has been renamed to `get_embedding_dimension`.
+  store_dim = enc.get_sentence_embedding_dimension()
+  encoder dim=384 (model=all-MiniLM-L6-v2)
+/Users/macmini/.local/share/uv/python/cpython-3.13.13-macos-aarch64-none/lib/python3.13/multiprocessing/resource_tracker.py:400: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown: {'/loky-7305-28pk4svr'}
+  warnings.warn(
