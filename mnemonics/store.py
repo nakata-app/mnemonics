@@ -1114,7 +1114,7 @@ class Store:
             idf = math.log((total_docs + 1) / (df.get(w, 0) + 1)) + 1
             results.append({"word": w, "score": round(freq * idf, 4)})
 
-        return sorted(results, key=lambda x: x["score"], reverse=True)[:top_n]
+        return sorted(results, key=lambda x: x["score"], reverse=True)[:top_n]  # type: ignore[arg-type,return-value]
 
     def deduplicate_by_text(
         self,
@@ -2500,7 +2500,7 @@ class Store:
                         idx.mark_deleted(mid)
                     except Exception:
                         pass
-                self._save_index(ns)
+                self._save_index(ns)  # type: ignore[attr-defined]
             except Exception:
                 pass
 
@@ -2537,7 +2537,7 @@ class Store:
             meta_dict = meta_raw if isinstance(meta_raw, dict) else {}
             tier = int(rec.get("tier", 1))
             vec = vecs[i] if vecs is not None else zero
-            self.add([text], [vec], ns=ns_val, meta=[meta_dict],
+            self.add([text], [vec], ns=ns_val, meta=[meta_dict],  # type: ignore[arg-type]
                      summaries=[summary], tier=tier)
             imported += 1
         return imported
@@ -3576,7 +3576,7 @@ class Store:
         for ns, tier, cnt in tier_rows:
             tier_map.setdefault(ns, {})[tier] = cnt
         for ns_report in ns_reports:
-            ns_report["tier_breakdown"] = tier_map.get(ns_report["ns"], {})
+            ns_report["tier_breakdown"] = tier_map.get(ns_report["ns"], {})  # type: ignore[call-overload]
 
         # Orphan indexes (index file exists but 0 SQL rows)
         orphans = []

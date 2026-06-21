@@ -828,10 +828,10 @@ class _Handler(BaseHTTPRequestHandler):
             from urllib.parse import parse_qs, urlparse
             from urllib.parse import unquote_plus as _uqp_mt
             qs_mt = parse_qs(urlparse(self.path).query)
-            ns_mt_raw = (qs_mt.get("ns") or [None])[0]
+            ns_mt_raw = (qs_mt.get("ns") or [None])[0]  # type: ignore[list-item]
             ns_mt = _uqp_mt(ns_mt_raw) if ns_mt_raw is not None else None
             limit_mt = int((qs_mt.get("limit") or ["50"])[0])
-            tier_mt_raw = (qs_mt.get("tier") or [None])[0]
+            tier_mt_raw = (qs_mt.get("tier") or [None])[0]  # type: ignore[list-item]
             tier_mt = int(tier_mt_raw) if tier_mt_raw is not None else None
             tl = _get_store().memory_timeline(ns=ns_mt, limit=limit_mt, tier=tier_mt)
             self._json(200, {"count": len(tl), "timeline": tl})
@@ -839,7 +839,7 @@ class _Handler(BaseHTTPRequestHandler):
         elif path.startswith("/keyword-extract"):
             from urllib.parse import parse_qs, urlparse
             qs_ke = parse_qs(urlparse(self.path).query)
-            mid_ke = (qs_ke.get("id") or [None])[0]
+            mid_ke = (qs_ke.get("id") or [None])[0]  # type: ignore[list-item]
             if not mid_ke:
                 self._json(400, {"error": "'id' query param is required"})
                 return
@@ -854,7 +854,7 @@ class _Handler(BaseHTTPRequestHandler):
             from urllib.parse import parse_qs, urlparse
             from urllib.parse import unquote_plus as _uqp_cns
             qs_cns = parse_qs(urlparse(self.path).query)
-            q_cns = (qs_cns.get("query") or [None])[0]
+            q_cns = (qs_cns.get("query") or [None])[0]  # type: ignore[list-item]
             if not q_cns:
                 self._json(400, {"error": "'query' param is required"})
                 return
@@ -870,15 +870,15 @@ class _Handler(BaseHTTPRequestHandler):
             from urllib.parse import parse_qs, urlparse
             from urllib.parse import unquote_plus as _uqp_sdr
             qs_sdr = parse_qs(urlparse(self.path).query)
-            start_sdr = (qs_sdr.get("start") or [None])[0]
-            end_sdr = (qs_sdr.get("end") or [None])[0]
+            start_sdr = (qs_sdr.get("start") or [None])[0]  # type: ignore[list-item]
+            end_sdr = (qs_sdr.get("end") or [None])[0]  # type: ignore[list-item]
             if not start_sdr or not end_sdr:
                 self._json(400, {"error": "'start' and 'end' params are required"})
                 return
-            ns_sdr_raw = (qs_sdr.get("ns") or [None])[0]
+            ns_sdr_raw = (qs_sdr.get("ns") or [None])[0]  # type: ignore[list-item]
             ns_sdr = _uqp_sdr(ns_sdr_raw) if ns_sdr_raw is not None else None
             lim_sdr = int((qs_sdr.get("limit") or ["100"])[0])
-            tier_sdr_raw = (qs_sdr.get("tier") or [None])[0]
+            tier_sdr_raw = (qs_sdr.get("tier") or [None])[0]  # type: ignore[list-item]
             tier_sdr = int(tier_sdr_raw) if tier_sdr_raw is not None else None
             hits_sdr = _get_store().search_by_date_range(
                 _uqp_sdr(start_sdr), _uqp_sdr(end_sdr),
@@ -890,7 +890,7 @@ class _Handler(BaseHTTPRequestHandler):
             from urllib.parse import parse_qs, urlparse
             from urllib.parse import unquote_plus as _uqp_gas
             qs_gas = parse_qs(urlparse(self.path).query)
-            ns_gas_raw = (qs_gas.get("ns") or [None])[0]
+            ns_gas_raw = (qs_gas.get("ns") or [None])[0]  # type: ignore[list-item]
             ns_gas = _uqp_gas(ns_gas_raw) if ns_gas_raw is not None else None
             top_n_gas = int((qs_gas.get("top_n") or ["10"])[0])
             stats_gas = _get_store().get_access_stats(ns=ns_gas, top_n=top_n_gas)
@@ -900,7 +900,7 @@ class _Handler(BaseHTTPRequestHandler):
             from urllib.parse import parse_qs, urlparse
             from urllib.parse import unquote_plus as _uqp_gtd
             qs_gtd = parse_qs(urlparse(self.path).query)
-            ns_gtd_raw = (qs_gtd.get("ns") or [None])[0]
+            ns_gtd_raw = (qs_gtd.get("ns") or [None])[0]  # type: ignore[list-item]
             ns_gtd = _uqp_gtd(ns_gtd_raw) if ns_gtd_raw is not None else None
             dist = _get_store().get_tier_distribution(ns=ns_gtd)
             self._json(200, {"ns": ns_gtd, "distribution": dist})
@@ -909,14 +909,14 @@ class _Handler(BaseHTTPRequestHandler):
             from urllib.parse import parse_qs, urlparse
             from urllib.parse import unquote_plus as _uqp_tsr
             qs_tsr = parse_qs(urlparse(self.path).query)
-            q_tsr = (qs_tsr.get("query") or [None])[0]
+            q_tsr = (qs_tsr.get("query") or [None])[0]  # type: ignore[list-item]
             if not q_tsr:
                 self._json(400, {"error": "'query' param is required"})
                 return
-            ns_tsr_raw = (qs_tsr.get("ns") or [None])[0]
+            ns_tsr_raw = (qs_tsr.get("ns") or [None])[0]  # type: ignore[list-item]
             ns_tsr = _uqp_tsr(ns_tsr_raw) if ns_tsr_raw is not None else None
             lim_tsr = int((qs_tsr.get("limit") or ["20"])[0])
-            tier_tsr_raw = (qs_tsr.get("tier") or [None])[0]
+            tier_tsr_raw = (qs_tsr.get("tier") or [None])[0]  # type: ignore[list-item]
             tier_tsr = int(tier_tsr_raw) if tier_tsr_raw is not None else None
             hits_tsr = _get_store().text_search_ranked(
                 _uqp_tsr(q_tsr), ns=ns_tsr, limit=lim_tsr, tier=tier_tsr
@@ -928,9 +928,9 @@ class _Handler(BaseHTTPRequestHandler):
             from urllib.parse import unquote_plus as _uqp_fbtl
             qs_fbtl = parse_qs(urlparse(self.path).query)
             min_c = int((qs_fbtl.get("min_chars") or ["0"])[0])
-            max_c_raw = (qs_fbtl.get("max_chars") or [None])[0]
+            max_c_raw = (qs_fbtl.get("max_chars") or [None])[0]  # type: ignore[list-item]
             max_c = int(max_c_raw) if max_c_raw is not None else None
-            ns_fbtl_raw = (qs_fbtl.get("ns") or [None])[0]
+            ns_fbtl_raw = (qs_fbtl.get("ns") or [None])[0]  # type: ignore[list-item]
             ns_fbtl = _uqp_fbtl(ns_fbtl_raw) if ns_fbtl_raw is not None else None
             lim_fbtl = int((qs_fbtl.get("limit") or ["100"])[0])
             hits_fbtl = _get_store().filter_by_text_length(
@@ -942,7 +942,7 @@ class _Handler(BaseHTTPRequestHandler):
             from urllib.parse import parse_qs, urlparse
             from urllib.parse import unquote_plus as _uqp_ts
             qs_ts = parse_qs(urlparse(self.path).query)
-            ns_ts_raw = (qs_ts.get("ns") or [None])[0]
+            ns_ts_raw = (qs_ts.get("ns") or [None])[0]  # type: ignore[list-item]
             ns_ts = _uqp_ts(ns_ts_raw) if ns_ts_raw is not None else None
             stats_ts = _get_store().tag_stats(ns=ns_ts)
             self._json(200, {"count": len(stats_ts), "stats": stats_ts})
@@ -960,7 +960,7 @@ class _Handler(BaseHTTPRequestHandler):
             from urllib.parse import parse_qs, urlparse
             from urllib.parse import unquote_plus as _uqp_pba
             qs_pba = parse_qs(urlparse(self.path).query)
-            ns_pba_raw = (qs_pba.get("ns") or [None])[0]
+            ns_pba_raw = (qs_pba.get("ns") or [None])[0]  # type: ignore[list-item]
             if not ns_pba_raw:
                 self._json(400, {"error": "'ns' query param is required"})
                 return
@@ -980,7 +980,7 @@ class _Handler(BaseHTTPRequestHandler):
             from urllib.parse import parse_qs, urlparse
             from urllib.parse import unquote_plus as _uqp_abn
             qs_abn = parse_qs(urlparse(self.path).query)
-            ns_abn_raw = (qs_abn.get("ns") or [None])[0]
+            ns_abn_raw = (qs_abn.get("ns") or [None])[0]  # type: ignore[list-item]
             if not ns_abn_raw:
                 self._json(400, {"error": "'ns' query param is required"})
                 return
@@ -999,7 +999,7 @@ class _Handler(BaseHTTPRequestHandler):
             from urllib.parse import unquote_plus as _uqp_sbac
             qs_sbac = parse_qs(urlparse(self.path).query)
             min_c = int((qs_sbac.get("min") or ["0"])[0])
-            max_c_raw = (qs_sbac.get("max") or [None])[0]
+            max_c_raw = (qs_sbac.get("max") or [None])[0]  # type: ignore[list-item]
             max_c = int(max_c_raw) if max_c_raw is not None else None
             ns_sbac_raw = qs_sbac.get("ns", [None])[0]
             ns_sbac = _uqp_sbac(ns_sbac_raw) if ns_sbac_raw is not None else None
@@ -1021,7 +1021,7 @@ class _Handler(BaseHTTPRequestHandler):
             from urllib.parse import parse_qs, urlparse
             from urllib.parse import unquote_plus as _uqp_ns
             qs_ns = parse_qs(urlparse(self.path).query)
-            ns_ns_raw = (qs_ns.get("ns") or [None])[0]
+            ns_ns_raw = (qs_ns.get("ns") or [None])[0]  # type: ignore[list-item]
             if not ns_ns_raw:
                 self._json(400, {"error": "'ns' query param is required"})
                 return
@@ -1031,7 +1031,7 @@ class _Handler(BaseHTTPRequestHandler):
             from urllib.parse import parse_qs, urlparse
             from urllib.parse import unquote_plus as _uqp_st
             qs_st = parse_qs(urlparse(self.path).query)
-            q_st = (qs_st.get("q") or [None])[0]
+            q_st = (qs_st.get("q") or [None])[0]  # type: ignore[list-item]
             if not q_st:
                 self._json(400, {"error": "'q' query param is required"})
                 return
@@ -1046,7 +1046,7 @@ class _Handler(BaseHTTPRequestHandler):
             from urllib.parse import parse_qs, urlparse
             from urllib.parse import unquote_plus as _uqp_lbt
             qs_lbt = parse_qs(urlparse(self.path).query)
-            tier_lbt_raw = (qs_lbt.get("tier") or [None])[0]
+            tier_lbt_raw = (qs_lbt.get("tier") or [None])[0]  # type: ignore[list-item]
             if tier_lbt_raw is None:
                 self._json(400, {"error": "'tier' query param is required"})
                 return
@@ -1077,8 +1077,8 @@ class _Handler(BaseHTTPRequestHandler):
             from urllib.parse import parse_qs, urlparse
             from urllib.parse import unquote_plus as _uqp_stbt
             qs_stbt = parse_qs(urlparse(self.path).query)
-            tag_stbt = (qs_stbt.get("tag") or [None])[0]
-            tier_stbt_raw = (qs_stbt.get("tier") or [None])[0]
+            tag_stbt = (qs_stbt.get("tag") or [None])[0]  # type: ignore[list-item]
+            tier_stbt_raw = (qs_stbt.get("tier") or [None])[0]  # type: ignore[list-item]
             if not tag_stbt or tier_stbt_raw is None:
                 self._json(400, {"error": "'tag' and 'tier' query params are required"})
                 return
@@ -1092,13 +1092,13 @@ class _Handler(BaseHTTPRequestHandler):
             from urllib.parse import parse_qs, urlparse
             from urllib.parse import unquote_plus as _uqp_rns
             qs_rns = parse_qs(urlparse(self.path).query)
-            src_rns = (qs_rns.get("src") or [None])[0]
-            dst_rns = (qs_rns.get("dst") or [None])[0]
+            src_rns = (qs_rns.get("src") or [None])[0]  # type: ignore[list-item]
+            dst_rns = (qs_rns.get("dst") or [None])[0]  # type: ignore[list-item]
             if not src_rns or not dst_rns:
                 self._json(400, {"error": "'src' and 'dst' query params are required"})
                 return
             limit_rns = int((qs_rns.get("limit") or ["100"])[0])
-            tier_rns_raw = (qs_rns.get("tier") or [None])[0]
+            tier_rns_raw = (qs_rns.get("tier") or [None])[0]  # type: ignore[list-item]
             tier_rns = int(tier_rns_raw) if tier_rns_raw is not None else None
             n_rns = _get_store().rotate_ns(
                 _uqp_rns(src_rns), _uqp_rns(dst_rns), limit=limit_rns, tier=tier_rns
@@ -1127,7 +1127,7 @@ class _Handler(BaseHTTPRequestHandler):
             from urllib.parse import parse_qs, urlparse
             from urllib.parse import unquote_plus as _uqp_sbs
             qs_sbs = parse_qs(urlparse(self.path).query)
-            q_sbs = (qs_sbs.get("q") or [None])[0]
+            q_sbs = (qs_sbs.get("q") or [None])[0]  # type: ignore[list-item]
             if not q_sbs:
                 self._json(400, {"error": "'q' query param is required"})
                 return
@@ -1140,8 +1140,8 @@ class _Handler(BaseHTTPRequestHandler):
             from urllib.parse import parse_qs, urlparse
             from urllib.parse import unquote_plus as _uqp_fbm
             qs_fbm = parse_qs(urlparse(self.path).query)
-            fbm_key = (qs_fbm.get("key") or [None])[0]
-            fbm_val = (qs_fbm.get("value") or [None])[0]
+            fbm_key = (qs_fbm.get("key") or [None])[0]  # type: ignore[list-item]
+            fbm_val = (qs_fbm.get("value") or [None])[0]  # type: ignore[list-item]
             if not fbm_key or fbm_val is None:
                 self._json(400, {"error": "'key' and 'value' query params are required"})
                 return
@@ -1161,7 +1161,7 @@ class _Handler(BaseHTTPRequestHandler):
             from urllib.parse import parse_qs, urlparse
             from urllib.parse import unquote_plus as _uqp_ts
             qs_ts = parse_qs(urlparse(self.path).query)
-            ns_ts_raw = qs_ts.get("ns", [None])[0]
+            ns_ts_raw = qs_ts.get("ns", [None])[0]  # type: ignore[assignment]
             ns_ts = _uqp_ts(ns_ts_raw) if ns_ts_raw is not None else None
             self._json(200, _get_store().text_stats(ns_ts))
         elif path.startswith("/count-by-tier"):
@@ -1195,12 +1195,12 @@ class _Handler(BaseHTTPRequestHandler):
             from urllib.parse import parse_qs, urlparse
             from urllib.parse import unquote_plus as _uqp_sdr
             qs_sdr = parse_qs(urlparse(self.path).query)
-            ns_sdr_raw = qs_sdr.get("ns", [None])[0]
+            ns_sdr_raw = qs_sdr.get("ns", [None])[0]  # type: ignore[assignment]
             ns_sdr = _uqp_sdr(ns_sdr_raw) if ns_sdr_raw is not None else None
             after_sdr = qs_sdr.get("after", [None])[0]
             before_sdr = qs_sdr.get("before", [None])[0]
             limit_sdr = int(qs_sdr.get("limit", ["100"])[0])
-            tier_sdr_raw = qs_sdr.get("tier", [None])[0]
+            tier_sdr_raw = qs_sdr.get("tier", [None])[0]  # type: ignore[assignment]
             tier_sdr = int(tier_sdr_raw) if tier_sdr_raw is not None else None
             hits_sdr = _get_store().search_date_range(
                 ns=ns_sdr, after=after_sdr, before=before_sdr,
@@ -1270,9 +1270,9 @@ class _Handler(BaseHTTPRequestHandler):
                 })
             self._json(200, {"namespaces": result})
         elif path == "/memories":
-            qs = self.path.split("?", 1)[1] if "?" in self.path else ""
+            qs = self.path.split("?", 1)[1] if "?" in self.path else ""  # type: ignore[assignment]
             params: dict[str, str] = {}
-            for part in qs.split("&"):
+            for part in qs.split("&"):  # type: ignore[attr-defined]
                 if "=" in part:
                     k, v = part.split("=", 1)
                     params[k] = v
@@ -1303,7 +1303,7 @@ class _Handler(BaseHTTPRequestHandler):
             from urllib.parse import parse_qs, unquote_plus, urlparse
             qs_parsed = parse_qs(urlparse(self.path).query)
             ns_raw = qs_parsed.get("ns", ["default"])[0]
-            ns_val = None if ns_raw == "all" else unquote_plus(ns_raw)
+            ns_val = None if ns_raw == "all" else unquote_plus(ns_raw)  # type: ignore[assignment]
             tier_raw = qs_parsed.get("tier", [None])[0]
             limit = min(int(qs_parsed.get("limit", ["20"])[0]), 100)
             hits = _get_store().recent_accessed(
@@ -1315,7 +1315,7 @@ class _Handler(BaseHTTPRequestHandler):
             from urllib.parse import parse_qs, unquote_plus, urlparse
             qs_parsed = parse_qs(urlparse(self.path).query)
             ns_raw = qs_parsed.get("ns", ["default"])[0]
-            ns_val = None if ns_raw == "all" else unquote_plus(ns_raw)
+            ns_val = None if ns_raw == "all" else unquote_plus(ns_raw)  # type: ignore[assignment]
             tier_raw = qs_parsed.get("tier", [None])[0]
             limit = min(int(qs_parsed.get("limit", ["20"])[0]), 100)
             hits = _get_store().top_accessed(
@@ -1335,7 +1335,7 @@ class _Handler(BaseHTTPRequestHandler):
                 return
             q = unquote_plus(q_raw)
             ns_raw = qs_parsed.get("ns", ["default"])[0]
-            ns_val = unquote_plus(ns_raw) if ns_raw != "all" else None
+            ns_val = unquote_plus(ns_raw) if ns_raw != "all" else None  # type: ignore[assignment]
             tier_raw = qs_parsed.get("tier", [None])[0]
             limit = min(int(qs_parsed.get("limit", ["20"])[0]), 100)
             hits = _get_store().text_search(
@@ -1352,19 +1352,19 @@ class _Handler(BaseHTTPRequestHandler):
             since_raw = qs_parsed.get("since", [None])[0]
             before_raw = qs_parsed.get("before", [None])[0]
             where_parts = ["1=1"]
-            params: list = []
+            params: list = []  # type: ignore[no-redef]
             if ns_raw is not None:
                 where_parts.append("ns = ?")
-                params.append(unquote_plus(ns_raw))
+                params.append(unquote_plus(ns_raw))  # type: ignore[attr-defined]
             if tier_raw is not None:
                 where_parts.append("tier = ?")
-                params.append(int(tier_raw))
+                params.append(int(tier_raw))  # type: ignore[attr-defined]
             if since_raw is not None:
                 where_parts.append("created >= ?")
-                params.append(unquote_plus(since_raw))
+                params.append(unquote_plus(since_raw))  # type: ignore[attr-defined]
             if before_raw is not None:
                 where_parts.append("created < ?")
-                params.append(unquote_plus(before_raw))
+                params.append(unquote_plus(before_raw))  # type: ignore[attr-defined]
             where = " AND ".join(where_parts)
             rows = _get_store()._db.execute(
                 f"SELECT id, ns, text, summary, meta, created, tier, last_accessed, access_count "
@@ -3414,8 +3414,8 @@ def _mcp_loop() -> None:
                     ok({"content": [{"type": "text", "text": f"No tags found in ns={lt_ns_label}."}]})
                     continue
                 lines_lt = [f"Tags in ns={lt_ns_label}:"]
-                for t in lt_tags:
-                    lines_lt.append(f"  {t['tag']:30s} {t['count']}")
+                for t in lt_tags:  # type: ignore[assignment]
+                    lines_lt.append(f"  {t['tag']:30s} {t['count']}")  # type: ignore[index]
                 ok({"content": [{"type": "text", "text": "\n".join(lines_lt)}]})
 
             elif name == "mnemonics_tag":
@@ -3701,7 +3701,7 @@ def _mcp_loop() -> None:
                 if not isinstance(ids, list):
                     err("mnemonics_delete_many: 'ids' must be an array of integers")
                     continue
-                deleted = _get_store().delete_many([int(i) for i in ids])
+                deleted = _get_store().delete_many([int(i) for i in ids])  # type: ignore[assignment]
                 ok({"content": [{"type": "text", "text": f"Deleted {deleted} row(s)."}]})
 
             elif name == "mnemonics_update_meta":
@@ -4032,7 +4032,7 @@ def _mcp_loop() -> None:
                 ]
                 if stats_gas_m["top"]:
                     lines_gas.append(f"  top {len(stats_gas_m['top'])} by access count:")
-                    for e in stats_gas_m["top"]:
+                    for e in stats_gas_m["top"]:  # type: ignore[misc]
                         lines_gas.append(f"    id={e['id']} cnt={e['access_count']} {e['text'][:50]}")
                 ok({"content": [{"type": "text", "text": "\n".join(lines_gas)}]})
 
@@ -4052,7 +4052,7 @@ def _mcp_loop() -> None:
                 dist_m = _get_store().get_tier_distribution(ns=gtd_ns_m)
                 lines_gtd = [f"Tier distribution for ns={gtd_ns_m!r}:"] if gtd_ns_m else ["Tier distribution (all ns):"]
                 for t, cnt in sorted(dist_m.items()):
-                    tier_label = {0: "pinned", 1: "default", 2: "ambient"}.get(t, f"tier{t}")
+                    tier_label = {0: "pinned", 1: "default", 2: "ambient"}.get(t, f"tier{t}")  # type: ignore[assignment]
                     lines_gtd.append(f"  tier {t} ({tier_label}): {cnt}")
                 ok({"content": [{"type": "text", "text": "\n".join(lines_gtd)}]})
 
@@ -4125,9 +4125,9 @@ def _mcp_loop() -> None:
                     ok({"content": [{"type": "text", "text": "(no memories)"}]})
                 else:
                     lines_tl = [f"Timeline for ns={mt_ns_m!r} ({len(tl_m)} entries):"]
-                    for e in tl_m[:20]:
+                    for e in tl_m[:20]:  # type: ignore[misc]
                         lines_tl.append(
-                            f"  [{e['seq']}] {e['created'][:10]} id={e['id']} {e['text'][:60]}"
+                            f"  [{e['seq']}] {e['created'][:10]} id={e['id']} {e['text'][:60]}"  # type: ignore[misc]
                         )
                     ok({"content": [{"type": "text", "text": "\n".join(lines_tl)}]})
 
