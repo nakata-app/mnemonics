@@ -14,7 +14,6 @@ import tarfile
 from datetime import datetime
 from pathlib import Path
 
-
 # Files we ship in a backup. Index files are namespace-scoped (`index_<ns>.bin`)
 # and discovered at runtime, so this list is the *fixed* portion only.
 _CORE_FILES = ("memories.db",)

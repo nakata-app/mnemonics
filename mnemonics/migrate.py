@@ -17,7 +17,6 @@ import os
 import shutil
 import sqlite3 as _stdlib_sqlite
 import subprocess
-import sys
 from datetime import datetime
 from pathlib import Path
 

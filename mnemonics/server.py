@@ -43,11 +43,10 @@ try:
     _VERSION = importlib.metadata.version("mnemonics")
 except importlib.metadata.PackageNotFoundError:
     _VERSION = "0.3.0"
-from pathlib import Path
 
-from mnemonics.store import Store
 from mnemonics.ingest import ingest as _ingest
 from mnemonics.retrieve import retrieve as _retrieve
+from mnemonics.store import Store
 
 MNEMONICS_PORT = int(os.environ.get("MNEMONICS_PORT", "7810"))
 MNEMONICS_PATH = os.environ.get("MNEMONICS_PATH", "~/.mnemonics")
@@ -826,7 +825,8 @@ class _Handler(BaseHTTPRequestHandler):
         elif path == "/namespaces":
             self._json(200, {"namespaces": _get_store().list_namespaces()})
         elif path.startswith("/memory-timeline"):
-            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_mt
+            from urllib.parse import parse_qs, urlparse
+            from urllib.parse import unquote_plus as _uqp_mt
             qs_mt = parse_qs(urlparse(self.path).query)
             ns_mt_raw = (qs_mt.get("ns") or [None])[0]
             ns_mt = _uqp_mt(ns_mt_raw) if ns_mt_raw is not None else None
@@ -837,7 +837,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(200, {"count": len(tl), "timeline": tl})
 
         elif path.startswith("/keyword-extract"):
-            from urllib.parse import urlparse, parse_qs
+            from urllib.parse import parse_qs, urlparse
             qs_ke = parse_qs(urlparse(self.path).query)
             mid_ke = (qs_ke.get("id") or [None])[0]
             if not mid_ke:
@@ -851,7 +851,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(200, {"id": int(mid_ke), "keywords": result_ke})
 
         elif path.startswith("/cross-ns-search"):
-            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_cns
+            from urllib.parse import parse_qs, urlparse
+            from urllib.parse import unquote_plus as _uqp_cns
             qs_cns = parse_qs(urlparse(self.path).query)
             q_cns = (qs_cns.get("query") or [None])[0]
             if not q_cns:
@@ -866,7 +867,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(200, {"query": q_cns, "count": len(hits_cns), "results": hits_cns})
 
         elif path.startswith("/search-by-date-range"):
-            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_sdr
+            from urllib.parse import parse_qs, urlparse
+            from urllib.parse import unquote_plus as _uqp_sdr
             qs_sdr = parse_qs(urlparse(self.path).query)
             start_sdr = (qs_sdr.get("start") or [None])[0]
             end_sdr = (qs_sdr.get("end") or [None])[0]
@@ -885,7 +887,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(200, {"count": len(hits_sdr), "results": hits_sdr})
 
         elif path.startswith("/get-access-stats"):
-            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_gas
+            from urllib.parse import parse_qs, urlparse
+            from urllib.parse import unquote_plus as _uqp_gas
             qs_gas = parse_qs(urlparse(self.path).query)
             ns_gas_raw = (qs_gas.get("ns") or [None])[0]
             ns_gas = _uqp_gas(ns_gas_raw) if ns_gas_raw is not None else None
@@ -894,7 +897,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(200, stats_gas)
 
         elif path.startswith("/get-tier-distribution"):
-            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_gtd
+            from urllib.parse import parse_qs, urlparse
+            from urllib.parse import unquote_plus as _uqp_gtd
             qs_gtd = parse_qs(urlparse(self.path).query)
             ns_gtd_raw = (qs_gtd.get("ns") or [None])[0]
             ns_gtd = _uqp_gtd(ns_gtd_raw) if ns_gtd_raw is not None else None
@@ -902,7 +906,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(200, {"ns": ns_gtd, "distribution": dist})
 
         elif path.startswith("/text-search-ranked"):
-            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_tsr
+            from urllib.parse import parse_qs, urlparse
+            from urllib.parse import unquote_plus as _uqp_tsr
             qs_tsr = parse_qs(urlparse(self.path).query)
             q_tsr = (qs_tsr.get("query") or [None])[0]
             if not q_tsr:
@@ -919,7 +924,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(200, {"query": q_tsr, "count": len(hits_tsr), "results": hits_tsr})
 
         elif path.startswith("/filter-by-text-length"):
-            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_fbtl
+            from urllib.parse import parse_qs, urlparse
+            from urllib.parse import unquote_plus as _uqp_fbtl
             qs_fbtl = parse_qs(urlparse(self.path).query)
             min_c = int((qs_fbtl.get("min_chars") or ["0"])[0])
             max_c_raw = (qs_fbtl.get("max_chars") or [None])[0]
@@ -933,7 +939,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(200, {"count": len(hits_fbtl), "results": hits_fbtl})
 
         elif path.startswith("/tag-stats"):
-            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_ts
+            from urllib.parse import parse_qs, urlparse
+            from urllib.parse import unquote_plus as _uqp_ts
             qs_ts = parse_qs(urlparse(self.path).query)
             ns_ts_raw = (qs_ts.get("ns") or [None])[0]
             ns_ts = _uqp_ts(ns_ts_raw) if ns_ts_raw is not None else None
@@ -941,7 +948,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(200, {"count": len(stats_ts), "stats": stats_ts})
 
         elif path.startswith("/memories-without-summary"):
-            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_mws
+            from urllib.parse import parse_qs, urlparse
+            from urllib.parse import unquote_plus as _uqp_mws
             qs_mws = parse_qs(urlparse(self.path).query)
             ns_mws_raw = qs_mws.get("ns", [None])[0]
             ns_mws = _uqp_mws(ns_mws_raw) if ns_mws_raw is not None else None
@@ -949,7 +957,8 @@ class _Handler(BaseHTTPRequestHandler):
             hits_mws = _get_store().memories_without_summary(ns=ns_mws, limit=limit_mws)
             self._json(200, {"count": len(hits_mws), "results": hits_mws})
         elif path.startswith("/promote-by-access"):
-            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_pba
+            from urllib.parse import parse_qs, urlparse
+            from urllib.parse import unquote_plus as _uqp_pba
             qs_pba = parse_qs(urlparse(self.path).query)
             ns_pba_raw = (qs_pba.get("ns") or [None])[0]
             if not ns_pba_raw:
@@ -968,7 +977,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(200, {"ns": ns_pba_raw, "promoted": promoted_pba,
                              "from_tier": from_pba, "to_tier": to_pba})
         elif path.startswith("/age-by-ns"):
-            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_abn
+            from urllib.parse import parse_qs, urlparse
+            from urllib.parse import unquote_plus as _uqp_abn
             qs_abn = parse_qs(urlparse(self.path).query)
             ns_abn_raw = (qs_abn.get("ns") or [None])[0]
             if not ns_abn_raw:
@@ -976,7 +986,8 @@ class _Handler(BaseHTTPRequestHandler):
                 return
             self._json(200, _get_store().age_by_ns(_uqp_abn(ns_abn_raw)))
         elif path.startswith("/untagged-memories"):
-            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_utm
+            from urllib.parse import parse_qs, urlparse
+            from urllib.parse import unquote_plus as _uqp_utm
             qs_utm = parse_qs(urlparse(self.path).query)
             ns_utm_raw = qs_utm.get("ns", [None])[0]
             ns_utm = _uqp_utm(ns_utm_raw) if ns_utm_raw is not None else None
@@ -984,7 +995,8 @@ class _Handler(BaseHTTPRequestHandler):
             hits_utm = _get_store().untagged_memories(ns=ns_utm, limit=limit_utm)
             self._json(200, {"count": len(hits_utm), "results": hits_utm})
         elif path.startswith("/search-by-access-count"):
-            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_sbac
+            from urllib.parse import parse_qs, urlparse
+            from urllib.parse import unquote_plus as _uqp_sbac
             qs_sbac = parse_qs(urlparse(self.path).query)
             min_c = int((qs_sbac.get("min") or ["0"])[0])
             max_c_raw = (qs_sbac.get("max") or [None])[0]
@@ -997,7 +1009,8 @@ class _Handler(BaseHTTPRequestHandler):
             )
             self._json(200, {"count": len(hits_sbac), "results": hits_sbac})
         elif path.startswith("/find-duplicates"):
-            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_fd
+            from urllib.parse import parse_qs, urlparse
+            from urllib.parse import unquote_plus as _uqp_fd
             qs_fd = parse_qs(urlparse(self.path).query)
             ns_fd_raw = qs_fd.get("ns", [None])[0]
             ns_fd = _uqp_fd(ns_fd_raw) if ns_fd_raw is not None else None
@@ -1005,7 +1018,8 @@ class _Handler(BaseHTTPRequestHandler):
             groups_fd = _get_store().find_duplicates(ns=ns_fd, limit=limit_fd)
             self._json(200, {"groups": len(groups_fd), "duplicates": groups_fd})
         elif path.startswith("/ns-summary"):
-            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_ns
+            from urllib.parse import parse_qs, urlparse
+            from urllib.parse import unquote_plus as _uqp_ns
             qs_ns = parse_qs(urlparse(self.path).query)
             ns_ns_raw = (qs_ns.get("ns") or [None])[0]
             if not ns_ns_raw:
@@ -1014,7 +1028,8 @@ class _Handler(BaseHTTPRequestHandler):
             summary_ns = _get_store().ns_summary(_uqp_ns(ns_ns_raw))
             self._json(200, summary_ns)
         elif path.startswith("/search-text"):
-            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_st
+            from urllib.parse import parse_qs, urlparse
+            from urllib.parse import unquote_plus as _uqp_st
             qs_st = parse_qs(urlparse(self.path).query)
             q_st = (qs_st.get("q") or [None])[0]
             if not q_st:
@@ -1028,7 +1043,8 @@ class _Handler(BaseHTTPRequestHandler):
         elif path == "/count-by-ns":
             self._json(200, {"by_ns": _get_store().count_by_ns()})
         elif path.startswith("/list-by-tier"):
-            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_lbt
+            from urllib.parse import parse_qs, urlparse
+            from urllib.parse import unquote_plus as _uqp_lbt
             qs_lbt = parse_qs(urlparse(self.path).query)
             tier_lbt_raw = (qs_lbt.get("tier") or [None])[0]
             if tier_lbt_raw is None:
@@ -1040,7 +1056,8 @@ class _Handler(BaseHTTPRequestHandler):
             hits_lbt = _get_store().list_by_tier(int(tier_lbt_raw), ns=ns_lbt, limit=limit_lbt)
             self._json(200, {"count": len(hits_lbt), "results": hits_lbt})
         elif path.startswith("/newest"):
-            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_rec
+            from urllib.parse import parse_qs, urlparse
+            from urllib.parse import unquote_plus as _uqp_rec
             qs_rec = parse_qs(urlparse(self.path).query)
             ns_rec_raw = qs_rec.get("ns", [None])[0]
             ns_rec = _uqp_rec(ns_rec_raw) if ns_rec_raw is not None else None
@@ -1048,7 +1065,8 @@ class _Handler(BaseHTTPRequestHandler):
             hits_rec = _get_store().recent(ns=ns_rec, n=n_rec)
             self._json(200, {"count": len(hits_rec), "results": hits_rec})
         elif path.startswith("/oldest"):
-            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_old
+            from urllib.parse import parse_qs, urlparse
+            from urllib.parse import unquote_plus as _uqp_old
             qs_old = parse_qs(urlparse(self.path).query)
             ns_old_raw = qs_old.get("ns", [None])[0]
             ns_old = _uqp_old(ns_old_raw) if ns_old_raw is not None else None
@@ -1056,7 +1074,8 @@ class _Handler(BaseHTTPRequestHandler):
             hits_old = _get_store().oldest(ns=ns_old, n=n_old)
             self._json(200, {"count": len(hits_old), "results": hits_old})
         elif path.startswith("/set-tier-by-tag"):
-            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_stbt
+            from urllib.parse import parse_qs, urlparse
+            from urllib.parse import unquote_plus as _uqp_stbt
             qs_stbt = parse_qs(urlparse(self.path).query)
             tag_stbt = (qs_stbt.get("tag") or [None])[0]
             tier_stbt_raw = (qs_stbt.get("tier") or [None])[0]
@@ -1070,7 +1089,8 @@ class _Handler(BaseHTTPRequestHandler):
             )
             self._json(200, {"tag": tag_stbt, "tier": int(tier_stbt_raw), "updated": n_stbt})
         elif path.startswith("/rotate-ns"):
-            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_rns
+            from urllib.parse import parse_qs, urlparse
+            from urllib.parse import unquote_plus as _uqp_rns
             qs_rns = parse_qs(urlparse(self.path).query)
             src_rns = (qs_rns.get("src") or [None])[0]
             dst_rns = (qs_rns.get("dst") or [None])[0]
@@ -1085,7 +1105,8 @@ class _Handler(BaseHTTPRequestHandler):
             )
             self._json(200, {"src": src_rns, "dst": dst_rns, "moved": n_rns})
         elif path.startswith("/compact-meta"):
-            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_cmpct
+            from urllib.parse import parse_qs, urlparse
+            from urllib.parse import unquote_plus as _uqp_cmpct
             qs_cmpct = parse_qs(urlparse(self.path).query)
             ns_cmpct_raw = qs_cmpct.get("ns", [None])[0]
             ns_cmpct = _uqp_cmpct(ns_cmpct_raw) if ns_cmpct_raw is not None else None
@@ -1094,7 +1115,8 @@ class _Handler(BaseHTTPRequestHandler):
             n_cmpct = _get_store().compact_meta(ns=ns_cmpct, keep_keys=keep_cmpct)
             self._json(200, {"ns": ns_cmpct, "updated": n_cmpct})
         elif path.startswith("/pinned-memories"):
-            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_pm
+            from urllib.parse import parse_qs, urlparse
+            from urllib.parse import unquote_plus as _uqp_pm
             qs_pm = parse_qs(urlparse(self.path).query)
             ns_pm_raw = qs_pm.get("ns", [None])[0]
             ns_pm = _uqp_pm(ns_pm_raw) if ns_pm_raw is not None else None
@@ -1102,7 +1124,8 @@ class _Handler(BaseHTTPRequestHandler):
             hits_pm = _get_store().pinned_memories(ns=ns_pm, limit=limit_pm)
             self._json(200, {"count": len(hits_pm), "results": hits_pm})
         elif path.startswith("/search-by-summary"):
-            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_sbs
+            from urllib.parse import parse_qs, urlparse
+            from urllib.parse import unquote_plus as _uqp_sbs
             qs_sbs = parse_qs(urlparse(self.path).query)
             q_sbs = (qs_sbs.get("q") or [None])[0]
             if not q_sbs:
@@ -1114,7 +1137,8 @@ class _Handler(BaseHTTPRequestHandler):
             hits_sbs = _get_store().search_by_summary(q_sbs, ns=ns_sbs, limit=limit_sbs)
             self._json(200, {"count": len(hits_sbs), "results": hits_sbs})
         elif path.startswith("/filter-by-meta"):
-            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_fbm
+            from urllib.parse import parse_qs, urlparse
+            from urllib.parse import unquote_plus as _uqp_fbm
             qs_fbm = parse_qs(urlparse(self.path).query)
             fbm_key = (qs_fbm.get("key") or [None])[0]
             fbm_val = (qs_fbm.get("value") or [None])[0]
@@ -1127,19 +1151,22 @@ class _Handler(BaseHTTPRequestHandler):
             fbm_hits = _get_store().filter_by_meta(fbm_key, fbm_val, ns=fbm_ns, limit=fbm_limit)
             self._json(200, {"count": len(fbm_hits), "results": fbm_hits})
         elif path.startswith("/summary-stats"):
-            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_sst
+            from urllib.parse import parse_qs, urlparse
+            from urllib.parse import unquote_plus as _uqp_sst
             qs_sst = parse_qs(urlparse(self.path).query)
             ns_sst_raw = qs_sst.get("ns", [None])[0]
             ns_sst = _uqp_sst(ns_sst_raw) if ns_sst_raw is not None else None
             self._json(200, _get_store().summary_stats(ns_sst))
         elif path.startswith("/text-stats"):
-            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_ts
+            from urllib.parse import parse_qs, urlparse
+            from urllib.parse import unquote_plus as _uqp_ts
             qs_ts = parse_qs(urlparse(self.path).query)
             ns_ts_raw = qs_ts.get("ns", [None])[0]
             ns_ts = _uqp_ts(ns_ts_raw) if ns_ts_raw is not None else None
             self._json(200, _get_store().text_stats(ns_ts))
         elif path.startswith("/count-by-tier"):
-            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_cbt
+            from urllib.parse import parse_qs, urlparse
+            from urllib.parse import unquote_plus as _uqp_cbt
             qs_cbt = parse_qs(urlparse(self.path).query)
             ns_cbt_raw = qs_cbt.get("ns", [None])[0]
             ns_cbt = _uqp_cbt(ns_cbt_raw) if ns_cbt_raw is not None else None
@@ -1155,7 +1182,6 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(200, {"ns": ns_exp, "count": len(records), "records": records})
 
         elif path.startswith("/get-tags/"):
-            from urllib.parse import unquote_plus as _uqp_gtag
             raw_id_gt = path[len("/get-tags/"):]
             if not raw_id_gt.isdigit():
                 self._json(400, {"error": "memory id must be a positive integer"})
@@ -1166,7 +1192,8 @@ class _Handler(BaseHTTPRequestHandler):
             else:
                 self._json(200, {"id": int(raw_id_gt), "tags": tags_gt})
         elif path.startswith("/search-date-range"):
-            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_sdr
+            from urllib.parse import parse_qs, urlparse
+            from urllib.parse import unquote_plus as _uqp_sdr
             qs_sdr = parse_qs(urlparse(self.path).query)
             ns_sdr_raw = qs_sdr.get("ns", [None])[0]
             ns_sdr = _uqp_sdr(ns_sdr_raw) if ns_sdr_raw is not None else None
@@ -1182,14 +1209,16 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(200, {"ns": ns_sdr, "after": after_sdr, "before": before_sdr,
                               "results": hits_sdr})
         elif path.startswith("/word-frequency"):
-            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_wf
+            from urllib.parse import parse_qs, urlparse
+            from urllib.parse import unquote_plus as _uqp_wf
             qs_wf = parse_qs(urlparse(self.path).query)
             ns_wf_raw = qs_wf.get("ns", [None])[0]
             ns_wf = _uqp_wf(ns_wf_raw) if ns_wf_raw is not None else None
             top_n_wf = int(qs_wf.get("top_n", ["20"])[0])
             self._json(200, {"ns": ns_wf, "words": _get_store().word_frequency(ns_wf, top_n_wf)})
         elif path.startswith("/find-by-tag"):
-            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_fbt
+            from urllib.parse import parse_qs, urlparse
+            from urllib.parse import unquote_plus as _uqp_fbt
             qs_fbt = parse_qs(urlparse(self.path).query)
             tag_fbt = _uqp_fbt(qs_fbt.get("tag", [""])[0]).strip()
             ns_fbt_raw = qs_fbt.get("ns", [None])[0]
@@ -1201,19 +1230,21 @@ class _Handler(BaseHTTPRequestHandler):
             hits_fbt = _get_store().find_by_tag(tag_fbt, ns=ns_fbt, limit=limit_fbt)
             self._json(200, {"tag": tag_fbt, "ns": ns_fbt, "results": hits_fbt})
         elif path.startswith("/list-tags"):
-            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_lt
+            from urllib.parse import parse_qs, urlparse
+            from urllib.parse import unquote_plus as _uqp_lt
             qs_lt = parse_qs(urlparse(self.path).query)
             ns_lt_raw = qs_lt.get("ns", [None])[0]
             ns_lt = _uqp_lt(ns_lt_raw) if ns_lt_raw is not None else None
             self._json(200, {"ns": ns_lt, "tags": _get_store().list_tags(ns_lt)})
         elif path.startswith("/access-stats"):
-            from urllib.parse import urlparse, parse_qs, unquote_plus as _uqp_as
+            from urllib.parse import parse_qs, urlparse
+            from urllib.parse import unquote_plus as _uqp_as
             qs_as = parse_qs(urlparse(self.path).query)
             ns_as_raw = qs_as.get("ns", [None])[0]
             ns_as = _uqp_as(ns_as_raw) if ns_as_raw is not None else None
             self._json(200, _get_store().access_stats(ns_as))
         elif path == "/count":
-            from urllib.parse import urlparse, parse_qs, unquote_plus
+            from urllib.parse import parse_qs, unquote_plus, urlparse
             qs = parse_qs(urlparse(self.path).query)
             ns_raw = qs.get("ns", [None])[0]
             ns = unquote_plus(ns_raw) if ns_raw is not None else None
@@ -1269,7 +1300,7 @@ class _Handler(BaseHTTPRequestHandler):
             else:
                 self._json(200, row)
         elif path == "/recent":
-            from urllib.parse import urlparse, parse_qs, unquote_plus
+            from urllib.parse import parse_qs, unquote_plus, urlparse
             qs_parsed = parse_qs(urlparse(self.path).query)
             ns_raw = qs_parsed.get("ns", ["default"])[0]
             ns_val = None if ns_raw == "all" else unquote_plus(ns_raw)
@@ -1281,7 +1312,7 @@ class _Handler(BaseHTTPRequestHandler):
             )
             self._json(200, {"count": len(hits), "results": hits})
         elif path == "/top-accessed":
-            from urllib.parse import urlparse, parse_qs, unquote_plus
+            from urllib.parse import parse_qs, unquote_plus, urlparse
             qs_parsed = parse_qs(urlparse(self.path).query)
             ns_raw = qs_parsed.get("ns", ["default"])[0]
             ns_val = None if ns_raw == "all" else unquote_plus(ns_raw)
@@ -1296,7 +1327,7 @@ class _Handler(BaseHTTPRequestHandler):
             result = _get_store().stats_by_ns()
             self._json(200, {"namespaces": result})
         elif path == "/text-search":
-            from urllib.parse import urlparse, parse_qs, unquote_plus
+            from urllib.parse import parse_qs, unquote_plus, urlparse
             qs_parsed = parse_qs(urlparse(self.path).query)
             q_raw = qs_parsed.get("q", [None])[0]
             if not q_raw:
@@ -1313,8 +1344,8 @@ class _Handler(BaseHTTPRequestHandler):
             )
             self._json(200, {"query": q, "count": len(hits), "results": hits})
         elif path == "/export-jsonl":
-            from urllib.parse import urlparse, parse_qs, unquote_plus
             import json as _json
+            from urllib.parse import parse_qs, unquote_plus, urlparse
             qs_parsed = parse_qs(urlparse(self.path).query)
             ns_raw = qs_parsed.get("ns", [None])[0]
             tier_raw = qs_parsed.get("tier", [None])[0]
@@ -3075,7 +3106,7 @@ def _mcp_loop() -> None:
                 cbn_result = _get_store().count_by_ns()
                 import json as _j_cbn
                 ok({"content": [{"type": "text", "text":
-                    f"Memory counts by namespace:\n" +
+                    "Memory counts by namespace:\n" +
                     _j_cbn.dumps(cbn_result, ensure_ascii=False, indent=2)}]})
 
             elif name == "mnemonics_clear_ns":

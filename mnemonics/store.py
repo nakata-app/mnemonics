@@ -547,7 +547,7 @@ class Store:
                 (*row_ids, *tier_params),
             ).fetchall()
         by_id = {r[0]: r for r in rows}
-        dist_by_id = {int(l): float(d) for l, d in zip(labels[0], distances[0])}
+        dist_by_id = {int(lab): float(d) for lab, d in zip(labels[0], distances[0])}
         results = []
         for rid in row_ids:
             row = by_id.get(rid)
@@ -698,7 +698,7 @@ class Store:
             row = self._db.execute("SELECT COUNT(*) FROM memories WHERE ns=?", (ns,)).fetchone()
         return row[0] if row else 0
 
-    def update_text(self, memory_id: int, new_text: str, new_vec: "np.ndarray") -> bool:
+    def update_text(self, memory_id: int, new_text: str, new_vec: np.ndarray) -> bool:
         """Replace the text and embedding vector for an existing memory.
 
         The old embedding is marked deleted in the hnswlib index and the new
@@ -882,6 +882,7 @@ class Store:
         the merge.
         """
         import json as _j_mt
+
         import numpy as _np_mt
 
         rows = self._db.execute(
@@ -1098,9 +1099,8 @@ class Store:
             tf[w] = tf.get(w, 0) + 1
 
         total_docs = self._db.execute("SELECT COUNT(*) FROM memories").fetchone()[0] or 1
-        vocab = list(tf)
         df_rows = self._db.execute(
-            f"SELECT lower(text) FROM memories"
+            "SELECT lower(text) FROM memories"
         ).fetchall()
         df: dict[str, int] = {}
         for (text_row,) in df_rows:
@@ -1176,7 +1176,9 @@ class Store:
 
         Returns the new memory id, or ``None`` if no valid ids were found.
         """
-        import numpy as np, json as _j_mm
+        import json as _j_mm
+
+        import numpy as np
         parts: list[str] = []
         combined_meta: dict = {}
         target_ns: str | None = None
@@ -1309,7 +1311,9 @@ class Store:
         If *overwrite=True* the namespace is cleared before import.
         Returns the number of rows inserted.
         """
-        import numpy as np, json as _j_imp
+        import json as _j_imp
+
+        import numpy as np
         if not rows:
             return 0
         if overwrite:
@@ -1579,6 +1583,7 @@ class Store:
         fewer than 2 non-empty parts.
         """
         import json as _j_sm
+
         import numpy as _np_sm
 
         row = self._db.execute(
@@ -1643,6 +1648,7 @@ class Store:
         ``None`` if *memory_id* does not exist.
         """
         import json as _j_cm
+
         import numpy as _np_cm
 
         row = self._db.execute(
@@ -1653,7 +1659,6 @@ class Store:
             return None
 
         target_ns = dst_ns if dst_ns is not None else row[0]
-        meta = _j_cm.loads(row[2]) if row[2] else {}  # summary is row[2]?
         # Correct order: ns, text, summary, meta, tier
         ns_orig, text, summary, meta_str, tier = row
         meta_obj = _j_cm.loads(meta_str) if meta_str else {}
@@ -2286,7 +2291,6 @@ class Store:
         rotated memories (they remain searchable in the old index until
         ``reindex_all`` is called).
         """
-        import json as _j_rns
 
         if tier is not None:
             rows = self._db.execute(
@@ -2507,7 +2511,7 @@ class Store:
         records: list[dict],
         *,
         ns_override: str | None = None,
-        vecs: "list | None" = None,
+        vecs: list | None = None,
     ) -> int:
         """Import records produced by :meth:`export_ns` (or hand-crafted dicts).
 

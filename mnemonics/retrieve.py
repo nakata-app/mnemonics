@@ -7,8 +7,8 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 
-from mnemonics.store import Store
 from mnemonics.ingest import _get_encoder
+from mnemonics.store import Store
 
 # Question-signal extractors. Lifted from longmemeval analysis: quoted phrases
 # and proper-noun person names that the bi-encoder under-weights are reliably

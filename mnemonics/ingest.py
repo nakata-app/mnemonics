@@ -5,8 +5,6 @@ import os
 import re
 from typing import Any
 
-import numpy as np
-
 from mnemonics.store import Store
 
 _encoder: Any = None

@@ -10,11 +10,8 @@ from __future__ import annotations
 
 from typing import Any
 
-import numpy as np
-
 from mnemonics.ingest import _get_encoder
 from mnemonics.store import Store
-
 
 # Cosine threshold above which two texts are "near-duplicates" worth surfacing.
 # 0.92 picked from observation: same-topic / different-wording memories cluster

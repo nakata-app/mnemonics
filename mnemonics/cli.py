@@ -900,8 +900,8 @@ def main() -> None:
         serve(mcp=True)
 
     elif args.cmd == "ingest":
-        from mnemonics.store import Store
         from mnemonics.ingest import ingest
+        from mnemonics.store import Store
         store = Store(args.path)
         if args.file:
             if args.file == "-":
@@ -956,8 +956,8 @@ def main() -> None:
         print(f"Stored {n} chunk(s).")
 
     elif args.cmd == "retrieve":
-        from mnemonics.store import Store
         from mnemonics.retrieve import retrieve
+        from mnemonics.store import Store
         store = Store(args.path)
         result = retrieve(
             query=args.query,
@@ -1529,6 +1529,7 @@ def main() -> None:
     elif args.cmd == "update-text":
         import numpy as _np_cli_ut
         from sentence_transformers import SentenceTransformer
+
         from mnemonics.store import Store
         store = Store(args.path)
         enc = SentenceTransformer(args.model)
@@ -1656,9 +1657,10 @@ def main() -> None:
                 print(f"  [{r['score']:.3f}] [{tl}] id={r['id']}  {snippet}")
 
     elif args.cmd == "hybrid-search":
-        from mnemonics.store import Store
-        from mnemonics.ingest import _get_encoder
         import numpy as _np_cli
+
+        from mnemonics.ingest import _get_encoder
+        from mnemonics.store import Store
         store = Store(args.path)
         enc = _get_encoder()
         vec = _np_cli.array(enc.encode([args.query], normalize_embeddings=True, convert_to_numpy=True)[0], dtype="float32")
@@ -2001,8 +2003,9 @@ def main() -> None:
             sys.exit(1)
 
     elif args.cmd == "export-jsonl":
-        from mnemonics.store import Store
         import sys as _sys
+
+        from mnemonics.store import Store
         store = Store(args.path)
         # Parse --meta-filter KEY=VALUE pairs
         meta_filters: dict[str, str] = {}
@@ -2053,9 +2056,10 @@ def main() -> None:
             print(f"Exported {len(rows)} memories to {args.out}", file=_sys.stderr)
 
     elif args.cmd == "import-jsonl":
-        from mnemonics.store import Store
-        from mnemonics.ingest import ingest as _ingest_fn
         import sys as _sys
+
+        from mnemonics.ingest import ingest as _ingest_fn
+        from mnemonics.store import Store
         store = Store(args.path)
         # Resolve input source
         if args.file is None or args.file == "-":
@@ -2250,7 +2254,8 @@ def main() -> None:
     elif args.cmd == "eval":
         import json as _json
         from pathlib import Path as _Path
-        from mnemonics.eval import run_eval, compare_table
+
+        from mnemonics.eval import compare_table, run_eval
 
         encoders = args.encoder or ["minilm"]
         methods = args.method or ["vector"]
@@ -2330,7 +2335,9 @@ def main() -> None:
                     print(f"    id={e['id']} cnt={e['access_count']} {e['text'][:50]}")
 
     elif args.cmd == "import-ns":
-        import sys as _sys_imp, json as _json_imp
+        import json as _json_imp
+        import sys as _sys_imp
+
         from mnemonics.store import Store
         store = Store(args.path)
         if args.file == "-":
