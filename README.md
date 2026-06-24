@@ -1,6 +1,6 @@
 # Mnemonics
 
-`/nɪˈmɒnɪks/`, *ni-MON-iks* (the "m" is silent, like "memories" with an N).
+`/nɪˈmɒnɪks/`, _ni-MON-iks_ (the "m" is silent, like "memories" with an N).
 
 **Agent memory infrastructure. Local-first, tier-aware, MCP-ready.**
 
@@ -41,11 +41,11 @@ mnem retrieve "how tall is the Eiffel Tower"
 
 Every memory has a **tier** that controls how aggressively its score fades over time:
 
-| Tier | Label   | Half-life  | Use for                                   |
-|------|---------|------------|-------------------------------------------|
-| 0    | pinned  | no decay   | decisions, key facts, things you must keep|
-| 1    | default | 90 days    | general notes (the default)               |
-| 2    | ambient | 14 days    | low-confidence observations, chit-chat    |
+| Tier | Label   | Half-life | Use for                                    |
+| ---- | ------- | --------- | ------------------------------------------ |
+| 0    | pinned  | no decay  | decisions, key facts, things you must keep |
+| 1    | default | 90 days   | general notes (the default)                |
+| 2    | ambient | 14 days   | low-confidence observations, chit-chat     |
 
 Final score on every retrieval is:
 
@@ -131,26 +131,26 @@ mnem serve --port 7810
 
 The server binds to `127.0.0.1` only, no external interface, no telemetry.
 
-| Method | Path | Body |
-|--------|------|------|
-| POST | `/ingest` | `{"texts": [...], "ns": "default"}` |
-| POST | `/retrieve` | `{"query": "...", "top_k": 5, "decay": true}` |
-| POST | `/search-bm25` | `{"query": "...", "ns": "default", "top_k": 5}` |
-| GET | `/stats` | (per-namespace tier breakdown) |
-| POST | `/pin` | `{"id": N}` |
-| POST | `/tier` | `{"id": N, "tier": 0\|1\|2}` |
-| POST | `/rebuild-index` | `{"ns": "..."}` |
-| POST | `/gc` | `{"ns": "...", "age_days": 30, "tier": 2, "dry_run": true}` |
-| POST | `/forget` | `{"ns": "...", "before": "2026-01-01", "dry_run": true}` |
-| POST | `/forget-ns` | `{"ns": "...", "before": "...", "tier": N, "dry_run": true}` |
-| POST | `/repair` | (auto-fix orphan vectors and index files) |
-| GET | `/health` | |
-| GET | `/doctor` | (DB integrity, index vs SQL counts, capacity) |
-| GET | `/namespaces` | |
-| GET | `/count?ns=default` | |
-| GET | `/memories?ns=default&limit=20&offset=0&tier=0` | (browse newest-first, optional tier filter) |
-| GET | `/memory/<id>` | (single memory by id) |
-| DELETE | `/memory/<id>` | |
+| Method | Path                                            | Body                                                         |
+| ------ | ----------------------------------------------- | ------------------------------------------------------------ |
+| POST   | `/ingest`                                       | `{"texts": [...], "ns": "default"}`                          |
+| POST   | `/retrieve`                                     | `{"query": "...", "top_k": 5, "decay": true}`                |
+| POST   | `/search-bm25`                                  | `{"query": "...", "ns": "default", "top_k": 5}`              |
+| GET    | `/stats`                                        | (per-namespace tier breakdown)                               |
+| POST   | `/pin`                                          | `{"id": N}`                                                  |
+| POST   | `/tier`                                         | `{"id": N, "tier": 0\|1\|2}`                                 |
+| POST   | `/rebuild-index`                                | `{"ns": "..."}`                                              |
+| POST   | `/gc`                                           | `{"ns": "...", "age_days": 30, "tier": 2, "dry_run": true}`  |
+| POST   | `/forget`                                       | `{"ns": "...", "before": "2026-01-01", "dry_run": true}`     |
+| POST   | `/forget-ns`                                    | `{"ns": "...", "before": "...", "tier": N, "dry_run": true}` |
+| POST   | `/repair`                                       | (auto-fix orphan vectors and index files)                    |
+| GET    | `/health`                                       |                                                              |
+| GET    | `/doctor`                                       | (DB integrity, index vs SQL counts, capacity)                |
+| GET    | `/namespaces`                                   |                                                              |
+| GET    | `/count?ns=default`                             |                                                              |
+| GET    | `/memories?ns=default&limit=20&offset=0&tier=0` | (browse newest-first, optional tier filter)                  |
+| GET    | `/memory/<id>`                                  | (single memory by id)                                        |
+| DELETE | `/memory/<id>`                                  |                                                              |
 
 ## MCP (Claude Code / Cursor / Metis)
 
@@ -170,6 +170,7 @@ mnem mcp
 ```
 
 Tools exposed:
+
 - `mnemonics_ingest`
 - `mnemonics_retrieve` (decay-aware hybrid search, supports `decay: false` for raw cosine)
 - `mnemonics_bm25` (pure keyword search, instant, no encoding, covers text + summary)
@@ -237,6 +238,17 @@ index_<ns>.bin     hnswlib index for each namespace
 
   The migration auto-generates a 256-bit key and stores it in the OS keyring (macOS Keychain, Linux SecretService, Windows DPAPI). Pass `--key <hex>` to supply your own, or `--no-keyring` to print the key for manual storage. The pre-encryption DB is preserved as `memories.db.preencrypt-<timestamp>` so the operation is reversible. Losing the key after the original backup is gone loses the DB.
 
+## Benchmarks
+
+| Benchmark     | Metric     | Result    |
+| ------------- | ---------- | --------- |
+| LongMemEval-S | R@1 (det.) | **0.958** |
+| LongMemEval-S | R@5        | **1.000** |
+| LongMemEval-S | R@10       | **1.000** |
+| LoCoMo        | Accuracy   | **82.9%** |
+
+Results from the env-gated deterministic HNSW pipeline. Enable via `MNEMONICS_DETERMINISTIC=1` with `gte-Qwen2-7b-instruct` (gate) and `multilingual-e5-large-instruct` (embed). Full reproduction steps in `benchmarks/SOTA_PROOF.md`.
+
 ## License
 
-MIT
+Apache 2.0

@@ -2,7 +2,7 @@
 
 All notable changes to mnemonics. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow [SemVer](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.0] - 2026-05-26
 
 ### Added
 
@@ -55,7 +55,7 @@ All notable changes to mnemonics. Format follows [Keep a Changelog](https://keep
   `--limit` / `--offset` pagination. Returns id, tier, created timestamp,
   text snippet (200 chars), and summary. Agents can now audit a namespace
   without semantic search.
-- **`mnemonics_get` MCP tool, `GET /memory/<id>` REST endpoint, `Store.get()`.
+- \*\*`mnemonics_get` MCP tool, `GET /memory/<id>` REST endpoint, `Store.get()`.
   Fetch a single memory by ID. Returns full text, summary, ns, tier,
   created, last_accessed, access_count. Useful before pinning or deleting.
 - **`GET /stats` REST endpoint.** Per-namespace tier breakdown as JSON array.
