@@ -34,25 +34,55 @@ WINDOW_GIT_MIN  = int(os.environ.get("LIVE_WINDOW_GIT_MIN",  "60"))
 GIT_OPS = {"commit", "push", "checkout", "merge", "rebase", "reset", "cherry-pick"}
 SHELL_SEPS = {"&&", "||", ";", "|", "(", "{", "&"}
 
-def detect_git_op(cmd: str) -> str | None:
+def _preceding_cd_dir(tokens: list[str], git_idx: int) -> str | None:
+    """Walk back from the `git` token to the start of its shell-separator
+    chain and return the directory of a leading `cd <dir>` segment, e.g.
+    `cd /x/hermes && git commit ...` -> "/x/hermes". None if that segment
+    isn't a bare `cd <dir>`."""
+    end = git_idx - 1
+    while end >= 0 and tokens[end] in SHELL_SEPS:
+        end -= 1
+    start = end
+    while start >= 0 and tokens[start] not in SHELL_SEPS:
+        start -= 1
+    start += 1
+    if start > end:
+        return None
+    segment = tokens[start:end + 1]
+    if len(segment) == 2 and segment[0] == "cd":
+        return segment[1]
+    return None
+
+def detect_git_invocation(cmd: str) -> tuple[str, str | None] | None:
+    """Return (op, target_dir); mirrors live_writer.py's detector so a
+    command's OWN `-C <dir>` / `cd <dir> &&` target (not just the session's
+    cwd) is used to pick the branch + feed this command is checked against."""
     if not cmd or "git" not in cmd:
         return None
     try:
         tokens = shlex.split(cmd, posix=True)
     except ValueError:
         m = re.search(r"(?:^|[\s;&|(){}])git\s+([a-z\-]+)", cmd)
-        return m.group(1) if (m and m.group(1) in GIT_OPS) else None
+        if m and m.group(1) in GIT_OPS:
+            return (m.group(1), None)
+        return None
     for i, tok in enumerate(tokens):
-        if tok != "git" or i + 1 >= len(tokens):
+        if tok != "git":
             continue
-        nxt = tokens[i + 1]
-        if nxt not in GIT_OPS:
+        if i != 0:
+            prev = tokens[i - 1]
+            if not (prev in SHELL_SEPS or prev.endswith(("&", ";"))):
+                continue
+        j = i + 1
+        git_dir = None
+        if j + 1 < len(tokens) and tokens[j] == "-C":
+            git_dir = tokens[j + 1]
+            j += 2
+        if j >= len(tokens) or tokens[j] not in GIT_OPS:
             continue
-        if i == 0:
-            return nxt
-        prev = tokens[i - 1]
-        if prev in SHELL_SEPS or prev.endswith(("&", ";")):
-            return nxt
+        if git_dir is None:
+            git_dir = _preceding_cd_dir(tokens, i)
+        return (tokens[j], git_dir)
     return None
 
 def project_root(cwd: str) -> str:
@@ -181,11 +211,20 @@ def main() -> int:
             feed = feed_path(project)
     elif tool_name == "Bash":
         cmd = tool_input.get("command", "")
-        if not detect_git_op(cmd):
+        invocation = detect_git_invocation(cmd)
+        if not invocation:
             return 0
+        _op, git_dir = invocation
+        # `-C <dir>` / `cd <dir> &&` overrides the session cwd: check this
+        # command's OWN target repo for conflicts, not wherever the session
+        # itself happens to be sitting.
+        target_dir = os.path.normpath(os.path.join(cwd, git_dir)) if git_dir else cwd
+        if git_dir:
+            project = project_root(target_dir)
+            feed = feed_path(project)
         try:
             target_branch = subprocess.check_output(
-                ["git", "-C", cwd, "rev-parse", "--abbrev-ref", "HEAD"],
+                ["git", "-C", target_dir, "rev-parse", "--abbrev-ref", "HEAD"],
                 stderr=subprocess.DEVNULL, timeout=2,
             ).decode().strip()
         except Exception:
