@@ -319,6 +319,7 @@ class Store:
         top_k: int = 5,
         min_tier: int | None = None,
         max_tier: int | None = None,
+        exclude_superseded: bool = True,
     ) -> list[dict[str, Any]]:
         # Shared lock — multiple peers may search the same ns concurrently;
         # only a writer needs to block them. Reload-if-stale picks up freshly
@@ -344,6 +345,10 @@ class Store:
             if max_tier is not None:
                 tier_clause += " AND tier <= ?"
                 tier_params.append(max_tier)
+            if exclude_superseded:
+                # A memory the caller has replaced (see supersede()) stays in the
+                # DB + index for audit, but must not surface in normal retrieval.
+                tier_clause += " AND (json_extract(meta,'$.status') IS NULL OR json_extract(meta,'$.status') != 'superseded')"
             rows = self._db.execute(
                 f"SELECT id, text, summary, meta, created, tier, last_accessed, access_count "
                 f"FROM memories WHERE id IN ({placeholders}){tier_clause}",
@@ -396,6 +401,7 @@ class Store:
         top_k: int = 20,
         min_tier: int | None = None,
         max_tier: int | None = None,
+        exclude_superseded: bool = True,
     ) -> list[dict[str, Any]]:
         """BM25 keyword search via SQLite FTS5. Returns rows ordered best-first.
 
@@ -414,6 +420,8 @@ class Store:
         if max_tier is not None:
             tier_clause += " AND m.tier <= ?"
             tier_params.append(max_tier)
+        if exclude_superseded:
+            tier_clause += " AND (json_extract(m.meta,'$.status') IS NULL OR json_extract(m.meta,'$.status') != 'superseded')"
         with self._lock:
             try:
                 # MATCH without a column qualifier searches every indexed
@@ -840,6 +848,38 @@ class Store:
             self._db.execute(
                 "UPDATE memories SET meta=? WHERE id=?",
                 (_j_umk.dumps(meta, ensure_ascii=False), memory_id),
+            )
+            self._db.commit()
+        return True
+
+    def supersede(self, old_id: int, new_id: int, at: str | None = None) -> bool:
+        """Mark *old_id* as replaced by *new_id* without deleting it.
+
+        The old row is kept in the DB and the vector index (audit trail), but
+        its meta gets ``status='superseded'``, ``superseded_by=<new_id>`` and a
+        timestamp, so normal retrieval (which passes exclude_superseded=True)
+        stops returning it. This is the archive-not-delete answer to Mem0's
+        UPDATE/DELETE op: a caller with real judgment (an agent) decides two
+        memories conflict; the library records that decision reversibly instead
+        of dropping a row that might still be true.
+
+        Returns False if *old_id* does not exist.
+        """
+        row = self._db.execute(
+            "SELECT meta FROM memories WHERE id=?", (old_id,)
+        ).fetchone()
+        if row is None:
+            return False
+        import json as _j_sup
+        from datetime import datetime, timezone
+        meta = _j_sup.loads(row[0]) if row[0] else {}
+        meta["status"] = "superseded"
+        meta["superseded_by"] = new_id
+        meta["superseded_at"] = at or datetime.now(timezone.utc).isoformat(timespec="seconds")
+        with self._lock:
+            self._db.execute(
+                "UPDATE memories SET meta=? WHERE id=?",
+                (_j_sup.dumps(meta, ensure_ascii=False), old_id),
             )
             self._db.commit()
         return True

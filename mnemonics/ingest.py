@@ -251,8 +251,13 @@ def ingest(
     augment_preferences: bool = False,
     augment_assistant_facts: bool = False,
     tier: int = 1,
-) -> int:
+    return_ids: bool = False,
+) -> int | list[int]:
     """Chunk, embed and store texts. Returns total chunks stored.
+
+    When ``return_ids=True``, returns the list of stored row ids instead of the
+    count. Needed by callers (e.g. reconcile_ingest) that must reference the
+    freshly written rows to record a supersede link.
 
     `summaries`, when provided, holds one optional summary per input text.
     Every chunk derived from a given input inherits that text's summary, so
@@ -298,11 +303,11 @@ def ingest(
                 all_summaries.append(summary)
 
     if not all_chunks:
-        return 0
+        return [] if return_ids else 0
 
     vecs = enc.encode(all_chunks, batch_size=64, show_progress_bar=False,
                       normalize_embeddings=True, convert_to_numpy=True)
-    store.add(all_chunks, vecs, ns=ns, meta=all_meta, summaries=all_summaries, tier=tier)
+    ids = store.add(all_chunks, vecs, ns=ns, meta=all_meta, summaries=all_summaries, tier=tier)
     # Version stamp: bu vektorleri hangi encoder gomdu, kalici isaretle. Encoder
     # ileride degisip re-embed atlanirsa retrieve drift'i fark eder.
     try:
@@ -310,7 +315,7 @@ def ingest(
         _em.write(store.root, _em.encoder_fingerprint(_resolve_model(model), store.dim))
     except Exception:
         pass
-    return len(all_chunks)
+    return ids if return_ids else len(all_chunks)
 
 
 def reembed_all(store, model: str = _encoder_name, batch_size: int = 256) -> list[dict]:

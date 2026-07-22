@@ -96,3 +96,78 @@ def test_find_similar_top_k_cap(store):
         top_k=2,
     )
     assert len(out) <= 2
+
+
+# --- reconcile_ingest: NOOP dedup + archive-not-delete supersede ---------------
+
+from mnemonics.dedup import reconcile_ingest
+from mnemonics.retrieve import retrieve
+
+
+def test_reconcile_noop_skips_restatement(store):
+    """A near-identical restatement is skipped, not stored twice."""
+    before = check_before_ingest(["Pistachio devtools (F12) are forbidden in production UI checks."],
+                                 store, ns="ddtest")
+    assert before[0]["suggestions"], "seed should be a near-duplicate of itself"
+    res = reconcile_ingest(
+        ["Pistachio devtools (F12) are forbidden in production UI checks."],
+        store, ns="ddtest",
+    )
+    assert res["added"] == []
+    assert len(res["noop_skipped"]) == 1
+    assert res["noop_skipped"][0]["similarity"] >= 0.98
+
+
+def test_reconcile_adds_genuinely_new(store):
+    res = reconcile_ingest(["Doriva billing runs on a wholly unrelated Stripe webhook."],
+                           store, ns="ddtest")
+    assert len(res["added"]) == 1
+    assert res["noop_skipped"] == []
+
+
+def test_reconcile_supersede_archives_not_deletes(tmp_path):
+    s = Store(path=tmp_path)
+    r0 = reconcile_ingest(["Atakan lives in Istanbul."], s, ns="t")
+    old_id = r0["added"][0]
+
+    r1 = reconcile_ingest(["Atakan moved to Ankara and now lives in Ankara."],
+                          s, ns="t", supersede_map={0: [old_id]})
+    new_id = r1["added"][0]
+    assert r1["superseded"] == [{"old_id": old_id, "new_id": new_id}]
+    assert r1["supersede_failed"] == []
+
+    # Superseded row is hidden from normal retrieval...
+    res = retrieve("where does Atakan live", s, ns="t", top_k=10)
+    ids = [h["id"] for h in res["results"]]
+    assert old_id not in ids
+    assert new_id in ids
+
+    # ...but still present in the DB for audit.
+    assert s.get(old_id) is not None
+    from mnemonics.ingest import _get_encoder
+    qv = _get_encoder().encode(["Atakan Istanbul"], normalize_embeddings=True,
+                               convert_to_numpy=True)[0]
+    audit = s.search(qv, ns="t", top_k=10, exclude_superseded=False)
+    old_row = next(a for a in audit if a["id"] == old_id)
+    assert old_row["meta"]["status"] == "superseded"
+    assert old_row["meta"]["superseded_by"] == new_id
+
+
+def test_reconcile_supersede_bypasses_noop(tmp_path):
+    """A supersede-flagged text is ingested even if it looks like a duplicate."""
+    s = Store(path=tmp_path)
+    r0 = reconcile_ingest(["The API rate limit is 100 requests per minute."], s, ns="t")
+    old_id = r0["added"][0]
+    # Same sentence, but the caller flags it as a correction of old_id.
+    r1 = reconcile_ingest(["The API rate limit is 100 requests per minute."],
+                          s, ns="t", supersede_map={0: [old_id]})
+    assert len(r1["added"]) == 1           # NOT skipped as NOOP
+    assert r1["superseded"] == [{"old_id": old_id, "new_id": r1["added"][0]}]
+
+
+def test_reconcile_supersede_missing_id(tmp_path):
+    s = Store(path=tmp_path)
+    r = reconcile_ingest(["fresh fact"], s, ns="t", supersede_map={0: [99999]})
+    assert len(r["added"]) == 1
+    assert r["supersede_failed"] == [99999]
+    assert r["superseded"] == []

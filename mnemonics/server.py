@@ -45,6 +45,7 @@ except importlib.metadata.PackageNotFoundError:
     _VERSION = "0.3.0"
 
 from mnemonics.ingest import ingest as _ingest
+from mnemonics.dedup import reconcile_ingest as _reconcile_ingest
 from mnemonics.retrieve import retrieve as _retrieve
 from mnemonics.store import Store
 
@@ -1499,6 +1500,14 @@ def _mcp_loop() -> None:
                                 "enum": [0, 1, 2],
                                 "description": "Initial tier for all ingested chunks: 0=pinned, 1=default (default), 2=ambient",
                             },
+                            "reconcile": {
+                                "type": "boolean",
+                                "description": "Conflict-aware ingest. When true, a text that is ≥0.98 cosine to an existing memory is skipped (NOOP dedup) instead of stored as a near-duplicate. Off by default (plain append).",
+                            },
+                            "supersede": {
+                                "description": "Archive-not-delete: mark existing memories as replaced by what you ingest now. Either a flat array of ids [12, 47] (all linked to the memory from texts[0]) or an object {\"0\": [12], \"1\": [47]} for per-text mapping. Superseded rows stay in the DB for audit but drop out of retrieval. Implies reconcile; supersede-targeted texts bypass NOOP (they are corrections).",
+                                "type": ["array", "object"],
+                            },
                         },
                     },
                 },
@@ -2789,6 +2798,52 @@ def _mcp_loop() -> None:
                 if tier_arg not in (0, 1, 2):
                     err("tier must be 0, 1, or 2")
                     continue
+
+                # Opt-in conflict-aware path. Plain ingest stays the default so
+                # session-end appends are untouched; reconcile only engages when
+                # the caller asks for NOOP dedup or names memories to supersede.
+                supersede_arg = args.get("supersede")
+                reconcile_arg = bool(args.get("reconcile")) or supersede_arg is not None
+                if reconcile_arg:
+                    # supersede accepts either a flat [old_id, ...] (archived and
+                    # linked to the memory ingested from texts[0]) or an object
+                    # {"<text_index>": [old_id, ...]} for per-text mapping.
+                    supersede_map: dict[int, list[int]] = {}
+                    if isinstance(supersede_arg, list):
+                        if not all(isinstance(x, int) for x in supersede_arg):
+                            err("supersede array must contain integer ids")
+                            continue
+                        if supersede_arg:
+                            supersede_map[0] = supersede_arg
+                    elif isinstance(supersede_arg, dict):
+                        try:
+                            for k, v in supersede_arg.items():
+                                if not isinstance(v, list) or not all(isinstance(x, int) for x in v):
+                                    raise ValueError
+                                supersede_map[int(k)] = v
+                        except (ValueError, TypeError):
+                            err("supersede object must map text-index to an array of integer ids")
+                            continue
+                    elif supersede_arg is not None:
+                        err("supersede must be an array of ids or an object {index: [ids]}")
+                        continue
+                    res = _reconcile_ingest(
+                        texts=texts,
+                        store=_get_store(),
+                        ns=args.get("ns", "default"),
+                        supersede_map=supersede_map or None,
+                        tier=int(tier_arg),
+                    )
+                    parts = [f"Added {len(res['added'])} chunk(s)."]
+                    if res["noop_skipped"]:
+                        parts.append(f"Skipped {len(res['noop_skipped'])} duplicate(s) (NOOP).")
+                    if res["superseded"]:
+                        parts.append(f"Superseded {len(res['superseded'])} old memory(ies).")
+                    if res["supersede_failed"]:
+                        parts.append(f"{len(res['supersede_failed'])} supersede id(s) not found: {res['supersede_failed']}.")
+                    ok({"content": [{"type": "text", "text": " ".join(parts)}], "reconcile": res})
+                    continue
+
                 n = _ingest(
                     texts=texts,
                     store=_get_store(),

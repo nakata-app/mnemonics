@@ -2,6 +2,31 @@
 
 All notable changes to mnemonics. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Conflict-aware ingest (`dedup.reconcile_ingest`).** The mnemonics answer to
+  Mem0's ADD/UPDATE/DELETE/NOOP, done without an LLM in the library and without
+  ever hard-deleting a row:
+  - **NOOP dedup**, a text ≥ 0.98 cosine to an existing memory is a
+    restatement and is skipped instead of stored as a near-duplicate.
+  - **Supersede (archive-not-delete)**, `supersede_map` names existing
+    memories a new text replaces. The old rows get
+    `meta.status='superseded'` + `superseded_by` + `superseded_at`, stay in the
+    DB and vector index for audit, but drop out of normal retrieval. The
+    contradiction judgment lives at the call site (an agent), not in an
+    embedding heuristic, so a still-true memory is never silently lost.
+- **`Store.supersede(old_id, new_id)`** records the reversible replacement link.
+- **`exclude_superseded` (default `True`) on `Store.search` / `search_bm25`.**
+  Retrieval hides superseded rows via `json_extract(meta,'$.status')`; pass
+  `False` for audit queries that need the full history.
+- **`ingest(..., return_ids=True)`** returns stored row ids (needed to link a
+  supersede).
+- **`mnemonics_ingest` MCP tool** gains opt-in `reconcile` (NOOP dedup) and
+  `supersede` (array of ids, or `{index: [ids]}`) params. Plain append stays
+  the default, session-end ingests are unchanged.
+
 ## [0.4.0] - 2026-05-26
 
 ### Added
