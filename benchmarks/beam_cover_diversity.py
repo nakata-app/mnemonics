@@ -240,7 +240,7 @@ def _cover_at_budget(ranked: list[int], gold: set[int], words: list[int],
 
 def run(size: str, windows: list[str], arms: list[str], lam: float,
         prf_n: int, nbr_seed: int, budget: int, limit: int, candidate_k: int,
-        out_dir: Path) -> dict:
+        out_dir: Path, rerank: bool = False) -> dict:
     from mnemonics.ingest import _get_encoder, ingest
     from mnemonics.retrieve import retrieve
     from mnemonics.store import Store
@@ -291,10 +291,13 @@ def run(size: str, windows: list[str], arms: list[str], lam: float,
                             continue  # gold id outside the chat; not our miss
                         q = item["question"]
 
+                        # With rerank the CE rescores the whole band, so
+                        # top_k must stay at candidate_k or the budget walk
+                        # would only ever see the CE's own top slice.
                         rows = retrieve(query=q, store=store, ns="beam",
                                         top_k=candidate_k,
                                         candidate_k=candidate_k,
-                                        hybrid=True, rerank=False)["results"]
+                                        hybrid=True, rerank=rerank)["results"]
                         base_ids = [_chunk_of(r.get("text")) for r in rows]
 
                         ranked: dict[str, list[int]] = {"baseline": base_ids}
@@ -371,7 +374,10 @@ def run(size: str, windows: list[str], arms: list[str], lam: float,
         "size": size, "n_conversations": len(convs), "dim": dim,
         "windows": windows, "arms": arms, "lam": lam, "prf_n": prf_n,
         "nbr_seed": nbr_seed, "budget_words": budget,
-        "candidate_k": candidate_k, "seconds": round(time.time() - t0, 1),
+        "candidate_k": candidate_k, "rerank": rerank,
+        "ce_model": (os.environ.get("MNEMONICS_RERANK_MODEL",
+                                    "BAAI/bge-reranker-v2-m3") if rerank else None),
+        "seconds": round(time.time() - t0, 1),
         "baseline_reference": BASELINE.get(size),
         "variants": {
             k: {"n": m["n"],
@@ -387,7 +393,8 @@ def run(size: str, windows: list[str], arms: list[str], lam: float,
         },
     }
     out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / f"diversity_{size}.json").write_text(json.dumps(res, indent=2))
+    tag = f"_ce_k{candidate_k}" if rerank else ""
+    (out_dir / f"diversity_{size}{tag}.json").write_text(json.dumps(res, indent=2))
     return res
 
 
@@ -404,6 +411,8 @@ def main() -> int:
                     help="word budget for the chunk-size-fair metric")
     ap.add_argument("--candidate-k", type=int, default=50)
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--rerank", action="store_true",
+                    help="cross-encoder rerank the band before the budget walk")
     ap.add_argument("--out-dir", default="benchmarks/results/beam")
     args = ap.parse_args()
 
@@ -415,7 +424,7 @@ def main() -> int:
     for size in args.sizes.split(","):
         results.append(run(size, windows, arms, args.lam, args.prf_n,
                            args.nbr_seed, args.budget, args.limit,
-                           args.candidate_k, Path(args.out_dir)))
+                           args.candidate_k, Path(args.out_dir), args.rerank))
 
     print("\n=== COVER: CHUNKING x RANKING ===")
     for r in results:

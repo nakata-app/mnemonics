@@ -25,8 +25,32 @@ almost certainly fail in different shapes and a single histogram would blur them
 Retrieval depth is `--deep` (default 2000) rather than the production 50, since
 the whole point is to see how far down the misses live.
 
+THE CONFOUND, and what `--pad-to` is for.
+Rank grew with corpus size between the 100K and 500K tiers, but so did question
+difficulty: gold sets average 2.84 chunks at 100K and 4.02 at 500K, and missing
+messages per failed question went 3.1 to 5.4. A larger gold set mechanically
+pushes its worst member deeper, so part of the rank growth may be difficulty
+rather than crowding, and the two imply different fixes. Widening the candidate
+band is hopeless against crowding that scales with the corpus; it is merely
+expensive against harder questions.
+
+`--pad-to N` separates them. It keeps the 100K questions and their gold exactly
+as they are and inflates only the haystack, with chunks borrowed from other
+conversations, up to N chunks. Difficulty is held constant by construction, so
+any rank growth that survives is crowding.
+
+  ratio = padded_p50 / unpadded_p50
+  >= 2.5  crowding drives it; a wider band does not survive corpus growth
+  <= 1.5  difficulty drives it; the band is the constraint, not the corpus
+  between mixed, and neither fix can be chosen on this evidence alone
+
+`--strata` cuts the same run by gold-set size, which is the second, independent
+read on the same question: if questions with <= 3 gold chunks rank the same at
+both tiers, difficulty was the driver.
+
 Usage:
   python benchmarks/miss_rank.py --sizes 100K --window s200
+  python benchmarks/miss_rank.py --sizes 100K --window s200 --pad-to 2239
   python benchmarks/miss_rank.py --sizes 100K,500K --window s200 --deep 3000
 """
 from __future__ import annotations
@@ -60,8 +84,27 @@ def band_of(rank: int | None) -> str:
     return ">5000"
 
 
+def build_pad_pool(convs: list[dict], spec: str, seed: int = 42) -> list[str]:
+    """Chunks harvested from other conversations, used as pure distractors.
+
+    Deterministic shuffle so a padded run is reproducible. These carry no gold
+    by construction: each conversation's gold ids only ever appear in its own
+    chunks, and the padded chunks are registered with an empty cover set.
+    """
+    import random
+
+    pool: list[str] = []
+    for conv in convs:
+        texts, _ = windowed_chunks(flat_messages(conv["chat"]), spec)
+        # Drop the SID tag; it is re-stamped with a fresh id when padded in.
+        pool.extend(t.split("|", 1)[1] if "|" in t else t for t in texts)
+    random.Random(seed).shuffle(pool)
+    return pool
+
+
 def run(size: str, spec: str, deep: int, budget: int, limit: int,
-        out_dir: Path) -> dict:
+        out_dir: Path, pad_to: int = 0, pad_pool: list[str] | None = None
+        ) -> dict:
     from mnemonics.ingest import _get_encoder, ingest
     from mnemonics.retrieve import retrieve
     from mnemonics.store import Store
@@ -81,12 +124,29 @@ def run(size: str, spec: str, deep: int, budget: int, limit: int,
         lambda: defaultdict(int))
     q_total = q_failed = 0
     ranks: list[int] = []
+    # Second read on the same question: if easy questions rank the same at both
+    # tiers, the tier-to-tier rank growth was difficulty, not crowding.
+    ranks_by_stratum: dict[str, list[int]] = {"gold<=3": [], "gold>3": []}
+    gold_chunk_counts: list[int] = []
     corpus_sizes: list[int] = []
     t0 = time.time()
 
+    pad_cursor = 0
     for ci, conv in enumerate(convs):
         msgs = flat_messages(conv["chat"])
         texts, covers = windowed_chunks(msgs, spec)
+
+        if pad_to and pad_pool:
+            # Distractors drawn from a rotating cursor so different
+            # conversations get different padding, and re-stamped with ids that
+            # continue this corpus's numbering. Empty cover: no gold inside.
+            need = max(0, pad_to - len(texts))
+            for j in range(need):
+                body = pad_pool[(pad_cursor + j) % len(pad_pool)]
+                texts.append(f"SID=c{len(texts)}|{body}")
+                covers.append(set())
+            pad_cursor = (pad_cursor + need) % max(len(pad_pool), 1)
+
         words = [len(t.split()) for t in texts]
         corpus_sizes.append(len(texts))
         probes = conv["probing_questions"]
@@ -111,6 +171,9 @@ def run(size: str, spec: str, deep: int, budget: int, limit: int,
                     if not reachable:
                         continue
                     q_total += 1
+                    n_gold_chunks = sum(1 for cov in covers if cov & gold)
+                    gold_chunk_counts.append(n_gold_chunks)
+                    stratum = "gold<=3" if n_gold_chunks <= 3 else "gold>3"
 
                     rows = retrieve(query=item["question"], store=store,
                                     ns="beam", top_k=deep, candidate_k=deep,
@@ -145,6 +208,7 @@ def run(size: str, spec: str, deep: int, budget: int, limit: int,
                         bands_by_ability[ability][b] += 1
                         if mid in first_rank:
                             ranks.append(first_rank[mid])
+                            ranks_by_stratum[stratum].append(first_rank[mid])
 
         print(f"  conv {ci+1}/{len(convs)} q={q_total} failed={q_failed} "
               f"({time.time()-t0:.0f}s)", flush=True)
@@ -161,13 +225,23 @@ def run(size: str, spec: str, deep: int, budget: int, limit: int,
                   for k, v in sorted(bands.items())} if total_missing else {},
         "rank_percentiles": ({p: ranks[int(len(ranks) * p / 100)]
                               for p in (50, 75, 90, 95, 99)} if ranks else {}),
+        "pad_to": pad_to,
+        "mean_gold_chunks": (round(sum(gold_chunk_counts) / len(gold_chunk_counts), 2)
+                             if gold_chunk_counts else None),
+        "rank_percentiles_by_stratum": {
+            s: ({"n": len(v),
+                 **{f"p{p}": sorted(v)[int(len(v) * p / 100)]
+                    for p in (50, 90, 95)}} if v else {"n": 0})
+            for s, v in ranks_by_stratum.items()},
         "bands_by_ability": {
             ab: {k: round(v / sum(d.values()), 4) for k, v in sorted(d.items())}
             for ab, d in sorted(bands_by_ability.items())},
         "seconds": round(time.time() - t0, 1),
     }
     out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / f"miss_rank_{size}_{spec}.json").write_text(json.dumps(res, indent=2))
+    tag = f"_pad{pad_to}" if pad_to else ""
+    (out_dir / f"miss_rank_{size}_{spec}{tag}.json").write_text(
+        json.dumps(res, indent=2))
     return res
 
 
@@ -178,14 +252,25 @@ def main() -> int:
     ap.add_argument("--deep", type=int, default=2000)
     ap.add_argument("--budget", type=int, default=4000)
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--pad-to", type=int, default=0,
+                    help="inflate each corpus to N chunks with distractors "
+                         "borrowed from other conversations; questions and gold "
+                         "stay identical, so surviving rank growth is crowding")
     ap.add_argument("--out-dir", default="benchmarks/results/beam")
     args = ap.parse_args()
 
     os.environ.setdefault("MNEMONICS_DETERMINISTIC", "1")
     results = []
     for size in args.sizes.split(","):
+        pool = None
+        if args.pad_to:
+            convs = load_size(size)
+            if args.limit:
+                convs = convs[:args.limit]
+            pool = build_pad_pool(convs, args.window)
+            print(f"[{size}] pad pool: {len(pool)} distractor chunks", flush=True)
         results.append(run(size, args.window, args.deep, args.budget,
-                           args.limit, Path(args.out_dir)))
+                           args.limit, Path(args.out_dir), args.pad_to, pool))
 
     print("\n=== WHERE THE MISSED EVIDENCE RANKS ===")
     for r in results:
@@ -194,6 +279,13 @@ def main() -> int:
               f"{r['missing_messages']} missing messages")
         for k, v in r["bands"].items():
             print(f"  {k:<12} {v['n']:>5}  {v['pct']*100:>5.1f}%")
+        if r.get("pad_to"):
+            print(f"  PADDED to {r['pad_to']} chunks (difficulty held constant)")
+        print(f"  mean gold chunks per question: {r.get('mean_gold_chunks')}")
+        for st, v in r.get("rank_percentiles_by_stratum", {}).items():
+            if v.get("n"):
+                print(f"  stratum {st:<9} n={v['n']:>5}  "
+                      + "  ".join(f"{k}={v[k]}" for k in ("p50", "p90", "p95")))
         if r["rank_percentiles"]:
             pcs = "  ".join(f"p{p}={v}" for p, v in r["rank_percentiles"].items())
             print(f"  rank percentiles (found ones): {pcs}")
