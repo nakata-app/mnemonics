@@ -1,0 +1,58 @@
+{
+  "store_rows": 10864,
+  "ns": "sessions",
+  "ce_model": "BAAI/bge-reranker-v2-m3",
+  "ce_max_length": 512,
+  "ce_batch": 8,
+  "n_queries": 10,
+  "results": [
+    {
+      "rerank": false,
+      "candidate_k": 50,
+      "n": 10,
+      "p50_ms": 39.6,
+      "p95_ms": 4551.2,
+      "mean_ms": 492.2
+    },
+    {
+      "rerank": false,
+      "candidate_k": 250,
+      "n": 10,
+      "p50_ms": 48.2,
+      "p95_ms": 69.7,
+      "mean_ms": 48.7
+    },
+    {
+      "rerank": false,
+      "candidate_k": 1000,
+      "n": 10,
+      "p50_ms": 128.5,
+      "p95_ms": 158.3,
+      "mean_ms": 128.5
+    },
+    {
+      "rerank": true,
+      "candidate_k": 50,
+      "n": 10,
+      "p50_ms": 7865.2,
+      "p95_ms": 19567.0,
+      "mean_ms": 8483.5
+    },
+    {
+      "rerank": true,
+      "candidate_k": 250,
+      "n": 10,
+      "p50_ms": 38454.9,
+      "p95_ms": 46030.7,
+      "mean_ms": 37673.4
+    },
+    {
+      "rerank": true,
+      "candidate_k": 1000,
+      "n": 10,
+      "p50_ms": 168726.1,
+      "p95_ms": 228841.1,
+      "mean_ms": 171240.3
+    }
+  ]
+}

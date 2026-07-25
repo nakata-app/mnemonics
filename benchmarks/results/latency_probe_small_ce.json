@@ -1,0 +1,42 @@
+{
+  "store_rows": 10864,
+  "ns": "sessions",
+  "ce_model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+  "ce_max_length": 512,
+  "ce_batch": 8,
+  "n_queries": 10,
+  "results": [
+    {
+      "rerank": false,
+      "candidate_k": 250,
+      "n": 10,
+      "p50_ms": 51.8,
+      "p95_ms": 78.0,
+      "mean_ms": 53.8
+    },
+    {
+      "rerank": false,
+      "candidate_k": 1000,
+      "n": 10,
+      "p50_ms": 124.1,
+      "p95_ms": 164.0,
+      "mean_ms": 120.9
+    },
+    {
+      "rerank": true,
+      "candidate_k": 250,
+      "n": 10,
+      "p50_ms": 3231.4,
+      "p95_ms": 3718.1,
+      "mean_ms": 3230.7
+    },
+    {
+      "rerank": true,
+      "candidate_k": 1000,
+      "n": 10,
+      "p50_ms": 12628.7,
+      "p95_ms": 14032.6,
+      "mean_ms": 12746.0
+    }
+  ]
+}
