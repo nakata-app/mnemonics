@@ -1,0 +1,204 @@
+{
+  "size": "500K",
+  "n_conversations": 35,
+  "dim": 384,
+  "windows": [
+    "s100",
+    "s200",
+    "1"
+  ],
+  "arms": [
+    "baseline"
+  ],
+  "lam": 0.5,
+  "prf_n": 3,
+  "nbr_seed": 5,
+  "budget_words": 4000,
+  "candidate_k": 50,
+  "seconds": 1935.7,
+  "baseline_reference": {
+    "cover@10": 0.416,
+    "hit@10": 0.7
+  },
+  "variants": {
+    "ws100:baseline": {
+      "n": 629,
+      "hit@5": 0.5437,
+      "cover@5": 0.2146,
+      "hit@10": 0.62,
+      "cover@10": 0.3084,
+      "cover@20": 0.4022,
+      "hit@B": 0.7552,
+      "cover@B": 0.4754,
+      "words@10": 980.3211,
+      "k@B": 40.4515
+    },
+    "ws200:baseline": {
+      "n": 629,
+      "hit@5": 0.5374,
+      "cover@5": 0.2289,
+      "hit@10": 0.6264,
+      "cover@10": 0.3259,
+      "cover@20": 0.4149,
+      "hit@B": 0.7091,
+      "cover@B": 0.4181,
+      "words@10": 1876.9396,
+      "k@B": 21.0525
+    },
+    "w1:baseline": {
+      "n": 629,
+      "hit@5": 0.6089,
+      "cover@5": 0.3037,
+      "hit@10": 0.6995,
+      "cover@10": 0.4165,
+      "cover@20": 0.5056,
+      "hit@B": 0.6296,
+      "cover@B": 0.3339,
+      "words@10": 6315.5167,
+      "k@B": 5.9857
+    }
+  },
+  "by_ability": {
+    "ws100:baseline": {
+      "contradiction_resolution": {
+        "n": 70,
+        "cover@10": 0.5571,
+        "cover@B": 0.7429
+      },
+      "event_ordering": {
+        "n": 70,
+        "cover@10": 0.0,
+        "cover@B": 0.0
+      },
+      "information_extraction": {
+        "n": 70,
+        "cover@10": 0.5286,
+        "cover@B": 0.6857
+      },
+      "instruction_following": {
+        "n": 70,
+        "cover@10": 0.1286,
+        "cover@B": 0.2143
+      },
+      "knowledge_update": {
+        "n": 69,
+        "cover@10": 0.5217,
+        "cover@B": 0.7536
+      },
+      "multi_session_reasoning": {
+        "n": 70,
+        "cover@10": 0.2714,
+        "cover@B": 0.5143
+      },
+      "preference_following": {
+        "n": 70,
+        "cover@10": 0.3286,
+        "cover@B": 0.5143
+      },
+      "summarization": {
+        "n": 70,
+        "cover@10": 0.0143,
+        "cover@B": 0.0429
+      },
+      "temporal_reasoning": {
+        "n": 70,
+        "cover@10": 0.4286,
+        "cover@B": 0.8143
+      }
+    },
+    "ws200:baseline": {
+      "contradiction_resolution": {
+        "n": 70,
+        "cover@10": 0.5857,
+        "cover@B": 0.7
+      },
+      "event_ordering": {
+        "n": 70,
+        "cover@10": 0.0,
+        "cover@B": 0.0
+      },
+      "information_extraction": {
+        "n": 70,
+        "cover@10": 0.4857,
+        "cover@B": 0.6
+      },
+      "instruction_following": {
+        "n": 70,
+        "cover@10": 0.1286,
+        "cover@B": 0.1857
+      },
+      "knowledge_update": {
+        "n": 69,
+        "cover@10": 0.5507,
+        "cover@B": 0.6812
+      },
+      "multi_session_reasoning": {
+        "n": 70,
+        "cover@10": 0.3286,
+        "cover@B": 0.4571
+      },
+      "preference_following": {
+        "n": 70,
+        "cover@10": 0.4,
+        "cover@B": 0.5
+      },
+      "summarization": {
+        "n": 70,
+        "cover@10": 0.0286,
+        "cover@B": 0.0286
+      },
+      "temporal_reasoning": {
+        "n": 70,
+        "cover@10": 0.4286,
+        "cover@B": 0.6143
+      }
+    },
+    "w1:baseline": {
+      "contradiction_resolution": {
+        "n": 70,
+        "cover@10": 0.7143,
+        "cover@B": 0.6
+      },
+      "event_ordering": {
+        "n": 70,
+        "cover@10": 0.0,
+        "cover@B": 0.0
+      },
+      "information_extraction": {
+        "n": 70,
+        "cover@10": 0.6429,
+        "cover@B": 0.5429
+      },
+      "instruction_following": {
+        "n": 70,
+        "cover@10": 0.2286,
+        "cover@B": 0.1714
+      },
+      "knowledge_update": {
+        "n": 69,
+        "cover@10": 0.6522,
+        "cover@B": 0.5072
+      },
+      "multi_session_reasoning": {
+        "n": 70,
+        "cover@10": 0.4,
+        "cover@B": 0.2857
+      },
+      "preference_following": {
+        "n": 70,
+        "cover@10": 0.4286,
+        "cover@B": 0.4
+      },
+      "summarization": {
+        "n": 70,
+        "cover@10": 0.0429,
+        "cover@B": 0.0429
+      },
+      "temporal_reasoning": {
+        "n": 70,
+        "cover@10": 0.6429,
+        "cover@B": 0.4571
+      }
+    }
+  }
+}

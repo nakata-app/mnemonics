@@ -1,0 +1,26 @@
+[
+  {
+    "arm": "minilm",
+    "model": "sentence-transformers/all-MiniLM-L6-v2",
+    "dim": 384,
+    "n": 500,
+    "candidate_k": 50,
+    "seconds": 1434.1,
+    "metrics": {
+      "vec@1": 0.882,
+      "vec@5": 0.974,
+      "vec@50": 0.998,
+      "bm25@50": 0.996,
+      "fused@1": 0.894,
+      "fused@50": 1.0
+    },
+    "counts": {
+      "vec@1": 441,
+      "vec@5": 487,
+      "vec@50": 499,
+      "bm25@50": 498,
+      "fused@1": 447,
+      "fused@50": 500
+    }
+  }
+]

@@ -1,0 +1,174 @@
+{
+  "size": "500K",
+  "n_conversations": 35,
+  "budget_words": 4000,
+  "oracle": {
+    "s100": {
+      "n": 629,
+      "oracle_cover@B": 1.0,
+      "mean_gold_words": 373.4,
+      "mean_gold_chunks": 3.9,
+      "measured_cover@B": 0.475,
+      "headroom": 0.525
+    },
+    "s200": {
+      "n": 629,
+      "oracle_cover@B": 0.9809,
+      "mean_gold_words": 744.4,
+      "mean_gold_chunks": 4.02,
+      "measured_cover@B": 0.418,
+      "headroom": 0.5629
+    },
+    "1": {
+      "n": 629,
+      "oracle_cover@B": 0.8474,
+      "mean_gold_words": 2293.5,
+      "mean_gold_chunks": 3.85,
+      "measured_cover@B": 0.334,
+      "headroom": 0.5134
+    }
+  },
+  "by_ability": {
+    "s100": {
+      "contradiction_resolution": {
+        "n": 70,
+        "oracle_cover@B": 1.0,
+        "mean_gold_words": 222.9
+      },
+      "event_ordering": {
+        "n": 70,
+        "oracle_cover@B": 1.0,
+        "mean_gold_words": 1291.0
+      },
+      "information_extraction": {
+        "n": 70,
+        "oracle_cover@B": 1.0,
+        "mean_gold_words": 110.3
+      },
+      "instruction_following": {
+        "n": 70,
+        "oracle_cover@B": 1.0,
+        "mean_gold_words": 145.0
+      },
+      "knowledge_update": {
+        "n": 69,
+        "oracle_cover@B": 1.0,
+        "mean_gold_words": 226.1
+      },
+      "multi_session_reasoning": {
+        "n": 70,
+        "oracle_cover@B": 1.0,
+        "mean_gold_words": 300.8
+      },
+      "preference_following": {
+        "n": 70,
+        "oracle_cover@B": 1.0,
+        "mean_gold_words": 134.3
+      },
+      "summarization": {
+        "n": 70,
+        "oracle_cover@B": 1.0,
+        "mean_gold_words": 719.4
+      },
+      "temporal_reasoning": {
+        "n": 70,
+        "oracle_cover@B": 1.0,
+        "mean_gold_words": 208.4
+      }
+    },
+    "s200": {
+      "contradiction_resolution": {
+        "n": 70,
+        "oracle_cover@B": 1.0,
+        "mean_gold_words": 444.9
+      },
+      "event_ordering": {
+        "n": 70,
+        "oracle_cover@B": 0.8571,
+        "mean_gold_words": 2578.7
+      },
+      "information_extraction": {
+        "n": 70,
+        "oracle_cover@B": 1.0,
+        "mean_gold_words": 218.8
+      },
+      "instruction_following": {
+        "n": 70,
+        "oracle_cover@B": 1.0,
+        "mean_gold_words": 286.2
+      },
+      "knowledge_update": {
+        "n": 69,
+        "oracle_cover@B": 1.0,
+        "mean_gold_words": 450.9
+      },
+      "multi_session_reasoning": {
+        "n": 70,
+        "oracle_cover@B": 1.0,
+        "mean_gold_words": 608.6
+      },
+      "preference_following": {
+        "n": 70,
+        "oracle_cover@B": 1.0,
+        "mean_gold_words": 268.6
+      },
+      "summarization": {
+        "n": 70,
+        "oracle_cover@B": 0.9714,
+        "mean_gold_words": 1424.8
+      },
+      "temporal_reasoning": {
+        "n": 70,
+        "oracle_cover@B": 1.0,
+        "mean_gold_words": 413.7
+      }
+    },
+    "1": {
+      "contradiction_resolution": {
+        "n": 70,
+        "oracle_cover@B": 1.0,
+        "mean_gold_words": 1407.9
+      },
+      "event_ordering": {
+        "n": 70,
+        "oracle_cover@B": 0.1429,
+        "mean_gold_words": 7641.8
+      },
+      "information_extraction": {
+        "n": 70,
+        "oracle_cover@B": 1.0,
+        "mean_gold_words": 658.0
+      },
+      "instruction_following": {
+        "n": 70,
+        "oracle_cover@B": 1.0,
+        "mean_gold_words": 803.2
+      },
+      "knowledge_update": {
+        "n": 69,
+        "oracle_cover@B": 1.0,
+        "mean_gold_words": 1434.0
+      },
+      "multi_session_reasoning": {
+        "n": 70,
+        "oracle_cover@B": 0.9714,
+        "mean_gold_words": 1759.9
+      },
+      "preference_following": {
+        "n": 70,
+        "oracle_cover@B": 1.0,
+        "mean_gold_words": 874.8
+      },
+      "summarization": {
+        "n": 70,
+        "oracle_cover@B": 0.5143,
+        "mean_gold_words": 4769.1
+      },
+      "temporal_reasoning": {
+        "n": 70,
+        "oracle_cover@B": 1.0,
+        "mean_gold_words": 1280.9
+      }
+    }
+  }
+}
