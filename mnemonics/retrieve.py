@@ -248,7 +248,18 @@ def retrieve(
                     "ENCODER DRIFT: %s. Re-embed gerekli (store.reindex_all()).", _why)
     except Exception:
         pass
-    fusion_top = candidate_k if rerank else top_k
+    # Without rerank the fused list is cut to top_k BEFORE decay, reinforcement
+    # and signal boost are applied below, so all of that scoring can only
+    # reshuffle rows that already made the top_k. A quoted phrase or a person's
+    # name sitting at rank 6 can never be promoted, which is the one job those
+    # boosts exist to do. MNEMONICS_SCORE_FULL_BAND=1 scores the whole
+    # candidate band first and truncates afterwards.
+    #
+    # Off by default because it changes live ranking, and the LongMemEval
+    # champion (R@1 0.958) was measured with the current behaviour. Turn it on
+    # to A/B it; do not flip the default until that A/B exists.
+    score_full_band = os.environ.get("MNEMONICS_SCORE_FULL_BAND") == "1"
+    fusion_top = candidate_k if (rerank or score_full_band) else top_k
     if hybrid:
         vec_results = store.search(qvec, ns=ns, top_k=candidate_k, min_tier=min_tier, max_tier=max_tier)
         bm25_results = store.search_bm25(query, ns=ns, top_k=candidate_k, min_tier=min_tier, max_tier=max_tier)
@@ -283,7 +294,9 @@ def retrieve(
     if rerank:
         results = _ce_rerank(query, results, top_k=top_k)
     else:
-        if decay:
+        if decay or score_full_band:
             results.sort(key=lambda r: r["score"], reverse=True)
+        if score_full_band:
+            results = results[:top_k]
 
     return {"results": results}
