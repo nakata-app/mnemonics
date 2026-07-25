@@ -83,7 +83,16 @@ def _get_rerank_ce(model: str | None = None) -> Any:
             "rerank=True requires either 'adaptmem' (with rerank support) or "
             "'sentence-transformers'. Install with `pip install sentence-transformers`."
         ) from e
-    _rerank_ce = CrossEncoder(name)
+    # max_length: bge-reranker-v2-m3 advertises 8192, so a band of long rows
+    # becomes a 50 x 8192 attention batch and OOMs a 16GB GPU (measured on a
+    # T4: 5.68 GiB single allocation). Left unset the model config wins, which
+    # keeps existing results byte-identical; MNEMONICS_RERANK_MAX_LENGTH caps
+    # it for corpora with long rows.
+    max_len = os.environ.get("MNEMONICS_RERANK_MAX_LENGTH")
+    kwargs: dict[str, Any] = {}
+    if max_len:
+        kwargs["max_length"] = int(max_len)
+    _rerank_ce = CrossEncoder(name, **kwargs)
     _rerank_model_name = name
     return _rerank_ce
 
@@ -100,7 +109,13 @@ def _ce_rerank(query: str, results: list[dict[str, Any]], top_k: int) -> list[di
     else:
         # Bare CrossEncoder: score pairs, sort ourselves
         pairs = [(query, t) for t in texts]
-        scores = ce.predict(pairs, show_progress_bar=False)
+        # Default batch_size is 32; one batch of long rows is what blows up.
+        # Unset means unchanged behaviour, so champion numbers stay reproducible.
+        bs = os.environ.get("MNEMONICS_RERANK_BATCH_SIZE")
+        predict_kwargs: dict[str, Any] = {"show_progress_bar": False}
+        if bs:
+            predict_kwargs["batch_size"] = int(bs)
+        scores = ce.predict(pairs, **predict_kwargs)
         ranked = sorted(enumerate(scores), key=lambda x: -float(x[1]))
     out: list[dict[str, Any]] = []
     for idx, ce_score in ranked:
