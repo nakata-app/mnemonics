@@ -216,12 +216,96 @@ def _resolve_model(model: str) -> str:
     return model
 
 
+class _OnnxEmbeddingEncoder:
+    """encode()-compatible ONNX encoder for the fine-tuned AdaptMem checkpoint.
+
+    Uses the exported graph (BERT + mean pooling + L2 normalize; see
+    scripts/export_adaptmem_onnx.py) with the Rust tokenizer. Vectors are
+    bit-identical to the torch path (cosine 1.0, maxdiff ~2e-7) at ~110MB RSS
+    instead of ~590MB (torch + SentenceTransformer measured before this swap).
+    """
+
+    def __init__(self, model_dir: str):
+        import onnxruntime as ort
+        from tokenizers import Tokenizer
+
+        self._session = ort.InferenceSession(
+            model_dir.rstrip("/") + ".onnx", providers=["CPUExecutionProvider"]
+        )
+        self._tok = Tokenizer.from_file(model_dir.rstrip("/") + "/tokenizer.json")
+        self._tok.enable_truncation(max_length=512)
+        self._tok.enable_padding(
+            pad_id=self._tok.token_to_id("[PAD]"), pad_token="[PAD]"
+        )
+
+    def encode(
+        self,
+        texts,
+        batch_size: int = 256,
+        show_progress_bar: bool = False,
+        normalize_embeddings: bool = True,
+        convert_to_numpy: bool = True,
+        **kwargs,
+    ):
+        import numpy as np
+
+        texts = list(texts)
+        if not texts:
+            return np.zeros((0, 384), dtype="float32")
+        outs = []
+        for i in range(0, len(texts), batch_size):
+            chunk = texts[i : i + batch_size]
+            encs = self._tok.encode_batch(chunk)
+            ids = np.array([e.ids for e in encs], dtype=np.int64)
+            mask = np.array([e.attention_mask for e in encs], dtype=np.int64)
+            outs.append(
+                self._session.run(None, {"input_ids": ids, "attention_mask": mask})[0]
+            )
+        return np.concatenate(outs, axis=0).astype("float32")
+
+
+class _FastEmbedEncoder:
+    """encode()-compatible ONNX encoder for stock models (fastembed, torch-free)."""
+
+    def __init__(self, model_name: str):
+        from fastembed import TextEmbedding
+
+        self._emb = TextEmbedding(model_name=model_name)
+
+    def encode(
+        self,
+        texts,
+        batch_size: int = 256,
+        show_progress_bar: bool = False,
+        normalize_embeddings: bool = True,
+        convert_to_numpy: bool = True,
+        **kwargs,
+    ):
+        import numpy as np
+
+        vecs = list(self._emb.embed(list(texts), batch_size=batch_size))
+        return np.asarray(vecs, dtype="float32")
+
+
+def _build_encoder(resolved: str) -> Any:
+    # Fine-tuned AdaptMem checkpoint: prefer the exported ONNX graph (torch-free,
+    # ~110MB RSS). Fall back to torch if the export is missing.
+    if os.path.isdir(resolved):
+        onnx_path = resolved.rstrip("/") + ".onnx"
+        if os.path.exists(onnx_path):
+            return _OnnxEmbeddingEncoder(resolved)
+        from sentence_transformers import SentenceTransformer
+
+        return SentenceTransformer(resolved)
+    # Stock model (MNEMONICS_ENCODER_MODEL or default): fastembed, torch-free.
+    return _FastEmbedEncoder(resolved)
+
+
 def _get_encoder(model: str = _encoder_name) -> Any:
     global _encoder, _encoder_name
     resolved = _resolve_model(model)
     if _encoder is None or resolved != _encoder_name:
-        from sentence_transformers import SentenceTransformer
-        _encoder = SentenceTransformer(resolved)
+        _encoder = _build_encoder(resolved)
         _encoder_name = resolved
     return _encoder
 

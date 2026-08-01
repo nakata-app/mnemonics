@@ -1534,11 +1534,11 @@ def main() -> None:
 
     elif args.cmd == "update-text":
         import numpy as _np_cli_ut
-        from sentence_transformers import SentenceTransformer
 
+        from mnemonics.ingest import _get_encoder
         from mnemonics.store import Store
         store = Store(args.path)
-        enc = SentenceTransformer(args.model)
+        enc = _get_encoder(args.model)
         vec = enc.encode([args.text], normalize_embeddings=True, convert_to_numpy=True)[0]
         ok_ut = store.update_text(args.id, args.text, _np_cli_ut.array(vec, dtype="float32"))
         if not ok_ut:

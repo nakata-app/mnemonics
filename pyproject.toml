@@ -21,6 +21,12 @@ classifiers = [
 dependencies = [
   "numpy>=1.24",
   "hnswlib>=0.8",
+  "onnxruntime>=1.17",
+  "tokenizers>=0.19",
+  "fastembed>=0.4",
+  # Torch is no longer imported on the hot path: ingest/retrieve embed via
+  # ONNX (export_adaptmem_onnx.py). Kept for the onnx-missing fallback and
+  # eval only.
   "sentence-transformers>=3.0",
 ]
 
