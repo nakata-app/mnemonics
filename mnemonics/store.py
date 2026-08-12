@@ -249,7 +249,12 @@ class Store:
         if ns in self._index and disk_mtime <= cached_mtime:
             return
         idx = hnswlib.Index(space="cosine", dim=self.dim)
-        idx.load_index(str(idx_path))
+        try:
+            idx.load_index(str(idx_path))
+        except RuntimeError:
+            self._writer.warning(f"Corrupt index for ns={ns!r}, removing and rebuilding")
+            idx_path.unlink(missing_ok=True)
+            return
         idx.set_ef(64)
         idx.set_num_threads(_INDEX_NUM_THREADS)
         self._index[ns] = idx
