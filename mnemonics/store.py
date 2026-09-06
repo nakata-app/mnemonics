@@ -118,10 +118,43 @@ DIM = int(os.environ.get("MNEMONICS_DIM", "384"))
 class Store:
     """Thread-safe memory store backed by SQLite + hnswlib."""
 
-    def __init__(self, path: str | Path = "~/.mnemonics", dim: int = DIM):
+    def __init__(self, path: str | Path = "~/.mnemonics", dim: int | None = None):
         self.root = Path(path).expanduser()
         self.root.mkdir(parents=True, exist_ok=True)
-        self.dim = dim
+        self.dim = self._resolve_dim(dim, self.root)
+        self._init_db_and_locks()
+
+    @staticmethod
+    def _resolve_dim(dim: int | None, root: Path) -> int:
+        """Resolve the vector dimensionality for this store, in priority order:
+
+        1. explicit ``dim=`` argument (tests, custom deployments)
+        2. ``MNEMONICS_DIM`` env (operator override)
+        3. the store's stamped embed manifest (``embed_manifest.json``) -- the
+           recorded dimensionality of the vectors already on disk, so a store
+           migrated to a 1024-dim encoder keeps opening correctly even when the
+           caller forgets the env var. An encoder/store mismatch then surfaces
+           as the embed-manifest drift warning instead of hnswlib silently
+           mis-reading the vectors (knn distances rot) or rejecting every
+           ingest with "Wrong dimensionality".
+        4. legacy 384 (all-MiniLM-L6-v2) only for fresh stores.
+        """
+        if dim is not None:
+            return int(dim)
+        env = os.environ.get("MNEMONICS_DIM")
+        if env and env.strip():
+            return int(env)
+        try:
+            from mnemonics import embed_manifest as _em
+
+            stamped = _em.read(root)
+        except Exception:
+            stamped = None
+        if stamped and stamped.get("dim"):
+            return int(stamped["dim"])
+        return int(DIM)
+
+    def _init_db_and_locks(self) -> None:
         self._lock = threading.Lock()
         self._db = sqlite3.connect(str(self.root / "memories.db"), check_same_thread=False)
         _apply_key(self._db)

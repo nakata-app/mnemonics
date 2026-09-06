@@ -222,3 +222,40 @@ def test_cli_reembed_no_namespaces(tmp_path, capsys):
         main()
     out = capsys.readouterr().out
     assert "No namespaces found" in out
+
+
+# ── Store dim resolution: manifest-stamped dim beats the 384 default ────────
+
+
+def test_store_dim_from_explicit_argument(tmp_path):
+    s = Store(str(tmp_path), dim=1024)
+    assert s.dim == 1024
+
+
+def test_store_dim_from_env_beats_default(tmp_path, monkeypatch):
+    monkeypatch.setenv("MNEMONICS_DIM", "1024")
+    s = Store(str(tmp_path))
+    assert s.dim == 1024
+
+
+def test_store_dim_from_stamped_manifest(tmp_path, monkeypatch):
+    """A store re-embedded at 1024 must reopen at 1024 even with no env var set
+    (the half-finished BGE migration state that silently rotted retrieval)."""
+    monkeypatch.delenv("MNEMONICS_DIM", raising=False)
+    Store(str(tmp_path), dim=1024)
+    em.write(str(tmp_path), {"encoder": "x", "dim": 1024, "fingerprint": "f", "kind": "hub"})
+    s2 = Store(str(tmp_path))
+    assert s2.dim == 1024
+
+
+def test_store_dim_fresh_store_without_manifest_defaults_legacy(tmp_path, monkeypatch):
+    monkeypatch.delenv("MNEMONICS_DIM", raising=False)
+    s = Store(str(tmp_path))
+    assert s.dim == DIM == 384
+
+
+def test_store_dim_corrupt_manifest_falls_back_to_default(tmp_path, monkeypatch):
+    monkeypatch.delenv("MNEMONICS_DIM", raising=False)
+    (tmp_path / "embed_manifest.json").write_text("{not json")
+    s = Store(str(tmp_path))
+    assert s.dim == DIM
