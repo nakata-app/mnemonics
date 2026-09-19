@@ -7,7 +7,7 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 
-from mnemonics.ingest import _get_encoder, _resolve_model
+from mnemonics.ingest import _get_encoder, _resolve_model_for_store
 from mnemonics.store import Store
 
 # Question-signal extractors. Lifted from longmemeval analysis: quoted phrases
@@ -226,14 +226,15 @@ def retrieve(
     mid-sentence) extracted from the query. No-op when no signals are found
     or no candidate text matches; never penalizes.
     """
-    enc = _get_encoder(model)
+    resolved_model = _resolve_model_for_store(model, store)
+    enc = _get_encoder(resolved_model)
     qvec = enc.encode([query], normalize_embeddings=True, convert_to_numpy=True)[0]
     # Encoder drift kontrolu: stored vektorler farkli encoder ile gomulduyse
     # sessiz kalite kaybini gorunur uyariya cevir. Bir kez (cached), hard fail
     # YOK (canli retrieval'i kirmaz). Eski (damgasiz) DB'leri ilk kullanimda damgalar.
     try:
         from mnemonics import embed_manifest as _em
-        _resolved = _resolve_model(model)
+        _resolved = resolved_model
         _key = (str(store.root), _resolved, store.dim)
         _seen = retrieve.__dict__.setdefault("_enc_checked", set())
         if _key not in _seen:
