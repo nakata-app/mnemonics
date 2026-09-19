@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 import os
 import threading
 from pathlib import Path
@@ -12,6 +13,8 @@ import hnswlib
 import numpy as np
 
 from mnemonics import crypto
+
+_LOG = logging.getLogger("mnemonics")
 
 # Reproducible HNSW: hnswlib multi-threaded add_items builds a non-deterministic
 # graph (insertion order varies with thread scheduling / core count), which makes
@@ -273,7 +276,7 @@ class Store:
         try:
             idx.load_index(str(idx_path))
         except RuntimeError:
-            self._writer.warning(f"Corrupt index for ns={ns!r}, removing and rebuilding")
+            _LOG.warning("Corrupt index for ns=%r, removing and rebuilding", ns)
             idx_path.unlink(missing_ok=True)
             return
         idx.set_ef(64)
