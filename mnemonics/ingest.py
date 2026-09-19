@@ -350,9 +350,19 @@ def _build_encoder(resolved: str) -> Any:
 
         return SentenceTransformer(resolved)
     # Stock model (MNEMONICS_ENCODER_MODEL or default): prefer FastEmbed
-    # for the low-RSS ONNX path. A corrupt/incomplete cache or an unsupported
-    # registry id must not make a fresh store unusable, so fall back to the
-    # sentence-transformers implementation of the same model.
+    # for the low-RSS ONNX path. Benchmarks that must reproduce the historical
+    # sentence-transformers champion can pin the old backend explicitly.
+    backend = os.environ.get("MNEMONICS_EMBED_BACKEND", "fastembed").strip().lower()
+    if backend == "sentence-transformers":
+        from sentence_transformers import SentenceTransformer
+
+        return SentenceTransformer(resolved)
+    if backend not in ("", "fastembed", "auto"):
+        raise ValueError(
+            "MNEMONICS_EMBED_BACKEND must be fastembed, auto, or sentence-transformers"
+        )
+    # A corrupt/incomplete cache or an unsupported registry id must not make a
+    # fresh store unusable, so fall back to sentence-transformers.
     try:
         return _FastEmbedEncoder(resolved)
     except Exception:
