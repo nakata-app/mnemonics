@@ -10,6 +10,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from mnemonics.ingest import _get_encoder, _resolve_model_for_store
 from mnemonics.retrieve import _ce_rerank, retrieve
 from mnemonics.store import Store
 
@@ -129,19 +130,32 @@ def retrieve_planned(
         return {"results": [], "queries": []}
 
     per_query_k = max(top_k * 3, min(candidate_k, 20))
+    resolved_model = _resolve_model_for_store("all-MiniLM-L6-v2", store)
+    encoder = _get_encoder(resolved_model)
+    vectors = encoder.encode(
+        [plan.text for plan in plans],
+        batch_size=max(1, len(plans)),
+        show_progress_bar=False,
+        normalize_embeddings=True,
+        convert_to_numpy=True,
+    )
+
     ranked: list[tuple[PlannedQuery, list[dict[str, Any]]]] = []
-    for plan in plans:
+    for plan, query_vector in zip(plans, vectors):
         result = retrieve(
             query=plan.text,
             store=store,
             ns=ns,
             top_k=per_query_k,
+            model=resolved_model,
             decay=decay,
             hybrid=hybrid,
             candidate_k=candidate_k,
             rerank=False,
             min_tier=min_tier,
             max_tier=max_tier,
+            query_vector=query_vector,
+            touch=False,
         )
         ranked.append((plan, result["results"]))
 
@@ -150,6 +164,7 @@ def retrieve_planned(
         fused = _ce_rerank(query, fused, top_k=top_k)
     else:
         fused = fused[:top_k]
+    store.touch_ids([int(row["id"]) for row in fused])
 
     return {
         "results": fused,
