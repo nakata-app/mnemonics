@@ -6607,3 +6607,44 @@ def test_http_warmup_rejects_empty_namespace(tmp_store):
     assert code == 400
     assert "ns" in data["error"]
 
+# ── POST /ingest canonical lifecycle ──────────────────────────────────────────
+
+def test_http_ingest_canonical_routes_to_lifecycle(tmp_store):
+    payload = {
+        "action": "update",
+        "id": 9,
+        "superseded": [4],
+        "canonical_key": "repo:head",
+        "ns": "sessions",
+        "encoder": "model",
+    }
+    with patch("mnemonics.server._canonical_ingest", return_value=payload) as canonical:
+        code, data = http_call(
+            tmp_store,
+            "POST",
+            "/ingest",
+            {
+                "texts": ["head is def"],
+                "ns": "sessions",
+                "canonical_key": "repo:head",
+                "meta": {"source": "test"},
+            },
+        )
+
+    assert code == 200
+    assert data == {"canonical": payload}
+    canonical.assert_called_once()
+    assert canonical.call_args.kwargs["canonical_key"] == "repo:head"
+    assert canonical.call_args.kwargs["meta"] == {"source": "test"}
+
+
+def test_http_ingest_canonical_rejects_multiple_texts(tmp_store):
+    code, data = http_call(
+        tmp_store,
+        "POST",
+        "/ingest",
+        {"texts": ["a", "b"], "canonical_key": "fact:x"},
+    )
+    assert code == 400
+    assert "exactly one" in data["error"]
+
