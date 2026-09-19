@@ -304,7 +304,14 @@ class _FastEmbedEncoder:
         from fastembed import TextEmbedding
 
         self._model_name = _fastembed_model_name(model_name)
-        self._emb = TextEmbedding(model_name=self._model_name)
+        cache_dir = os.environ.get(
+            "MNEMONICS_FASTEMBED_CACHE",
+            os.path.expanduser("~/.cache/fastembed"),
+        )
+        self._emb = TextEmbedding(
+            model_name=self._model_name,
+            cache_dir=cache_dir,
+        )
         self._dim = next(
             (
                 int(item["dim"])
@@ -342,8 +349,16 @@ def _build_encoder(resolved: str) -> Any:
         from sentence_transformers import SentenceTransformer
 
         return SentenceTransformer(resolved)
-    # Stock model (MNEMONICS_ENCODER_MODEL or default): fastembed, torch-free.
-    return _FastEmbedEncoder(resolved)
+    # Stock model (MNEMONICS_ENCODER_MODEL or default): prefer FastEmbed
+    # for the low-RSS ONNX path. A corrupt/incomplete cache or an unsupported
+    # registry id must not make a fresh store unusable, so fall back to the
+    # sentence-transformers implementation of the same model.
+    try:
+        return _FastEmbedEncoder(resolved)
+    except Exception:
+        from sentence_transformers import SentenceTransformer
+
+        return SentenceTransformer(resolved)
 
 
 def _get_encoder(model: str = _encoder_name) -> Any:
