@@ -18,7 +18,7 @@ REPO = WORK / "mnemonics-memory-sota"
 RESULTS = WORK / "results"
 RESULTS.mkdir(parents=True, exist_ok=True)
 
-PINNED_SHA = "e624a2f4db729f5fd7f50c0121259b7a1ba954f9"
+PINNED_SHA = "8cdffa965edcf52a164560896836993529f5502c"
 BRANCH = "work/memory-sota"
 REPO_URL = "https://github.com/nakata-app/mnemonics.git"
 DATASET = Path("/kaggle/input/mnemonics-lme/longmemeval_s_cleaned.json")
