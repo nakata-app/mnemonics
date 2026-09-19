@@ -451,7 +451,6 @@ class _FastEmbedEncoder:
         # download. Do not enter Hugging Face resolution first: that path may
         # wait indefinitely on the same broken snapshot instead of raising,
         # which means the post-error repair below would never run.
-        recovered_dir = None
         if (
             not local_gcs_ready
             and repair_enabled
@@ -461,12 +460,11 @@ class _FastEmbedEncoder:
                 cache_dir,
                 RuntimeError(""),
             )
-            and _purge_fastembed_model_cache(self._model_name, cache_dir)
         ):
-            recovered_dir = _recover_fastembed_from_gcs(
-                self._model_name,
-                cache_dir,
-            )
+            # Remove only the broken HF snapshot. FastEmbed already implements
+            # the correct single download pipeline (local HF -> online HF ->
+            # GCS fallback); invoking GCS ourselves here duplicates network work.
+            _purge_fastembed_model_cache(self._model_name, cache_dir)
 
         try:
             if local_gcs_ready and local_gcs is not None:
@@ -474,12 +472,6 @@ class _FastEmbedEncoder:
                     model_name=self._model_name,
                     cache_dir=cache_dir,
                     specific_model_path=str(local_gcs),
-                )
-            elif recovered_dir is not None:
-                self._emb = TextEmbedding(
-                    model_name=self._model_name,
-                    cache_dir=cache_dir,
-                    specific_model_path=str(recovered_dir),
                 )
             else:
                 self._emb = TextEmbedding(

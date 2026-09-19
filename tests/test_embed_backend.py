@@ -83,10 +83,7 @@ def test_fastembed_corrupt_cache_is_purged_and_retried(tmp_path, monkeypatch):
             self.model_name = model_name
             self.cache_dir = cache_dir
             self.specific_model_path = specific_model_path
-            if specific_model_path is None:
-                raise RuntimeError(
-                    "model.onnx failed: File doesn't exist"
-                )
+            assert not broken.exists(), "broken snapshot must be purged before FastEmbed starts"
 
         @staticmethod
         def list_supported_models():
@@ -101,12 +98,12 @@ def test_fastembed_corrupt_cache_is_purged_and_retried(tmp_path, monkeypatch):
         "fastembed",
         SimpleNamespace(TextEmbedding=FakeTextEmbedding),
     )
-    recovered = tmp_path / "gcs-model"
-    recovered.mkdir()
     monkeypatch.setattr(
         ingest_mod,
         "_recover_fastembed_from_gcs",
-        lambda _model, _cache: recovered,
+        lambda *_args: (_ for _ in ()).throw(
+            AssertionError("preflight repair must not duplicate FastEmbed downloads")
+        ),
     )
     monkeypatch.setenv("MNEMONICS_FASTEMBED_CACHE", str(cache_dir))
     monkeypatch.delenv("HF_HUB_OFFLINE", raising=False)
@@ -115,7 +112,7 @@ def test_fastembed_corrupt_cache_is_purged_and_retried(tmp_path, monkeypatch):
     encoder = ingest_mod._FastEmbedEncoder("all-MiniLM-L6-v2")
 
     assert calls == 1
-    assert encoder._emb.specific_model_path == str(recovered)
+    assert encoder._emb.specific_model_path is None
     assert encoder.get_sentence_embedding_dimension() == 384
     assert not broken.exists()
 
