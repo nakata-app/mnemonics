@@ -85,6 +85,11 @@ def _warm_store(ns: str = "sessions") -> dict[str, Any]:
         convert_to_numpy=True,
     )
     count = store.warm_namespace(ns)
+    if count:
+        # Prime the actual retrieval path too: HNSW query + SQLite FTS page
+        # cache. Candidate warmup is explicitly non-reinforcing.
+        store.search(probes[-1], ns=ns, top_k=min(5, count), touch=False)
+        store.search_bm25("provider timeout cleanup", ns=ns, top_k=5)
     return {
         "status": "ready",
         "ns": ns,
