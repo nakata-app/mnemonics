@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from mnemonics.ingest import _get_encoder, ingest
+from mnemonics.ingest import _get_encoder, _resolve_model_for_store, ingest
 from mnemonics.store import Store
 
 # Cosine threshold above which two texts are "near-duplicates" worth surfacing.
@@ -32,7 +32,8 @@ def find_similar(
     Results are sorted best-first and capped at `top_k`. Empty list means no
     near-duplicate was found and the caller can ingest without conflict.
     """
-    enc = _get_encoder(model)
+    resolved_model = _resolve_model_for_store(model, store)
+    enc = _get_encoder(resolved_model)
     qvec = enc.encode([text], normalize_embeddings=True, convert_to_numpy=True)[0]
     # Pull a larger pool than top_k so the threshold filter still gives top_k
     # genuine matches when the namespace has many near-but-not-quite hits.
