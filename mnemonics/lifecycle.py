@@ -22,6 +22,7 @@ def canonical_ingest(
     meta: dict[str, Any] | None = None,
     tier: int = 1,
     model: str = "all-MiniLM-L6-v2",
+    retire_canonical_keys: list[str] | None = None,
 ) -> dict[str, Any]:
     """Upsert a canonical fact and archive any prior active value atomically."""
     if not text.strip():
@@ -41,6 +42,7 @@ def canonical_ingest(
         summary=summary,
         meta=meta,
         tier=tier,
+        retire_canonical_keys=retire_canonical_keys,
     )
     return {
         **result,

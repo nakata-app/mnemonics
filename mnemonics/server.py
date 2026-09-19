@@ -783,6 +783,40 @@ class _Handler(BaseHTTPRequestHandler):
                 if len(texts) != 1:
                     self._json(400, {"error": "canonical_key requires exactly one text"})
                     return
+                retire_keys = body.get("retire_canonical_keys")
+                if retire_keys is not None and (
+                    not isinstance(retire_keys, list)
+                    or len(retire_keys) > 16
+                    or any(
+                        not isinstance(item, str)
+                        or not item.strip()
+                        or len(item.strip()) > 256
+                        or any(ord(ch) < 32 for ch in item.strip())
+                        for item in retire_keys
+                    )
+                ):
+                    self._json(
+                        400,
+                        {
+                            "error": (
+                                "retire_canonical_keys must be an array of <=16 "
+                                "non-empty printable strings"
+                            )
+                        },
+                    )
+                    return
+                canonical_summary = body.get("summary")
+                if canonical_summary is not None and not isinstance(
+                    canonical_summary, str
+                ):
+                    self._json(400, {"error": "summary must be a string"})
+                    return
+                if canonical_summary is not None and summaries is not None:
+                    self._json(
+                        400,
+                        {"error": "use either summary or summaries, not both"},
+                    )
+                    return
                 raw_meta = body.get("meta")
                 canonical_meta = None
                 if isinstance(raw_meta, dict):
@@ -797,9 +831,14 @@ class _Handler(BaseHTTPRequestHandler):
                     _get_store(),
                     canonical_key=canonical_key,
                     ns=body.get("ns", "default"),
-                    summary=summaries[0] if summaries else None,
+                    summary=(
+                        canonical_summary
+                        if canonical_summary is not None
+                        else (summaries[0] if summaries else None)
+                    ),
                     meta=canonical_meta,
                     tier=int(tier_val),
+                    retire_canonical_keys=retire_keys,
                 )
                 self._json(200, {"canonical": result})
                 return
