@@ -5380,3 +5380,90 @@ def test_cli_get_access_stats_with_top(tmp_path, capsys):
         main()
     out = capsys.readouterr().out
     assert "most accessed" in out
+
+# ── memory SOTA CLI coverage ──────────────────────────────────────────────────
+
+def test_ingest_canonical_key_routes_to_lifecycle(tmp_path, capsys):
+    result = {
+        "action": "add",
+        "canonical_key": "repo:head",
+        "id": 17,
+        "superseded": [],
+    }
+    with (
+        patch("mnemonics.store.Store"),
+        patch("mnemonics.lifecycle.canonical_ingest", return_value=result) as canonical,
+        patch(
+            "sys.argv",
+            [
+                "mnemonics", "ingest", "branch head abc",
+                "--canonical-key", "repo:head",
+                "--ns", "project",
+                "--summary", "head",
+                "--meta", '{"kind":"fact"}',
+                "--tier", "0",
+                "--path", str(tmp_path),
+            ],
+        ),
+    ):
+        main()
+
+    kwargs = canonical.call_args.kwargs
+    assert kwargs["canonical_key"] == "repo:head"
+    assert kwargs["ns"] == "project"
+    assert kwargs["summary"] == "head"
+    assert kwargs["meta"] == {"kind": "fact"}
+    assert kwargs["tier"] == 0
+    assert "Canonical add" in capsys.readouterr().out
+
+
+def test_retrieve_plan_cli_human_output(tmp_path, capsys):
+    result = {
+        "queries": [{"text": "provider timeout", "weight": 1.0, "kind": "original"}],
+        "results": [{
+            "id": 9,
+            "text": "restored timeout cleanup",
+            "plan_score": 0.01234,
+            "matched_queries": ["original"],
+        }],
+    }
+    with (
+        patch("mnemonics.store.Store"),
+        patch("mnemonics.query_plan.retrieve_planned", return_value=result) as planned,
+        patch(
+            "sys.argv",
+            [
+                "mnemonics", "retrieve-plan", "provider timeout",
+                "--top-k", "3", "--candidate-k", "17", "--max-queries", "2",
+                "--no-decay", "--no-hybrid", "--rerank", "--path", str(tmp_path),
+            ],
+        ),
+    ):
+        main()
+
+    kwargs = planned.call_args.kwargs
+    assert kwargs["top_k"] == 3
+    assert kwargs["candidate_k"] == 17
+    assert kwargs["max_queries"] == 2
+    assert kwargs["decay"] is False
+    assert kwargs["hybrid"] is False
+    assert kwargs["rerank"] is True
+    out = capsys.readouterr().out
+    assert "planned queries:" in out
+    assert "restored timeout cleanup" in out
+
+
+def test_retrieve_plan_cli_json_output(tmp_path, capsys):
+    result = {"queries": [], "results": []}
+    with (
+        patch("mnemonics.store.Store"),
+        patch("mnemonics.query_plan.retrieve_planned", return_value=result),
+        patch(
+            "sys.argv",
+            ["mnemonics", "retrieve-plan", "q", "--json", "--path", str(tmp_path)],
+        ),
+    ):
+        main()
+
+    assert json.loads(capsys.readouterr().out) == result
+
