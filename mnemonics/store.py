@@ -352,6 +352,7 @@ class Store:
         min_tier: int | None = None,
         max_tier: int | None = None,
         exclude_superseded: bool = True,
+        touch: bool = True,
     ) -> list[dict[str, Any]]:
         # Shared lock — multiple peers may search the same ns concurrently;
         # only a writer needs to block them. Reload-if-stale picks up freshly
@@ -403,8 +404,9 @@ class Store:
                     "access_count": row[7],
                     "score": float(1 - dist),
                 })
-            # Touch retrieved rows: bump access_count, update last_accessed.
-            if results:
+            # Touch only user-visible retrievals. Internal candidate expansion
+            # can pass touch=False and reinforce just the final fused rows once.
+            if touch and results:
                 touched_ids = [r["id"] for r in results]
                 touch_placeholders = ",".join("?" * len(touched_ids))
                 self._db.execute(
@@ -414,6 +416,21 @@ class Store:
                 )
                 self._db.commit()
         return results
+
+    def touch_ids(self, memory_ids: list[int]) -> int:
+        """Bump access metadata once for a deduplicated set of final results."""
+        ids = sorted({int(mid) for mid in memory_ids})
+        if not ids:
+            return 0
+        placeholders = ",".join("?" * len(ids))
+        with self._lock:
+            cur = self._db.execute(
+                f"UPDATE memories SET last_accessed = datetime('now'), "
+                f"access_count = access_count + 1 WHERE id IN ({placeholders})",
+                ids,
+            )
+            self._db.commit()
+        return int(cur.rowcount)
 
     # FTS5's MATCH grammar treats bare punctuation as syntax errors. We only
     # need word-level recall, so flatten the query to alphanumerics + space and
