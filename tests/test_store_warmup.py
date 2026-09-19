@@ -27,3 +27,39 @@ def test_warm_namespace_loads_index_without_touching_access_counters(tmp_path):
         (row_id,),
     ).fetchone()
     assert after == before
+
+
+def test_server_warmup_primes_realistic_batch(monkeypatch):
+    from mnemonics import server
+
+    seen: list[list[str]] = []
+
+    class FakeEncoder:
+        def encode(self, texts, **kwargs):
+            batch = list(texts)
+            seen.append(batch)
+            assert kwargs["batch_size"] == 4
+            return np.zeros((len(batch), 1024), dtype="float32")
+
+    class FakeStore:
+        root = "/tmp/fake"
+
+        def warm_namespace(self, ns):
+            assert ns == "sessions"
+            return 42
+
+    monkeypatch.setattr(server, "_get_store", lambda: FakeStore())
+    monkeypatch.setattr(
+        server,
+        "_resolve_model_for_store",
+        lambda model, store: "/model",
+    )
+    monkeypatch.setattr(server, "_get_encoder", lambda model: FakeEncoder())
+
+    result = server._warm_store("sessions")
+
+    assert len(seen) == 1
+    assert len(seen[0]) == 4
+    assert "src/agent/provider-attempt.ts" in seen[0]
+    assert result["dim"] == 1024
+    assert result["count"] == 42
