@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
+import mnemonics.dedup as dedup_mod
 import mnemonics.ingest as ingest_mod
 import mnemonics.retrieve as retrieve_mod
 from mnemonics.lifecycle import canonical_ingest
@@ -267,3 +268,16 @@ def test_store_corrupt_reload_and_canonical_resize(tmp_path, monkeypatch):
     )
     assert result["action"] == "add"
     assert tiny.resized is True
+
+def test_reconcile_ingest_tolerates_empty_ingest_result(monkeypatch):
+    store = SimpleNamespace()
+    monkeypatch.setattr(dedup_mod, "find_similar", lambda *args, **kwargs: [])
+    monkeypatch.setattr(dedup_mod, "ingest", lambda *args, **kwargs: [])
+    result = dedup_mod.reconcile_ingest(["x"], store)
+    assert result == {
+        "added": [],
+        "noop_skipped": [],
+        "superseded": [],
+        "supersede_failed": [],
+    }
+
