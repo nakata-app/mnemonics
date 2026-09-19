@@ -46,7 +46,8 @@ except importlib.metadata.PackageNotFoundError:
     _VERSION = "0.3.0"
 
 from mnemonics.dedup import reconcile_ingest as _reconcile_ingest
-from mnemonics.ingest import _get_encoder, _resolve_model_for_store, ingest as _ingest
+from mnemonics.ingest import _get_encoder, _resolve_model_for_store
+from mnemonics.ingest import ingest as _ingest
 from mnemonics.lifecycle import canonical_ingest as _canonical_ingest
 from mnemonics.query_plan import retrieve_planned as _retrieve_planned
 from mnemonics.retrieve import retrieve as _retrieve
