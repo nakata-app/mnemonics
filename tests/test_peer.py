@@ -8,11 +8,9 @@ in its next search, without crashing or overwriting them.
 from __future__ import annotations
 
 import multiprocessing as mp
-import os
 import time
 
 import numpy as np
-import pytest
 
 from mnemonics.store import Store
 

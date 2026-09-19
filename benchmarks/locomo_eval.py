@@ -36,7 +36,6 @@ from mnemonics.ingest import ingest
 from mnemonics.retrieve import retrieve
 from mnemonics.store import Store
 
-
 ANSWER_PROMPT_TEMPLATE = """
 You are an intelligent memory assistant tasked with retrieving accurate information from conversation memories.
 

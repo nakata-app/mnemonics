@@ -1,6 +1,10 @@
-import re, pathlib, os, sys
+import os
+import pathlib
+import re
+import sys
 
 from google.colab import drive
+
 drive.mount('/content/drive', force_remount=False)
 
 DATA = '/content/drive/MyDrive/longmemeval_s_cleaned.json'

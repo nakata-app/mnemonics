@@ -5,7 +5,11 @@ JSON dogrulamali (bos/yarim inerse ANINDA durur, saatler sonra degil), her
 eval asamasi sonucu hemen diske yazilir (smoke->100->500). 500q coker/timeout
 olursa 100q sonucu korunur.
 """
-import os, sys, json, time, subprocess
+import json
+import os
+import subprocess
+import sys
+import time
 
 WORK = '/kaggle/working'
 REPO = f'{WORK}/mnemonics'

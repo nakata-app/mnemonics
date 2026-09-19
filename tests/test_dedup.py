@@ -7,8 +7,9 @@ from __future__ import annotations
 
 import pytest
 
-from mnemonics.dedup import check_before_ingest, find_similar
+from mnemonics.dedup import check_before_ingest, find_similar, reconcile_ingest
 from mnemonics.ingest import ingest
+from mnemonics.retrieve import retrieve
 from mnemonics.store import Store
 
 
@@ -100,8 +101,6 @@ def test_find_similar_top_k_cap(store):
 
 # --- reconcile_ingest: NOOP dedup + archive-not-delete supersede ---------------
 
-from mnemonics.dedup import reconcile_ingest
-from mnemonics.retrieve import retrieve
 
 
 def test_reconcile_noop_skips_restatement(store):

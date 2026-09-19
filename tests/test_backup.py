@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from mnemonics.backup import backup, restore, _is_allowed
+from mnemonics.backup import _is_allowed, backup, restore
 
 
 def _make_store(root: Path) -> None:

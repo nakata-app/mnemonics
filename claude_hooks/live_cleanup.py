@@ -11,7 +11,7 @@ Idempotent, fast, fail-silent. Never crashes session start.
 import json
 import os
 import sys
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 LIVE_DIR = Path(os.environ.get("MNEMONICS_LIVE_DIR", os.path.expanduser("~/.mnemonics/live")))
@@ -28,7 +28,7 @@ def prune_file(path: Path, cutoff: datetime) -> tuple[int, int]:
     dropped = 0
     new_lines = []
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             for line in f:
                 line = line.rstrip("\n")
                 if not line.strip():

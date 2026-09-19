@@ -16,7 +16,14 @@ the missed evidence in front of the CE at all.
 Package and scripts are embedded rather than cloned, so this measures the exact
 local tree (local HEAD carries commits the remote does not have).
 """
-import base64, json, os, subprocess, sys, time
+import base64
+import json
+import os
+import subprocess
+import sys
+import time
+
+import torch
 
 WORK = '/kaggle/working'
 REPO = WORK + '/mnemonics'
@@ -33,7 +40,7 @@ def retry(fn, what, tries=3, wait=8):
         try:
             return fn()
         except Exception as e:
-            print('[retry %d/%d] %s: %s' % (i, tries, what, e), flush=True)
+            print(f"[retry {i}/{tries}] {what}: {e}", flush=True)
             if i < tries:
                 time.sleep(wait * i)
             else:
@@ -61,7 +68,7 @@ for name, b64 in FILES_B64.items():
         f.write(base64.b64decode(b64))
 print('package + scripts written from embedded tree', flush=True)
 
-import torch
+
 print('cuda:', torch.cuda.is_available(), flush=True)
 
 env = os.environ.copy()
@@ -80,9 +87,9 @@ def stage(k, limit, tag):
            '--candidate-k', str(k), '--rerank', '--out-dir', out]
     if limit:
         cmd += ['--limit', str(limit)]
-    print('\n=== %s k=%d limit=%s ===' % (tag, k, limit or 'all'), flush=True)
+    print(f"\n=== {tag} k={k} limit={limit or 'all'} ===", flush=True)
     r = subprocess.run(cmd, cwd=REPO, env=env)
-    print('%s returncode=%d' % (tag, r.returncode), flush=True)
+    print(f"{tag} returncode={r.returncode}", flush=True)
     return r.returncode == 0
 
 
@@ -98,7 +105,7 @@ ok['k1000'] = stage(1000, 0, 'bar_k1000')
 try:
     ok['k2000'] = stage(2000, 0, 'bar_k2000')
 except Exception as e:
-    print('[k2000 failed] %s' % e, flush=True)
+    print(f'[k2000 failed] {e}', flush=True)
     ok['k2000'] = False
 
 json.dump({'ce_model': CE_MODEL, 'stages': ok},

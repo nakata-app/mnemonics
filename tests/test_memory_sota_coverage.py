@@ -176,13 +176,19 @@ def test_retrieve_knobs_query_vector_and_full_band(monkeypatch):
     class FakeStore:
         root = "/tmp/fake"
         dim = 3
+        touched_ids = None
+
         def search(self, vector, **kwargs):
             return [
                 {"id": 1, "text": "one", "created": "2026-09-19 00:00:00", "tier": 1, "access_count": 0, "score": 0.5},
                 {"id": 2, "text": "two", "created": "2026-09-19 00:00:00", "tier": 1, "access_count": 0, "score": 0.9},
             ]
+
         def search_bm25(self, *args, **kwargs):
             return []
+
+        def touch_ids(self, ids):
+            self.touched_ids = list(ids)
 
     monkeypatch.setattr(retrieve_mod, "_resolve_model_for_store", lambda model, store: "m")
     monkeypatch.setattr("mnemonics.embed_manifest.verify", lambda root, live: ("ok", ""))

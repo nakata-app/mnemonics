@@ -19,7 +19,6 @@ from hypothesis import strategies as st
 
 from mnemonics.store import DIM, Store
 
-
 # ── helpers ──────────────────────────────────────────────────────────────────
 
 def _rand_vecs(n: int, seed: int) -> np.ndarray:

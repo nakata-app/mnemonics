@@ -11,4 +11,4 @@ from mnemonics.store import Store
 # 3.10 caught it.
 
 __all__ = ["Store"]
-__version__ = "0.3.0"
+__version__ = "0.4.0"

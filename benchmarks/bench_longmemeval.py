@@ -14,10 +14,8 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
-import time
 import tempfile
-from pathlib import Path
+import time
 
 import numpy as np
 
@@ -32,7 +30,8 @@ def recall_at_k(ranked_ids: list[str], relevant_ids: list[str], k: int) -> float
 
 def run(dataset_path: str, n: int | None, top_k: int, model: str) -> dict:
     from sentence_transformers import SentenceTransformer
-    from mnemonics.store import Store, DIM
+
+    from mnemonics.store import Store
 
     print(f"Loading encoder: {model}", flush=True)
     enc = SentenceTransformer(model)

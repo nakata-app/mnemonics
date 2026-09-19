@@ -23,7 +23,7 @@ import re
 import shlex
 import subprocess
 import sys
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 LIVE_DIR = Path(os.environ.get("MNEMONICS_LIVE_DIR", os.path.expanduser("~/.mnemonics/live")))
@@ -118,7 +118,7 @@ def recent_events(feed: Path, my_session: str) -> list[dict]:
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=max_window)
     out = []
     try:
-        with open(feed, "r", encoding="utf-8") as f:
+        with open(feed, encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if not line:

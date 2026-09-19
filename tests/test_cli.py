@@ -1,7 +1,7 @@
 """Tests for mnemonics CLI."""
 import json
-import sys
 from unittest.mock import MagicMock, patch
+
 import pytest
 
 from mnemonics.cli import main
@@ -266,7 +266,8 @@ def test_gc_apply_deletes(tmp_path, capsys):
 
 def test_stats_lists_namespaces(tmp_path, capsys):
     import numpy as np
-    from mnemonics.store import Store, DIM
+
+    from mnemonics.store import DIM, Store
     store = Store(tmp_path)
     rng = np.random.default_rng(0)
     vecs = rng.random((3, DIM)).astype("float32")
@@ -465,7 +466,6 @@ def test_mcp_calls_serve_mcp():
 # ── sync export / import ──────────────────────────────────────────────────────
 
 def test_sync_export_calls_export_store(tmp_path, capsys):
-    from pathlib import Path
     fake_archive = tmp_path / "store.sync.tar.gz"
     fake_archive.write_bytes(b"")
     with (
@@ -502,7 +502,9 @@ def test_sync_import_calls_import_store(tmp_path, capsys):
 def test_export_jsonl_all_ns(tmp_path, capsys):
     """export-jsonl outputs JSONL to stdout for all namespaces."""
     import json as _json
+
     import numpy as np
+
     from mnemonics.store import Store
     s = Store(tmp_path)
     v = np.random.rand(384).astype("float32")
@@ -511,9 +513,9 @@ def test_export_jsonl_all_ns(tmp_path, capsys):
     s.add(["goodbye world"], v.reshape(1, -1), ns="b")
     with patch("sys.argv", ["mnemonics", "export-jsonl", "--path", str(tmp_path)]):
         main()
-    lines = [l for l in capsys.readouterr().out.strip().split("\n") if l]
+    lines = [line for line in capsys.readouterr().out.strip().split("\n") if line]
     assert len(lines) == 2
-    objs = [_json.loads(l) for l in lines]
+    objs = [_json.loads(line) for line in lines]
     texts = {o["text"] for o in objs}
     assert texts == {"hello world", "goodbye world"}
 
@@ -521,7 +523,9 @@ def test_export_jsonl_all_ns(tmp_path, capsys):
 def test_export_jsonl_ns_filter(tmp_path, capsys):
     """export-jsonl --ns filters to one namespace."""
     import json as _json
+
     import numpy as np
+
     from mnemonics.store import Store
     s = Store(tmp_path)
     v = np.random.rand(384).astype("float32")
@@ -530,7 +534,7 @@ def test_export_jsonl_ns_filter(tmp_path, capsys):
     s.add(["skip this"], v.reshape(1, -1), ns="skip")
     with patch("sys.argv", ["mnemonics", "export-jsonl", "--ns", "keep", "--path", str(tmp_path)]):
         main()
-    lines = [l for l in capsys.readouterr().out.strip().split("\n") if l]
+    lines = [line for line in capsys.readouterr().out.strip().split("\n") if line]
     assert len(lines) == 1
     assert _json.loads(lines[0])["text"] == "keep this"
 
@@ -538,7 +542,9 @@ def test_export_jsonl_ns_filter(tmp_path, capsys):
 def test_export_jsonl_tier_filter(tmp_path, capsys):
     """export-jsonl --tier filters to pinned (tier=0) only."""
     import json as _json
+
     import numpy as np
+
     from mnemonics.store import Store
     s = Store(tmp_path)
     v = np.random.rand(384).astype("float32")
@@ -547,7 +553,7 @@ def test_export_jsonl_tier_filter(tmp_path, capsys):
     s.pin(ids[0])
     with patch("sys.argv", ["mnemonics", "export-jsonl", "--tier", "0", "--path", str(tmp_path)]):
         main()
-    lines = [l for l in capsys.readouterr().out.strip().split("\n") if l]
+    lines = [line for line in capsys.readouterr().out.strip().split("\n") if line]
     assert len(lines) == 1
     assert _json.loads(lines[0])["text"] == "pinned text"
 
@@ -555,7 +561,9 @@ def test_export_jsonl_tier_filter(tmp_path, capsys):
 def test_export_jsonl_to_file(tmp_path):
     """export-jsonl --out writes to file, prints count to stderr."""
     import json as _json
+
     import numpy as np
+
     from mnemonics.store import Store
     s = Store(tmp_path)
     v = np.random.rand(384).astype("float32")
@@ -572,7 +580,6 @@ def test_export_jsonl_to_file(tmp_path):
 # ── backup / restore ──────────────────────────────────────────────────────────
 
 def test_backup_calls_backup(tmp_path, capsys):
-    from pathlib import Path
     fake_archive = tmp_path / "backup.tar.gz"
     fake_archive.write_bytes(b"x" * 100)
     with (
@@ -619,7 +626,8 @@ def test_cli_list_empty(tmp_path, capsys):
 
 def test_cli_list_shows_rows(tmp_path, capsys):
     import numpy as np
-    from mnemonics.store import Store, DIM
+
+    from mnemonics.store import DIM, Store
     store = Store(tmp_path)
     rng = np.random.default_rng(0)
     vecs = rng.random((3, DIM)).astype("float32")
@@ -651,7 +659,8 @@ def test_cli_bm25_no_results(tmp_path, capsys):
 
 def test_cli_bm25_finds_text(tmp_path, capsys):
     import numpy as np
-    from mnemonics.store import Store, DIM
+
+    from mnemonics.store import DIM, Store
     store = Store(tmp_path)
     rng = np.random.default_rng(0)
     vecs = rng.random((1, DIM)).astype("float32")
@@ -670,7 +679,8 @@ def test_cli_bm25_finds_text(tmp_path, capsys):
 
 def test_cli_get_existing(tmp_path, capsys):
     import numpy as np
-    from mnemonics.store import Store, DIM
+
+    from mnemonics.store import DIM, Store
     store = Store(tmp_path)
     rng = np.random.default_rng(0)
     vecs = rng.random((1, DIM)).astype("float32")
@@ -702,7 +712,8 @@ def test_cli_get_not_found(tmp_path, capsys):
 
 def test_cli_set_summary(tmp_path, capsys):
     import numpy as np
-    from mnemonics.store import Store, DIM
+
+    from mnemonics.store import DIM, Store
     store = Store(tmp_path)
     rng = np.random.default_rng(0)
     vecs = rng.random((1, DIM)).astype("float32")
@@ -721,7 +732,8 @@ def test_cli_set_summary(tmp_path, capsys):
 
 def test_cli_set_summary_clear(tmp_path, capsys):
     import numpy as np
-    from mnemonics.store import Store, DIM
+
+    from mnemonics.store import DIM, Store
     store = Store(tmp_path)
     rng = np.random.default_rng(0)
     vecs = rng.random((1, DIM)).astype("float32")
@@ -778,7 +790,8 @@ def test_gc_no_candidates(tmp_path, capsys):
 
 def test_cli_bm25_shows_summary(tmp_path, capsys):
     import numpy as np
-    from mnemonics.store import Store, DIM
+
+    from mnemonics.store import DIM, Store
     store = Store(tmp_path)
     rng = np.random.default_rng(0)
     vecs = rng.random((1, DIM)).astype("float32")
@@ -799,7 +812,8 @@ def test_cli_bm25_shows_summary(tmp_path, capsys):
 
 def test_cli_get_with_summary(tmp_path, capsys):
     import numpy as np
-    from mnemonics.store import Store, DIM
+
+    from mnemonics.store import DIM, Store
     store = Store(tmp_path)
     rng = np.random.default_rng(0)
     vecs = rng.random((1, DIM)).astype("float32")
@@ -1176,7 +1190,6 @@ def test_eval_basic(tmp_path, capsys):
 def test_eval_with_out_dir(tmp_path, capsys):
     out_dir = tmp_path / "results"
     fake_result = {"encoder": "minilm", "method": "vector", "mrr": 0.5}
-    import json as _json
     with (
         patch("mnemonics.eval.run_eval", return_value=fake_result),
         patch("mnemonics.eval.compare_table", return_value="table"),
@@ -1212,8 +1225,7 @@ def test_main_as_module(tmp_path, monkeypatch):
     """Running cli.py as __main__ should call main()."""
     import runpy
     monkeypatch.setattr("sys.argv", ["mnemonics", "stats", "--path", str(tmp_path)])
-    import numpy as np
-    from mnemonics.store import Store, DIM
+    from mnemonics.store import Store
     Store(tmp_path)  # create empty DB so stats doesn't fail
     with patch("builtins.print"):
         runpy.run_module("mnemonics.cli", run_name="__main__", alter_sys=True)
@@ -1391,7 +1403,7 @@ def test_cli_update_meta_non_object_json(tmp_path, capsys):
 
 def test_cli_retrieve_tier_filters_passed(tmp_path):
     """retrieve --min-tier / --max-tier are forwarded to retrieve()."""
-    from unittest.mock import patch, MagicMock
+    from unittest.mock import patch
     mock_result = {"results": []}
     with (
         patch("mnemonics.store.Store"),
@@ -1494,7 +1506,7 @@ def test_cli_export_jsonl_meta_filter(tmp_path, capsys):
                              "--path", str(tmp_path)]):
         main()
     out = capsys.readouterr().out
-    lines = [l for l in out.strip().splitlines() if l]
+    lines = [line for line in out.strip().splitlines() if line]
     assert len(lines) == 1
     assert '"match"' in lines[0]
 
@@ -1597,7 +1609,7 @@ def test_cli_list_json_output(tmp_path, capsys):
     ):
         main()
     out = capsys.readouterr().out
-    lines = [l for l in out.strip().splitlines() if l]
+    lines = [line for line in out.strip().splitlines() if line]
     assert len(lines) == 2
     assert _json.loads(lines[0])["id"] == 1
     assert _json.loads(lines[1])["id"] == 2
@@ -1688,7 +1700,7 @@ def test_cli_get_many_json(tmp_path, capsys):
     ):
         main()
     out = capsys.readouterr().out
-    lines = [l for l in out.strip().splitlines() if l]
+    lines = [line for line in out.strip().splitlines() if line]
     assert len(lines) == 1
     assert _json.loads(lines[0])["id"] == 1
 
@@ -1709,7 +1721,7 @@ def test_cli_search_meta_json(tmp_path, capsys):
     ):
         main()
     out = capsys.readouterr().out
-    lines = [l for l in out.strip().splitlines() if l]
+    lines = [line for line in out.strip().splitlines() if line]
     assert len(lines) == 1
     assert _json.loads(lines[0])["id"] == 7
 
@@ -1955,7 +1967,8 @@ def test_cli_import_jsonl_ns_override(tmp_path, capsys):
 
 def test_cli_import_jsonl_stdin(tmp_path, capsys):
     """import-jsonl reads from stdin when no file given."""
-    import json as _json, io
+    import io
+    import json as _json
     line = _json.dumps({"text": "from stdin", "ns": "default"}) + "\n"
     with (
         patch("mnemonics.store.Store"),
@@ -3383,7 +3396,8 @@ def test_cli_text_stats_all_ns(tmp_path, capsys):
 
 def test_cli_import_records_from_stdin(tmp_path, capsys):
     """import-records reads JSON from stdin when file is '-'."""
-    import io, json as _j
+    import io
+    import json as _j
     mock_store = MagicMock()
     mock_store.import_records.return_value = 1
     stdin_data = _j.dumps([{"text": "stdin record"}])
@@ -3876,7 +3890,7 @@ def test_cli_recent_text(tmp_path, capsys):
     assert "[5]" in out
 
 
-def test_cli_recent_json(tmp_path, capsys):
+def test_cli_newest_json(tmp_path, capsys):
     """newest --json outputs JSON."""
     mock_store = MagicMock()
     mock_store.recent.return_value = [{"id": 5, "text": "x"}]
@@ -5185,8 +5199,8 @@ def test_cli_text_search_ranked_all_ns(tmp_path, capsys):
 
 def test_cli_import_ns_stdin(tmp_path, capsys):
     """import-ns with '-' reads from stdin."""
-    import json as _j_stdin
     import io
+    import json as _j_stdin
     mock_store = MagicMock()
     mock_store.import_ns.return_value = 1
     fake_stdin = io.StringIO(_j_stdin.dumps([{"text": "from stdin"}]))

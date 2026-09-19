@@ -1,15 +1,12 @@
 """Tests for REST and MCP server logic."""
 import io
 import json
-import threading
-from http.client import HTTPConnection
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from mnemonics import server as srv
 from mnemonics.store import DIM, Store
-
 
 # ── helper: in-process server ────────────────────────────────────────────────
 
@@ -60,7 +57,7 @@ def http_call(store, method: str, path: str, body: dict | None = None) -> tuple[
         f"\r\n"
     ).encode() + body_bytes
 
-    fs = FakeSocket(raw)
+    FakeSocket(raw)
 
     with patch("mnemonics.server._get_store", return_value=store):
         handler = srv._Handler.__new__(srv._Handler)
@@ -467,7 +464,7 @@ def test_ingest_summaries_valid(tmp_store):
 
 
 def test_ingest_success(tmp_store):
-    with patch("mnemonics.server._ingest", return_value=2) as mock_ingest:
+    with patch("mnemonics.server._ingest", return_value=2):
         code, data = http_call(tmp_store, "POST", "/ingest", {"texts": ["a", "b"]})
     assert code == 200
     assert data["ingested"] == 2
@@ -911,7 +908,7 @@ def test_mcp_stats_tier_breakdown(populated_store):
 
 
 def test_mcp_ingest(tmp_store):
-    with patch("mnemonics.server._ingest", return_value=3) as mock_ingest:
+    with patch("mnemonics.server._ingest", return_value=3):
         resp = _mcp(tmp_store, {
             "jsonrpc": "2.0", "id": 3,
             "method": "tools/call",
@@ -1218,6 +1215,7 @@ def test_mcp_ingest_summaries_bad_length(tmp_store):
 
 def test_mcp_gc_apply(tmp_store):
     import numpy as np
+
     from mnemonics.store import DIM
     rng = np.random.default_rng(0)
     vecs = rng.random((1, DIM)).astype("float32")
@@ -1302,6 +1300,7 @@ def test_mcp_invalid_json_line_skipped(tmp_store):
 
 def test_mcp_bm25_shows_summary(tmp_store):
     import numpy as np
+
     from mnemonics.store import DIM
     rng = np.random.default_rng(0)
     vecs = rng.random((1, DIM)).astype("float32")
@@ -1393,7 +1392,6 @@ def test_serve_http_path(monkeypatch, tmp_path):
         mock_instance = MagicMock()
         mock_httpserver.return_value = mock_instance
         mock_instance.serve_forever.side_effect = KeyboardInterrupt
-        import sys as _sys
         with pytest.raises(SystemExit):
             srv.serve(port=9999, mcp=False)
     monkeypatch.setattr(srv, "_store", None)
@@ -1449,11 +1447,11 @@ def test_handler_log_message_suppressed():
 def test_version_fallback(monkeypatch):
     """lines 44-45: _VERSION falls back when package not installed."""
     import importlib.metadata
-    import importlib as _il
     with patch("importlib.metadata.version",
                side_effect=importlib.metadata.PackageNotFoundError("mnemonics")):
-        import mnemonics.server as _fresh
         import importlib
+
+        import mnemonics.server as _fresh
         importlib.reload(_fresh)
         assert _fresh._VERSION == "0.3.0"
 
@@ -2008,7 +2006,6 @@ def test_http_import_jsonl_basic(tmp_store):
 
 def test_http_import_jsonl_empty_body(tmp_store):
     """POST /import-jsonl with empty body returns 400."""
-    body_bytes = b""
     import io as _io
     with patch("mnemonics.server._get_store", return_value=tmp_store):
         handler = srv._Handler.__new__(srv._Handler)
@@ -2075,7 +2072,7 @@ def test_mcp_export_all(populated_store):
     store, docs, vecs = populated_store
     r = _mcp_export(store)
     text = r["result"]["content"][0]["text"]
-    lines = [l for l in text.splitlines() if l.strip()]
+    lines = [line for line in text.splitlines() if line.strip()]
     assert len(lines) == len(docs)
     obj = _json.loads(lines[0])
     assert "id" in obj and "text" in obj and "ns" in obj
@@ -2091,7 +2088,7 @@ def test_mcp_export_ns_filter(populated_store):
     store.add(["other ns row"], v[None], ns="other")
     r = _mcp_export(store, ns="default")
     text = r["result"]["content"][0]["text"]
-    objs = [_json.loads(l) for l in text.splitlines() if l.strip()]
+    objs = [_json.loads(line) for line in text.splitlines() if line.strip()]
     assert all(o["ns"] == "default" for o in objs)
 
 
@@ -2103,7 +2100,7 @@ def test_mcp_export_tier_filter(populated_store):
     store.pin(first_id)
     r = _mcp_export(store, tier=0)
     text = r["result"]["content"][0]["text"]
-    objs = [_json.loads(l) for l in text.splitlines() if l.strip()]
+    objs = [_json.loads(line) for line in text.splitlines() if line.strip()]
     assert len(objs) == 1
     assert objs[0]["id"] == first_id
 
@@ -2130,7 +2127,7 @@ def test_mcp_export_limit(populated_store):
     store, docs, vecs = populated_store
     r = _mcp_export(store, limit=1)
     text = r["result"]["content"][0]["text"]
-    objs = [_json.loads(l) for l in text.splitlines() if l.strip()]
+    objs = [_json.loads(line) for line in text.splitlines() if line.strip()]
     assert len(objs) == 1
 
 
@@ -2317,7 +2314,8 @@ def test_http_rename_ns_conflict(populated_store):
     """POST /rename-ns when target ns exists returns 409."""
     import numpy as np
     store, docs, vecs = populated_store
-    v = np.random.rand(384).astype("float32"); v /= np.linalg.norm(v)
+    v = np.random.rand(384).astype("float32")
+    v /= np.linalg.norm(v)
     store.add(["other row"], v[None], ns="other")
     code, data = http_call(store, "POST", "/rename-ns",
                            {"old_ns": "default", "new_ns": "other"})
@@ -2357,7 +2355,8 @@ def test_mcp_rename_ns_conflict(populated_store):
     """mnemonics_rename_ns when target exists returns error."""
     import numpy as np
     store, docs, vecs = populated_store
-    v = np.random.rand(384).astype("float32"); v /= np.linalg.norm(v)
+    v = np.random.rand(384).astype("float32")
+    v /= np.linalg.norm(v)
     store.add(["other"], v[None], ns="other")
     r = _mcp_rename(store, "default", "other")
     assert "error" in r
@@ -2421,7 +2420,8 @@ def test_mcp_count_all_ns(populated_store):
     """mnemonics_count with ns=null counts all namespaces."""
     import numpy as np
     store, docs, vecs = populated_store
-    v = np.random.rand(384).astype("float32"); v /= np.linalg.norm(v)
+    v = np.random.rand(384).astype("float32")
+    v /= np.linalg.norm(v)
     store.add(["extra row"], v[None], ns="other")
     r = _mcp(store, {
         "jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -2450,7 +2450,7 @@ def test_mcp_get_many_basic(populated_store):
         "params": {"name": "mnemonics_get_many", "arguments": {"ids": ids}},
     })[0]
     text = r["result"]["content"][0]["text"]
-    objs = [_json.loads(l) for l in text.splitlines() if l.strip()]
+    objs = [_json.loads(line) for line in text.splitlines() if line.strip()]
     assert len(objs) == 2
     assert {o["id"] for o in objs} == set(ids)
 
@@ -2564,7 +2564,8 @@ def test_http_recent_all_ns(populated_store):
     """GET /recent?ns=all returns memories from all namespaces."""
     import numpy as np
     store, docs, vecs = populated_store
-    v = np.random.rand(384).astype("float32"); v /= np.linalg.norm(v)
+    v = np.random.rand(384).astype("float32")
+    v /= np.linalg.norm(v)
     store.add(["other ns row"], v[None], ns="other")
     code, data = http_call(store, "GET", "/recent?ns=all")
     assert code == 200
@@ -2762,7 +2763,8 @@ def test_mcp_stats_by_ns_in_tools_list(tmp_store):
 def test_http_merge_ns_basic(populated_store):
     import numpy as np
     store, docs, vecs = populated_store
-    v = np.random.rand(384).astype("float32"); v /= np.linalg.norm(v)
+    v = np.random.rand(384).astype("float32")
+    v /= np.linalg.norm(v)
     store.add(["dst doc"], v[None], ns="dst_m")
     code, data = http_call(store, "POST", "/merge-ns", {"src_ns": "default", "dst_ns": "dst_m"})
     assert code == 200
@@ -2781,7 +2783,8 @@ def test_http_merge_ns_missing_fields(tmp_store):
 def test_mcp_merge_ns_basic(populated_store):
     import numpy as np
     store, docs, vecs = populated_store
-    v = np.random.rand(384).astype("float32"); v /= np.linalg.norm(v)
+    v = np.random.rand(384).astype("float32")
+    v /= np.linalg.norm(v)
     store.add(["dst doc"], v[None], ns="mgdst")
     r = _mcp(store, {
         "jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -2935,6 +2938,7 @@ def test_mcp_update_meta_in_tools_list(tmp_store):
 def test_http_hybrid_search_ok(populated_store):
     """POST /hybrid-search returns combined results."""
     import numpy as np
+
     from mnemonics.store import DIM
     store, docs, vecs = populated_store
     rng = np.random.default_rng(7)
@@ -2949,6 +2953,7 @@ def test_http_hybrid_search_ok(populated_store):
 def test_http_hybrid_search_missing_params(populated_store):
     """POST /hybrid-search without query returns 400."""
     import numpy as np
+
     from mnemonics.store import DIM
     store, docs, vecs = populated_store
     rng = np.random.default_rng(8)
@@ -2967,6 +2972,7 @@ def test_http_hybrid_search_missing_vector(populated_store):
 def test_mcp_hybrid_search_ok(populated_store):
     """MCP mnemonics_hybrid_search returns formatted results."""
     import numpy as np
+
     from mnemonics.store import DIM
     store, docs, vecs = populated_store
     rng = np.random.default_rng(9)
@@ -2995,6 +3001,7 @@ def test_mcp_hybrid_search_missing_args(populated_store):
 def test_mcp_hybrid_search_no_results(tmp_store):
     """MCP mnemonics_hybrid_search returns text when no hits (covers line 1177)."""
     import numpy as np
+
     from mnemonics.store import DIM
     rng = np.random.default_rng(0)
     qv = rng.random((DIM,)).astype("float32").tolist()
@@ -3010,6 +3017,7 @@ def test_mcp_hybrid_search_no_results(tmp_store):
 def test_mcp_hybrid_search_with_summary(populated_store):
     """MCP mnemonics_hybrid_search shows summary line when present (covers line 1188)."""
     import numpy as np
+
     from mnemonics.store import DIM
     store, docs, vecs = populated_store
     mid = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
@@ -3208,6 +3216,7 @@ def test_mcp_deduplicate_ok(populated_store):
 def test_mcp_deduplicate_with_pairs(tmp_store):
     """MCP mnemonics_deduplicate formats pair lines when duplicates exist."""
     import numpy as np
+
     from mnemonics.store import DIM
     rng = np.random.default_rng(321)
     v = rng.random((DIM,)).astype("float32")
@@ -4274,7 +4283,7 @@ def test_mcp_rename_ns_ok(populated_store):
     assert "renamed-mcp" in r["result"]["content"][0]["text"]
 
 
-def test_mcp_rename_ns_missing_args(tmp_store):
+def test_mcp_rename_ns_missing_args_late_variant(tmp_store):
     """MCP mnemonics_rename_ns without args returns error."""
     r = _mcp(tmp_store, {
         "jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -4296,7 +4305,7 @@ def test_mcp_merge_ns_ok(populated_store):
     assert "result" in r
 
 
-def test_mcp_merge_ns_missing_args(tmp_store):
+def test_mcp_merge_ns_missing_args_late_variant(tmp_store):
     """MCP mnemonics_merge_ns without args returns error."""
     r = _mcp(tmp_store, {
         "jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -4475,8 +4484,9 @@ def test_http_update_meta_key_not_found(tmp_path):
 
 def test_http_update_meta_key_remove(tmp_path):
     """POST /update-meta-key with value=null removes the key."""
-    import numpy as np
     import json
+
+    import numpy as np
     store = Store(tmp_path)
     vecs = np.random.rand(1, DIM).astype(np.float32)
     ids = store.add(["test doc"], vecs, ns="default")
@@ -4646,7 +4656,8 @@ def test_http_compact_meta_strips_all(tmp_path):
 
 def test_http_compact_meta_keeps_keys(tmp_path):
     """GET /compact-meta?keep= keeps specified keys."""
-    import numpy as np, json
+
+    import numpy as np
     store = Store(tmp_path)
     vecs = np.random.rand(1, DIM).astype(np.float32)
     store.add(["doc"], vecs, ns="default", meta=[{"keep": 1, "drop": 2}])
@@ -4759,7 +4770,7 @@ def test_http_recent_returns_results(tmp_path):
     assert data["count"] == 2
 
 
-def test_http_recent_all_ns(tmp_path):
+def test_http_newest_all_ns(tmp_path):
     """GET /newest without ns spans all namespaces."""
     import numpy as np
     store = Store(tmp_path)
@@ -5085,7 +5096,8 @@ def test_mcp_copy_to_ns_missing(tmp_path):
 
 def test_http_rename_tag(tmp_path):
     """POST /rename-tag renames tag in memories."""
-    import numpy as np, json as _j
+
+    import numpy as np
     store = Store(tmp_path)
     vecs = np.random.rand(1, DIM).astype(np.float32)
     store.add(["m"], vecs, ns="default", meta=[{"tags": ["old"]}])

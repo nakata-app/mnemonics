@@ -45,8 +45,8 @@ SKIP_ABILITIES = {"abstention"}  # no source turns by design
 
 
 def load_size(size: str) -> list[dict]:
-    from huggingface_hub import hf_hub_download
     import pyarrow.parquet as pq
+    from huggingface_hub import hf_hub_download
 
     path = hf_hub_download(REPO, SIZES[size], repo_type="dataset")
     return pq.ParquetFile(path).read().to_pylist()

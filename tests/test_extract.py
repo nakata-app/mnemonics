@@ -212,8 +212,8 @@ def test_extract_many():
 # ── _default_client ───────────────────────────────────────────────────────────
 
 def test_default_client_deepseek_key(monkeypatch, tmp_path):
-    from unittest.mock import MagicMock as _MM
     import sys
+    from unittest.mock import MagicMock as _MM
     mock_openai_mod = _MM()
     mock_cls = _MM(return_value=_MM())
     mock_openai_mod.OpenAI = mock_cls
@@ -228,8 +228,8 @@ def test_default_client_deepseek_key(monkeypatch, tmp_path):
 
 
 def test_default_client_openai_key(monkeypatch):
-    from unittest.mock import MagicMock as _MM
     import sys
+    from unittest.mock import MagicMock as _MM
     mock_openai_mod = _MM()
     mock_cls = _MM(return_value=_MM())
     mock_openai_mod.OpenAI = mock_cls
@@ -243,8 +243,8 @@ def test_default_client_openai_key(monkeypatch):
 
 
 def test_default_client_no_key_raises(monkeypatch):
-    from unittest.mock import MagicMock as _MM
     import sys
+    from unittest.mock import MagicMock as _MM
     mock_openai_mod = _MM()
     mock_openai_mod.OpenAI = _MM(return_value=_MM())
     monkeypatch.setitem(sys.modules, "openai", mock_openai_mod)

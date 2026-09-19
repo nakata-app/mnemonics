@@ -17,11 +17,9 @@ import json
 import os
 import tempfile
 import time
-from pathlib import Path
 
 import numpy as np
 import requests as req
-
 
 NVIDIA_API_KEY = os.environ.get("NVIDIA_API_KEY", "")
 NIM_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
@@ -77,6 +75,7 @@ def llm_answer(question: str, context_texts: list[str]) -> str:
 
 def run(dataset_path: str, n: int | None, top_k: int, model: str) -> dict:
     from sentence_transformers import SentenceTransformer
+
     from mnemonics.store import Store
 
     print(f"Loading encoder: {model}", flush=True)
