@@ -33,6 +33,7 @@ def test_server_warmup_primes_realistic_batch(monkeypatch):
     from mnemonics import server
 
     seen: list[list[str]] = []
+    searches: list[tuple[str, dict]] = []
 
     class FakeEncoder:
         def encode(self, texts, **kwargs):
@@ -48,6 +49,16 @@ def test_server_warmup_primes_realistic_batch(monkeypatch):
             assert ns == "sessions"
             return 42
 
+        def search(self, vector, **kwargs):
+            searches.append(("vector", kwargs))
+            assert kwargs["touch"] is False
+            return []
+
+        def search_bm25(self, query, **kwargs):
+            searches.append(("bm25", kwargs))
+            assert query == "provider timeout cleanup"
+            return []
+
     monkeypatch.setattr(server, "_get_store", lambda: FakeStore())
     monkeypatch.setattr(
         server,
@@ -61,5 +72,6 @@ def test_server_warmup_primes_realistic_batch(monkeypatch):
     assert len(seen) == 1
     assert len(seen[0]) == 4
     assert "src/agent/provider-attempt.ts" in seen[0]
+    assert [kind for kind, _ in searches] == ["vector", "bm25"]
     assert result["dim"] == 1024
     assert result["count"] == 42
