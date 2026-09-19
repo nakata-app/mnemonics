@@ -61,6 +61,19 @@ def main() -> None:
     r.add_argument("--json", dest="json_out", action="store_true", help="Output results as JSON array")
     r.add_argument("--path", default="~/.mnemonics")
 
+    # retrieve-plan (bounded deterministic multi-query retrieval)
+    rp = sub.add_parser("retrieve-plan", help="Search memory with deterministic multi-query planning + RRF fusion")
+    rp.add_argument("query")
+    rp.add_argument("--ns", default="default")
+    rp.add_argument("--top-k", type=int, default=5)
+    rp.add_argument("--candidate-k", type=int, default=50)
+    rp.add_argument("--max-queries", type=int, default=4)
+    rp.add_argument("--rerank", action="store_true")
+    rp.add_argument("--no-decay", action="store_true")
+    rp.add_argument("--no-hybrid", dest="hybrid", action="store_false", default=True)
+    rp.add_argument("--json", dest="json_out", action="store_true")
+    rp.add_argument("--path", default="~/.mnemonics")
+
     # bm25 (pure keyword search)
     bm = sub.add_parser("bm25", help="Pure BM25 keyword search (no vector encoding)")
     bm.add_argument("query")
@@ -994,6 +1007,35 @@ def main() -> None:
                     print(f"      └─ raw: {r['text'][:120]}")
                 else:
                     print(f"{header} {r['text'][:120]}")
+
+    elif args.cmd == "retrieve-plan":
+        from mnemonics.query_plan import retrieve_planned
+        from mnemonics.store import Store
+        store = Store(args.path)
+        result = retrieve_planned(
+            query=args.query,
+            store=store,
+            ns=args.ns,
+            top_k=args.top_k,
+            candidate_k=args.candidate_k,
+            max_queries=args.max_queries,
+            decay=not args.no_decay,
+            hybrid=args.hybrid,
+            rerank=args.rerank,
+        )
+        if args.json_out:
+            print(json.dumps(result, default=str, ensure_ascii=False))
+        else:
+            print("planned queries:")
+            for q in result["queries"]:
+                print(f"  [{q['kind']} w={q['weight']:.2f}] {q['text']}")
+            print("results:")
+            for row in result["results"]:
+                matched = ",".join(row.get("matched_queries", []))
+                print(
+                    f"  [plan={row.get('plan_score', 0.0):.5f}] "
+                    f"[id={row['id']} via={matched}] {row['text'][:120]}"
+                )
 
     elif args.cmd == "bm25":
         from mnemonics.store import Store
