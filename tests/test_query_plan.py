@@ -33,23 +33,58 @@ def test_weighted_rrf_rewards_cross_query_agreement():
     assert rows[0]["matched_queries"] == ["original", "symbols"]
 
 
-def test_retrieve_planned_runs_bounded_subqueries_and_fuses(monkeypatch):
-    calls: list[str] = []
+def test_retrieve_planned_batches_embeddings_and_touches_final_rows_once(monkeypatch):
+    calls: list[dict] = []
+    encoded_batches: list[list[str]] = []
+    touched: list[list[int]] = []
+
+    class FakeEncoder:
+        def encode(self, texts, **kwargs):
+            batch = list(texts)
+            encoded_batches.append(batch)
+            return [[float(i), 0.0, 0.0] for i, _ in enumerate(batch, start=1)]
+
+    class FakeStore:
+        def touch_ids(self, ids):
+            touched.append(list(ids))
+            return len(ids)
 
     def fake_retrieve(*, query, **kwargs):
-        calls.append(query)
+        calls.append({"query": query, **kwargs})
         if "provider-attempt" in query:
-            return {"results": [{"id": 7, "score": 0.8, "text": "provider attempt", "tier": 1}]}
-        return {"results": [{"id": 8, "score": 0.7, "text": "other", "tier": 1}]}
+            return {
+                "results": [
+                    {"id": 7, "score": 0.8, "text": "provider attempt", "tier": 1},
+                    {"id": 9, "score": 0.4, "text": "shared", "tier": 1},
+                ]
+            }
+        return {
+            "results": [
+                {"id": 8, "score": 0.7, "text": "other", "tier": 1},
+                {"id": 9, "score": 0.6, "text": "shared", "tier": 1},
+            ]
+        }
 
+    monkeypatch.setattr(
+        "mnemonics.query_plan._resolve_model_for_store",
+        lambda model, store: "resolved-model",
+    )
+    monkeypatch.setattr("mnemonics.query_plan._get_encoder", lambda model: FakeEncoder())
     monkeypatch.setattr("mnemonics.query_plan.retrieve", fake_retrieve)
+
     result = retrieve_planned(
         "Inspect src/agent/provider-attempt.ts and runProviderAttempt",
-        store=object(),  # fake_retrieve ignores the store
+        store=FakeStore(),
         top_k=2,
         max_queries=3,
     )
 
-    assert 1 <= len(calls) <= 3
+    assert len(encoded_batches) == 1
+    assert encoded_batches[0] == [q["text"] for q in result["queries"]]
+    assert len(calls) == len(result["queries"])
+    assert all(call["touch"] is False for call in calls)
+    assert all(call["model"] == "resolved-model" for call in calls)
+    assert all(call["query_vector"] is not None for call in calls)
+    assert touched == [[row["id"] for row in result["results"]]]
     assert result["queries"][0]["kind"] == "original"
-    assert result["results"][0]["id"] == 7
+    assert result["results"][0]["id"] in {7, 9}
