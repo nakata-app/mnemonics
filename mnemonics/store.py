@@ -296,6 +296,12 @@ class Store:
             self._index[ns] = idx
         return self._index[ns]
 
+    def warm_namespace(self, ns: str) -> int:
+        """Load/refresh a namespace HNSW index without touching retrieval counters."""
+        with self._ns_file_lock(ns, exclusive=False), self._lock:
+            self._reload_if_stale(ns)
+            return int(self._index_for(ns).get_current_count())
+
     def add(
         self,
         texts: list[str],
