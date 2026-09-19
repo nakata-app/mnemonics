@@ -1387,7 +1387,7 @@ def test_serve_http_path(monkeypatch, tmp_path):
     monkeypatch.setattr(srv, "_store", None)
     monkeypatch.setattr(srv, "MNEMONICS_PATH", str(tmp_path))
     with (
-        patch("mnemonics.server.HTTPServer") as mock_httpserver,
+        patch("mnemonics.server.ThreadingHTTPServer") as mock_httpserver,
         patch("builtins.print"),
     ):
         mock_instance = MagicMock()

@@ -1,9 +1,12 @@
 """Ingest text into the store: chunk → embed → save."""
 from __future__ import annotations
 
+import logging
 import os
 import re
+import shutil
 import threading
+from pathlib import Path
 from typing import Any, Literal, overload
 
 from mnemonics.store import Store
@@ -299,6 +302,128 @@ def _fastembed_model_name(model_name: str) -> str:
     return model_name
 
 
+def _fastembed_hf_cache_dir(model_name: str, cache_dir: str) -> Path | None:
+    """Return the exact Hugging Face cache directory used by FastEmbed.
+
+    This never guesses outside cache_dir. The directory name comes from
+    FastEmbed's own supported-model metadata and is flattened the same way as
+    huggingface_hub (owner/repo -> models--owner--repo).
+    """
+    try:
+        from fastembed import TextEmbedding
+
+        resolved = _fastembed_model_name(model_name)
+        spec = next(
+            (
+                item
+                for item in TextEmbedding.list_supported_models()
+                if item.get("model") == resolved
+            ),
+            None,
+        )
+        source = (spec or {}).get("sources", {}).get("hf")
+        if not isinstance(source, str) or not source.strip():
+            return None
+        safe_name = source.strip().replace("/", "--")
+        if not re.fullmatch(r"[A-Za-z0-9._-]+(?:--[A-Za-z0-9._-]+)+", safe_name):
+            return None
+        return Path(cache_dir).expanduser() / f"models--{safe_name}"
+    except Exception:
+        return None
+
+
+def _fastembed_gcs_cache_dir(model_name: str, cache_dir: str) -> Path | None:
+    """Return FastEmbed's local GCS-extracted model directory, if defined."""
+    try:
+        from fastembed import TextEmbedding
+
+        resolved = _fastembed_model_name(model_name)
+        spec = next(
+            (
+                item
+                for item in TextEmbedding.list_supported_models()
+                if item.get("model") == resolved
+            ),
+            None,
+        )
+        sources = (spec or {}).get("sources", {})
+        if not isinstance(sources, dict) or not sources.get("url"):
+            return None
+        leaf = resolved.rsplit("/", 1)[-1]
+        if not re.fullmatch(r"[A-Za-z0-9._-]+", leaf):
+            return None
+        prefix = "fast-" if bool(sources.get("_deprecated_tar_struct")) else ""
+        return Path(cache_dir).expanduser() / f"{prefix}{leaf}"
+    except Exception:
+        return None
+
+
+def _fastembed_cache_looks_corrupt(
+    model_name: str,
+    cache_dir: str,
+    error: Exception,
+) -> bool:
+    candidate = _fastembed_hf_cache_dir(model_name, cache_dir)
+    if candidate is not None and candidate.exists():
+        try:
+            if any(candidate.rglob("*.incomplete")):
+                return True
+        except OSError:
+            pass
+
+    message = str(error).lower()
+    markers = (
+        "no_suchfile",
+        "no such file",
+        "file doesn't exist",
+        "files have been corrupted",
+        "corrupted during downloading",
+        "model.onnx failed",
+    )
+    return any(marker in message for marker in markers)
+
+
+def _purge_fastembed_model_cache(model_name: str, cache_dir: str) -> bool:
+    """Delete only the one FastEmbed HF model cache entry, never the root."""
+    candidate = _fastembed_hf_cache_dir(model_name, cache_dir)
+    if candidate is None or not candidate.exists():
+        return False
+    try:
+        if candidate.is_symlink():
+            candidate.unlink()
+        else:
+            shutil.rmtree(candidate)
+        return True
+    except OSError:
+        return False
+
+
+def _recover_fastembed_from_gcs(model_name: str, cache_dir: str) -> Path | None:
+    """Download one supported FastEmbed model through its registry GCS mirror."""
+    try:
+        from fastembed import TextEmbedding
+
+        resolved = _fastembed_model_name(model_name)
+        for embedding_type in TextEmbedding.EMBEDDINGS_REGISTRY:
+            try:
+                description = embedding_type._get_model_description(resolved)
+            except ValueError:
+                continue
+            source_url = description.sources.url
+            if not source_url:
+                return None
+            return embedding_type.retrieve_model_gcs(
+                description.model,
+                str(source_url),
+                str(Path(cache_dir).expanduser()),
+                deprecated_tar_struct=description.sources.deprecated_tar_struct,
+                local_files_only=False,
+            )
+    except Exception:
+        return None
+    return None
+
+
 class _FastEmbedEncoder:
     """encode()-compatible ONNX encoder for stock models (fastembed, torch-free)."""
 
@@ -310,10 +435,53 @@ class _FastEmbedEncoder:
             "MNEMONICS_FASTEMBED_CACHE",
             os.path.expanduser("~/.cache/fastembed"),
         )
-        self._emb = TextEmbedding(
-            model_name=self._model_name,
-            cache_dir=cache_dir,
+        local_gcs = _fastembed_gcs_cache_dir(self._model_name, cache_dir)
+        local_gcs_ready = bool(
+            local_gcs is not None
+            and (local_gcs / "model.onnx").is_file()
         )
+        try:
+            if local_gcs_ready and local_gcs is not None:
+                self._emb = TextEmbedding(
+                    model_name=self._model_name,
+                    cache_dir=cache_dir,
+                    specific_model_path=str(local_gcs),
+                )
+            else:
+                self._emb = TextEmbedding(
+                    model_name=self._model_name,
+                    cache_dir=cache_dir,
+                )
+        except Exception as first_error:
+            offline = os.environ.get("HF_HUB_OFFLINE", "").strip().upper() in {
+                "1", "TRUE", "YES", "ON"
+            }
+            repair_enabled = os.environ.get(
+                "MNEMONICS_FASTEMBED_REPAIR", "1"
+            ).strip().lower() not in {"0", "false", "off", "no"}
+            repaired = (
+                repair_enabled
+                and not offline
+                and _fastembed_cache_looks_corrupt(
+                    self._model_name,
+                    cache_dir,
+                    first_error,
+                )
+                and _purge_fastembed_model_cache(self._model_name, cache_dir)
+            )
+            if not repaired:
+                raise
+            recovered_dir = _recover_fastembed_from_gcs(
+                self._model_name,
+                cache_dir,
+            )
+            if recovered_dir is None:
+                raise first_error
+            self._emb = TextEmbedding(
+                model_name=self._model_name,
+                cache_dir=cache_dir,
+                specific_model_path=str(recovered_dir),
+            )
         self._dim = next(
             (
                 int(item["dim"])
@@ -367,7 +535,12 @@ def _build_encoder(resolved: str) -> Any:
     # fresh store unusable, so fall back to sentence-transformers.
     try:
         return _FastEmbedEncoder(resolved)
-    except Exception:
+    except Exception as error:
+        logging.getLogger("mnemonics").warning(
+            "FastEmbed unavailable for %s (%s); falling back to sentence-transformers",
+            resolved,
+            error,
+        )
         from sentence_transformers import SentenceTransformer
 
         return SentenceTransformer(resolved)
