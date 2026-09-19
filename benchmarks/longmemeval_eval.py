@@ -496,6 +496,47 @@ def _session_id_of(meta: str | None) -> str | None:
     return None
 
 
+_PREFERENCE_ADVICE_PATTERNS = (
+    re.compile(r"\b(?:any|some)\s+(?:tips|ideas|recommendations|suggestions)\b", re.I),
+    re.compile(r"\b(?:can|could|would)\s+you\s+(?:suggest|recommend)\b", re.I),
+    re.compile(r"\bwhat\s+should\s+i\b", re.I),
+    re.compile(r"\bdo\s+you\s+think\b.{0,80}\b(?:good idea|should i)\b", re.I),
+    re.compile(r"\bhow\s+can\s+i\b", re.I),
+)
+
+
+def _preference_advice_query(question: str) -> bool:
+    """High-precision, label-free detector for personalized advice queries."""
+    return any(pattern.search(question or "") for pattern in _PREFERENCE_ADVICE_PATTERNS)
+
+
+def _preference_aware_reorder(
+    question: str,
+    results: list[dict],
+    *,
+    max_rank: int = 5,
+) -> list[dict]:
+    """Promote one retrieved preference synthesis for advice-like questions.
+
+    This only reorders the existing top band; it never manufactures recall and
+    never fires on factual lookups. Experimental until LongMemEval A/B proves it.
+    """
+    if not _preference_advice_query(question) or not results:
+        return results
+    limit = min(max_rank, len(results))
+    idx = next(
+        (
+            i for i, row in enumerate(results[:limit])
+            if isinstance(row.get("meta"), dict)
+            and row["meta"].get("kind") == "preference"
+        ),
+        None,
+    )
+    if idx is None or idx == 0:
+        return results
+    return [results[idx], *results[:idx], *results[idx + 1:]]
+
+
 def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                        candidate_k: int = 20,
                        augment_preferences: bool = False,
@@ -516,7 +557,8 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                        trust_gate_pin_margin: float | None = None,
                        dump_candidates: Path | None = None,
                        per_q_out: Path | None = None,
-                       planned: bool = False) -> dict:
+                       planned: bool = False,
+                       preference_aware: bool = False) -> dict:
     """Run Mnemonics retrieval across every question and aggregate metrics.
 
     planned=False is the historical benchmark path. planned=True swaps only
@@ -774,6 +816,12 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                         top_n=llm_rerank_top_n,
                     )
 
+            if preference_aware:
+                result["results"] = _preference_aware_reorder(
+                    q.get("question", ""),
+                    result["results"],
+                )
+
             answer_sids = set(q.get("answer_session_ids") or [])
             retrieved_sids: list[str] = []
             for r in result["results"]:
@@ -875,6 +923,8 @@ def main():
     ap.add_argument("--mode", choices=["both", "no_rerank", "rerank"], default="both")
     ap.add_argument("--planned", action="store_true",
                     help="Use deterministic multi-query planning + weighted RRF before optional CE rerank")
+    ap.add_argument("--preference-aware", action="store_true",
+                    help="Experimental: for advice-like queries, promote one top-5 synthetic preference memory after rerank")
     ap.add_argument("--augment-preferences", action="store_true",
                     help="Pass augment_preferences=True to ingest (synth pref docs)")
     ap.add_argument("--augment-assistant-facts", action="store_true",
@@ -957,6 +1007,7 @@ def main():
             trust_gate_margin=args.trust_gate_margin,
             trust_gate_pin_margin=args.trust_gate_pin_margin,
             planned=args.planned,
+            preference_aware=args.preference_aware,
         )
 
     if args.mode in ("both", "rerank"):
@@ -982,6 +1033,7 @@ def main():
             dump_candidates=args.dump_candidates,
             per_q_out=args.per_q_out,
             planned=args.planned,
+            preference_aware=args.preference_aware,
         )
 
     args.out.write_text(json.dumps(results, indent=2))
