@@ -95,10 +95,37 @@ def update(result: dict[str, Any], meta: dict[str, Any]) -> dict[str, Any]:
             )
         )
     )
+    enriched = False
     if is_champ:
         _atomic_write(CHAMPION, json.dumps(record, indent=2))
+    elif eligible and cur is not None:
+        same_metrics = (
+            record["n"] == cur.get("n")
+            and record["R@1"] == cur.get("R@1")
+            and record["R@5"] == cur.get("R@5")
+            and record["R@10"] == cur.get("R@10")
+        )
+        if (
+            same_metrics
+            and not cur.get("by_type")
+            and bool(record.get("by_type"))
+        ):
+            enriched_record = {
+                **cur,
+                "by_type": record["by_type"],
+                "reproduced_at": record["date"],
+                "reproduction_source": record.get("source"),
+                **(
+                    {"reproduction_sha": meta["pinned_sha"]}
+                    if meta.get("pinned_sha")
+                    else {}
+                ),
+            }
+            _atomic_write(CHAMPION, json.dumps(enriched_record, indent=2))
+            enriched = True
     return {
         "champion": is_champ,
+        "enriched": enriched,
         "eligible_for_champion": eligible,
         "record": record,
     }

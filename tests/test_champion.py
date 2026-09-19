@@ -86,3 +86,73 @@ def test_nondeterministic_full_run_cannot_promote(tmp_path, monkeypatch):
 
     assert out["champion"] is False
     assert json.loads(champ.read_text())["R@1"] == 0.958
+
+
+def test_equal_verified_reproduction_can_fill_missing_by_type(tmp_path, monkeypatch):
+    champ = tmp_path / "CHAMPION.json"
+    ledger = tmp_path / "eval_ledger.jsonl"
+    champ.write_text(json.dumps({
+        "n": 500,
+        "R@1": 0.958,
+        "R@5": 1.0,
+        "R@10": 1.0,
+        "by_type": None,
+        "config": "original",
+        "date": "2026-06-21T00:00:00+00:00",
+    }))
+    monkeypatch.setattr(champion, "CHAMPION", champ)
+    monkeypatch.setattr(champion, "LEDGER", ledger)
+
+    result = _result(500, 0.958)
+    result["by_type"] = {
+        "temporal-reasoning": {"n": 10, "R@1": 0.9, "R@5": 1.0, "R@10": 1.0}
+    }
+    out = champion.update(
+        result,
+        {
+            "eligible_for_champion": True,
+            "deterministic": True,
+            "config": "verified reproduction",
+            "source": "kaggle_champion.py",
+            "pinned_sha": "abc123",
+        },
+    )
+
+    assert out["champion"] is False
+    assert out["enriched"] is True
+    saved = json.loads(champ.read_text())
+    assert saved["R@1"] == 0.958
+    assert saved["config"] == "original"
+    assert saved["by_type"] == result["by_type"]
+    assert saved["reproduction_source"] == "kaggle_champion.py"
+    assert saved["reproduction_sha"] == "abc123"
+
+
+def test_equal_reproduction_cannot_replace_existing_by_type(tmp_path, monkeypatch):
+    champ = tmp_path / "CHAMPION.json"
+    ledger = tmp_path / "eval_ledger.jsonl"
+    existing = {"knowledge-update": {"n": 1, "R@1": 1.0, "R@5": 1.0, "R@10": 1.0}}
+    champ.write_text(json.dumps({
+        "n": 500,
+        "R@1": 0.958,
+        "R@5": 1.0,
+        "R@10": 1.0,
+        "by_type": existing,
+    }))
+    monkeypatch.setattr(champion, "CHAMPION", champ)
+    monkeypatch.setattr(champion, "LEDGER", ledger)
+
+    result = _result(500, 0.958)
+    result["by_type"] = {"other": {"n": 1, "R@1": 0.0, "R@5": 0.0, "R@10": 0.0}}
+    out = champion.update(
+        result,
+        {
+            "eligible_for_champion": True,
+            "deterministic": True,
+            "config": "verified reproduction",
+        },
+    )
+
+    assert out["champion"] is False
+    assert out["enriched"] is False
+    assert json.loads(champ.read_text())["by_type"] == existing
