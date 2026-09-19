@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from mnemonics.query_plan import PlannedQuery, _weighted_rrf, plan_queries, retrieve_planned
+from mnemonics.query_plan import (
+    PlannedQuery,
+    _scope_factor,
+    _weighted_rrf,
+    plan_queries,
+    retrieve_planned,
+)
 
 
 def test_plan_queries_preserves_original_and_extracts_code_signals():
@@ -88,3 +94,26 @@ def test_retrieve_planned_batches_embeddings_and_touches_final_rows_once(monkeyp
     assert touched == [[row["id"] for row in result["results"]]]
     assert result["queries"][0]["kind"] == "original"
     assert result["results"][0]["id"] in {7, 9}
+
+
+def test_scope_factor_prefers_current_project_and_penalizes_other_scoped_project():
+    hints = ["/Users/macmini/Projects/svelka-work", "svelka-work"]
+
+    exact = _scope_factor(
+        {"meta": {"project": "/Users/macmini/Projects/svelka-work"}},
+        hints,
+    )
+    basename = _scope_factor(
+        {"meta": {"project": "svelka-work"}},
+        hints,
+    )
+    other = _scope_factor(
+        {"meta": {"project": "/Users/macmini/Projects/svelka-vbe"}},
+        hints,
+    )
+    unscoped = _scope_factor({"meta": {"tag": "svelka"}}, hints)
+
+    assert exact == 1.35
+    assert basename == 1.35
+    assert other == 0.90
+    assert unscoped == 1.0
