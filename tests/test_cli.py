@@ -2826,7 +2826,7 @@ def test_cli_update_text_ok(tmp_path, capsys):
         patch("mnemonics.store.Store", return_value=mock_store),
         patch("sys.argv", ["mnemonics", "update-text", "7", "hello world",
                            "--path", str(tmp_path)]),
-        patch("sentence_transformers.SentenceTransformer", return_value=mock_enc),
+        patch("mnemonics.ingest._get_encoder", return_value=mock_enc),
     ):
         main()
     assert "Updated" in capsys.readouterr().out
@@ -2844,7 +2844,7 @@ def test_cli_update_text_not_found(tmp_path, capsys):
         patch("mnemonics.store.Store", return_value=mock_store),
         patch("sys.argv", ["mnemonics", "update-text", "999", "hello",
                            "--path", str(tmp_path)]),
-        patch("sentence_transformers.SentenceTransformer", return_value=mock_enc),
+        patch("mnemonics.ingest._get_encoder", return_value=mock_enc),
     ):
         with pytest.raises(SystemExit) as exc:
             main()
