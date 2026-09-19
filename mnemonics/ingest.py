@@ -440,6 +440,34 @@ class _FastEmbedEncoder:
             local_gcs is not None
             and (local_gcs / "model.onnx").is_file()
         )
+        offline = os.environ.get("HF_HUB_OFFLINE", "").strip().upper() in {
+            "1", "TRUE", "YES", "ON"
+        }
+        repair_enabled = os.environ.get(
+            "MNEMONICS_FASTEMBED_REPAIR", "1"
+        ).strip().lower() not in {"0", "false", "off", "no"}
+
+        # A stale *.incomplete file is evidence of a previously interrupted
+        # download. Do not enter Hugging Face resolution first: that path may
+        # wait indefinitely on the same broken snapshot instead of raising,
+        # which means the post-error repair below would never run.
+        recovered_dir = None
+        if (
+            not local_gcs_ready
+            and repair_enabled
+            and not offline
+            and _fastembed_cache_looks_corrupt(
+                self._model_name,
+                cache_dir,
+                RuntimeError(""),
+            )
+            and _purge_fastembed_model_cache(self._model_name, cache_dir)
+        ):
+            recovered_dir = _recover_fastembed_from_gcs(
+                self._model_name,
+                cache_dir,
+            )
+
         try:
             if local_gcs_ready and local_gcs is not None:
                 self._emb = TextEmbedding(
@@ -447,18 +475,18 @@ class _FastEmbedEncoder:
                     cache_dir=cache_dir,
                     specific_model_path=str(local_gcs),
                 )
+            elif recovered_dir is not None:
+                self._emb = TextEmbedding(
+                    model_name=self._model_name,
+                    cache_dir=cache_dir,
+                    specific_model_path=str(recovered_dir),
+                )
             else:
                 self._emb = TextEmbedding(
                     model_name=self._model_name,
                     cache_dir=cache_dir,
                 )
         except Exception as first_error:
-            offline = os.environ.get("HF_HUB_OFFLINE", "").strip().upper() in {
-                "1", "TRUE", "YES", "ON"
-            }
-            repair_enabled = os.environ.get(
-                "MNEMONICS_FASTEMBED_REPAIR", "1"
-            ).strip().lower() not in {"0", "false", "off", "no"}
             repaired = (
                 repair_enabled
                 and not offline

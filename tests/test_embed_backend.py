@@ -83,7 +83,7 @@ def test_fastembed_corrupt_cache_is_purged_and_retried(tmp_path, monkeypatch):
             self.model_name = model_name
             self.cache_dir = cache_dir
             self.specific_model_path = specific_model_path
-            if calls == 1:
+            if specific_model_path is None:
                 raise RuntimeError(
                     "model.onnx failed: File doesn't exist"
                 )
@@ -114,7 +114,7 @@ def test_fastembed_corrupt_cache_is_purged_and_retried(tmp_path, monkeypatch):
 
     encoder = ingest_mod._FastEmbedEncoder("all-MiniLM-L6-v2")
 
-    assert calls == 2
+    assert calls == 1
     assert encoder._emb.specific_model_path == str(recovered)
     assert encoder.get_sentence_embedding_dimension() == 384
     assert not broken.exists()
