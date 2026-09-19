@@ -515,10 +515,16 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                        trust_gate_margin: float = 1.0,
                        trust_gate_pin_margin: float | None = None,
                        dump_candidates: Path | None = None,
-                       per_q_out: Path | None = None) -> dict:
-    """Run mnemonics retrieve() across every question, return aggregated metrics."""
+                       per_q_out: Path | None = None,
+                       planned: bool = False) -> dict:
+    """Run Mnemonics retrieval across every question and aggregate metrics.
+
+    planned=False is the historical benchmark path. planned=True swaps only
+    the retrieval call for deterministic multi-query planning + weighted RRF,
+    keeping ingestion, temporal policy, reranking and scoring identical.
+    """
+    from mnemonics.ingest import _get_encoder, ingest
     from mnemonics.store import Store
-    from mnemonics.ingest import ingest, _get_encoder
 
     # Resolve encoder once up-front so we can size the per-question Store to
     # whatever dim the active model emits (MNEMONICS_ENCODER_MODEL may swap
@@ -530,6 +536,7 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                   or os.environ.get("MNEMONICS_ADAPTMEM_PATH")
                   or "all-MiniLM-L6-v2")
     print(f"  encoder dim={store_dim} (model={_enc_label})", flush=True)
+    from mnemonics.query_plan import retrieve_planned
     from mnemonics.retrieve import retrieve
 
     if temporal_v3:
@@ -589,14 +596,24 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                 if hyp:
                     query = f"{query} {hyp}"
             try:
-                result = retrieve(
-                    query=query,
-                    store=store,
-                    ns="lme",
-                    top_k=top_k,
-                    candidate_k=candidate_k,
-                    rerank=rerank,
-                )
+                if planned:
+                    result = retrieve_planned(
+                        query=query,
+                        store=store,
+                        ns="lme",
+                        top_k=top_k,
+                        candidate_k=candidate_k,
+                        rerank=rerank,
+                    )
+                else:
+                    result = retrieve(
+                        query=query,
+                        store=store,
+                        ns="lme",
+                        top_k=top_k,
+                        candidate_k=candidate_k,
+                        rerank=rerank,
+                    )
             except RuntimeError as e:
                 print(f"  q{i} ERROR: {e}", file=sys.stderr)
                 continue
@@ -856,6 +873,8 @@ def main():
     ap.add_argument("--split-file", type=Path, default=None,
                     help="JSON with {'dev': [qid,...]} — subset by exact ids (apples-to-apples with MemPalace)")
     ap.add_argument("--mode", choices=["both", "no_rerank", "rerank"], default="both")
+    ap.add_argument("--planned", action="store_true",
+                    help="Use deterministic multi-query planning + weighted RRF before optional CE rerank")
     ap.add_argument("--augment-preferences", action="store_true",
                     help="Pass augment_preferences=True to ingest (synth pref docs)")
     ap.add_argument("--augment-assistant-facts", action="store_true",
@@ -937,6 +956,7 @@ def main():
             trust_gate_ce=args.trust_gate_ce,
             trust_gate_margin=args.trust_gate_margin,
             trust_gate_pin_margin=args.trust_gate_pin_margin,
+            planned=args.planned,
         )
 
     if args.mode in ("both", "rerank"):
@@ -961,6 +981,7 @@ def main():
             trust_gate_pin_margin=args.trust_gate_pin_margin,
             dump_candidates=args.dump_candidates,
             per_q_out=args.per_q_out,
+            planned=args.planned,
         )
 
     args.out.write_text(json.dumps(results, indent=2))
@@ -984,7 +1005,8 @@ def main():
         _best = results.get("mnemonics_rerank") or results.get("mnemonics_no_rerank")
         if _best:
             _r = _champ.update(_best, {
-                "config": (f"mode={args.mode} chunk={args.chunk_mode} "
+                "config": (f"mode={args.mode} planned={args.planned} "
+                           f"chunk={args.chunk_mode} "
                            f"temporal_aware={args.temporal_aware} "
                            f"augment_prefs={args.augment_preferences} "
                            f"cand_k={args.candidate_k} seed={args.seed}"),
