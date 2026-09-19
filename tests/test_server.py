@@ -6554,3 +6554,32 @@ def test_mcp_search_by_date_range_tier_arg(tmp_store):
                    "arguments": {"start": "2000-01-01", "end": "2099-12-31", "tier": 0}},
     })[0]
     assert "result" in resp
+
+# ── POST /retrieve-plan ───────────────────────────────────────────────────────
+
+def test_http_retrieve_plan_routes_to_planned_retrieval(tmp_store):
+    payload = {
+        "results": [{"id": 1, "text": "hit", "tier": 1}],
+        "queries": [{"text": "query", "weight": 1.0, "kind": "original"}],
+    }
+    with patch("mnemonics.server._retrieve_planned", return_value=payload) as planned:
+        code, data = http_call(
+            tmp_store,
+            "POST",
+            "/retrieve-plan",
+            {"query": "query", "ns": "sessions", "top_k": 3, "max_queries": 3},
+        )
+
+    assert code == 200
+    assert data == payload
+    planned.assert_called_once()
+    assert planned.call_args.kwargs["ns"] == "sessions"
+    assert planned.call_args.kwargs["top_k"] == 3
+    assert planned.call_args.kwargs["max_queries"] == 3
+
+
+def test_http_retrieve_plan_rejects_empty_query(tmp_store):
+    code, data = http_call(tmp_store, "POST", "/retrieve-plan", {"query": "  "})
+    assert code == 400
+    assert "query" in data["error"]
+
