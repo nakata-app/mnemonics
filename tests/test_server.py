@@ -6555,6 +6555,7 @@ def test_mcp_search_by_date_range_tier_arg(tmp_store):
     })[0]
     assert "result" in resp
 
+
 # ── POST /retrieve-plan ───────────────────────────────────────────────────────
 
 def test_http_retrieve_plan_routes_to_planned_retrieval(tmp_store):
@@ -6567,7 +6568,13 @@ def test_http_retrieve_plan_routes_to_planned_retrieval(tmp_store):
             tmp_store,
             "POST",
             "/retrieve-plan",
-            {"query": "query", "ns": "sessions", "top_k": 3, "max_queries": 3},
+            {
+                "query": "query",
+                "ns": "sessions",
+                "top_k": 3,
+                "max_queries": 3,
+                "project_hints": ["/repo/svelka", "svelka"],
+            },
         )
 
     assert code == 200
@@ -6576,12 +6583,14 @@ def test_http_retrieve_plan_routes_to_planned_retrieval(tmp_store):
     assert planned.call_args.kwargs["ns"] == "sessions"
     assert planned.call_args.kwargs["top_k"] == 3
     assert planned.call_args.kwargs["max_queries"] == 3
+    assert planned.call_args.kwargs["project_hints"] == ["/repo/svelka", "svelka"]
 
 
 def test_http_retrieve_plan_rejects_empty_query(tmp_store):
     code, data = http_call(tmp_store, "POST", "/retrieve-plan", {"query": "  "})
     assert code == 400
     assert "query" in data["error"]
+
 
 # ── POST /warmup ──────────────────────────────────────────────────────────────
 
@@ -6606,6 +6615,7 @@ def test_http_warmup_rejects_empty_namespace(tmp_store):
     code, data = http_call(tmp_store, "POST", "/warmup", {"ns": "  "})
     assert code == 400
     assert "ns" in data["error"]
+
 
 # ── POST /ingest canonical lifecycle ──────────────────────────────────────────
 
@@ -6648,3 +6658,13 @@ def test_http_ingest_canonical_rejects_multiple_texts(tmp_store):
     assert code == 400
     assert "exactly one" in data["error"]
 
+
+def test_http_retrieve_plan_rejects_invalid_project_hints(tmp_store):
+    code, data = http_call(
+        tmp_store,
+        "POST",
+        "/retrieve-plan",
+        {"query": "query", "project_hints": ["ok", 7]},
+    )
+    assert code == 400
+    assert "project_hints" in data["error"]
