@@ -964,6 +964,7 @@ class Store:
         summary: str | None = None,
         meta: dict | None = None,
         tier: int = 1,
+        retire_canonical_keys: list[str] | None = None,
     ) -> dict[str, Any]:
         """Atomically upsert one caller-defined canonical fact slot.
 
@@ -976,6 +977,23 @@ class Store:
         key = canonical_key.strip()
         if not key or len(key) > 256 or any(ord(ch) < 32 for ch in key):
             raise ValueError("canonical_key must be 1-256 printable characters")
+        retire_keys: list[str] = []
+        for raw_key in retire_canonical_keys or []:
+            if not isinstance(raw_key, str):
+                raise ValueError("retire_canonical_keys must contain strings")
+            sibling_key = raw_key.strip()
+            if (
+                not sibling_key
+                or len(sibling_key) > 256
+                or any(ord(ch) < 32 for ch in sibling_key)
+            ):
+                raise ValueError(
+                    "retire_canonical_keys must contain 1-256 printable characters"
+                )
+            if sibling_key != key and sibling_key not in retire_keys:
+                retire_keys.append(sibling_key)
+        if len(retire_keys) > 16:
+            raise ValueError("retire_canonical_keys supports at most 16 keys")
         vec = np.asarray(vector, dtype=np.float32).reshape(1, -1)
         if vec.shape[1] != self.dim:
             raise ValueError(f"vector dim {vec.shape[1]} != store dim {self.dim}")
@@ -997,13 +1015,29 @@ class Store:
                 if old_meta.get("status") != "superseded":
                     active.append((int(row_id), old_text, old_meta))
 
+            retire_active: list[tuple[int, str, dict]] = []
+            if retire_keys:
+                placeholders = ",".join("?" * len(retire_keys))
+                sibling_rows = self._db.execute(
+                    "SELECT id, text, meta FROM memories WHERE ns=? "
+                    f"AND json_extract(meta,'$.canonical_key') IN ({placeholders}) "
+                    "ORDER BY id",
+                    (ns, *retire_keys),
+                ).fetchall()
+                for row_id, old_text, raw_meta in sibling_rows:
+                    old_meta = _j_can.loads(raw_meta) if raw_meta else {}
+                    if old_meta.get("status") != "superseded":
+                        retire_active.append((int(row_id), old_text, old_meta))
+
             exact = [row for row in active if row[1] == text]
             if exact:
                 winner = max(exact, key=lambda row: row[0])
                 superseded: list[int] = []
-                for old_id, _old_text, old_meta in active:
-                    if old_id == winner[0]:
-                        continue
+                retire_rows = [
+                    row for row in active
+                    if row[0] != winner[0]
+                ] + retire_active
+                for old_id, _old_text, old_meta in retire_rows:
                     old_meta.update({
                         "status": "superseded",
                         "superseded_by": winner[0],
@@ -1016,6 +1050,22 @@ class Store:
                     )
                     superseded.append(old_id)
                 if superseded:
+                    winner_meta = dict(winner[2])
+                    prior = [
+                        int(mid)
+                        for mid in winner_meta.get("supersedes", [])
+                        if isinstance(mid, int)
+                    ]
+                    winner_meta["supersedes"] = list(dict.fromkeys(
+                        [*prior, *superseded]
+                    ))
+                    self._db.execute(
+                        "UPDATE memories SET meta=? WHERE id=?",
+                        (
+                            _j_can.dumps(winner_meta, ensure_ascii=False),
+                            winner[0],
+                        ),
+                    )
                     self._db.commit()
                 return {
                     "action": "consolidate" if superseded else "noop",
@@ -1023,7 +1073,8 @@ class Store:
                     "superseded": superseded,
                 }
 
-            old_ids = [row[0] for row in active]
+            old_rows = [*active, *retire_active]
+            old_ids = list(dict.fromkeys(row[0] for row in old_rows))
             new_meta = dict(meta or {})
             new_meta.update({
                 "canonical_key": key,
@@ -1036,7 +1087,11 @@ class Store:
                 (ns, text, summary, _j_can.dumps(new_meta, ensure_ascii=False), tier),
             )
             new_id = int(cur.lastrowid)
-            for old_id, _old_text, old_meta in active:
+            seen_old: set[int] = set()
+            for old_id, _old_text, old_meta in old_rows:
+                if old_id in seen_old:
+                    continue
+                seen_old.add(old_id)
                 old_meta.update({
                     "status": "superseded",
                     "superseded_by": new_id,

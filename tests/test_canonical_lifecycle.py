@@ -111,3 +111,112 @@ def test_canonical_key_validation_and_vector_dimension(tmp_path):
         assert "vector dim" in str(exc)
     else:
         raise AssertionError("wrong vector dimension must fail")
+
+
+def test_canonical_can_atomically_retire_sibling_slot(tmp_path):
+    store = Store(path=tmp_path, dim=3)
+    ambient = store.add_canonical(
+        "task was inconclusive",
+        vec(1, 0, 0),
+        ns="project",
+        canonical_key="episode:ambient:task",
+        tier=2,
+    )
+    verified = store.add_canonical(
+        "task completed with verified evidence",
+        vec(0.99, 0.01, 0),
+        ns="project",
+        canonical_key="episode:verified:task",
+        tier=1,
+        retire_canonical_keys=["episode:ambient:task"],
+    )
+
+    assert verified["action"] == "update"
+    assert verified["superseded"] == [ambient["id"]]
+    ambient_meta = json.loads(
+        store._db.execute(
+            "SELECT meta FROM memories WHERE id=?", (ambient["id"],)
+        ).fetchone()[0]
+    )
+    verified_meta = json.loads(
+        store._db.execute(
+            "SELECT meta FROM memories WHERE id=?", (verified["id"],)
+        ).fetchone()[0]
+    )
+    assert ambient_meta["status"] == "superseded"
+    assert ambient_meta["superseded_by"] == verified["id"]
+    assert ambient_meta["valid_until"]
+    assert verified_meta["status"] == "active"
+    assert verified_meta["supersedes"] == [ambient["id"]]
+
+    visible = store.search(vec(1, 0, 0), ns="project", top_k=10)
+    visible_ids = {row["id"] for row in visible}
+    assert ambient["id"] not in visible_ids
+    assert verified["id"] in visible_ids
+
+
+def test_exact_verified_reingest_can_retire_late_ambient_sibling(tmp_path):
+    store = Store(path=tmp_path, dim=3)
+    verified = store.add_canonical(
+        "verified result",
+        vec(1, 0, 0),
+        ns="project",
+        canonical_key="episode:verified:task",
+        tier=1,
+    )
+    ambient = store.add_canonical(
+        "later inconclusive retry",
+        vec(0.9, 0.1, 0),
+        ns="project",
+        canonical_key="episode:ambient:task",
+        tier=2,
+    )
+
+    repeated = store.add_canonical(
+        "verified result",
+        vec(1, 0, 0),
+        ns="project",
+        canonical_key="episode:verified:task",
+        tier=1,
+        retire_canonical_keys=["episode:ambient:task"],
+    )
+
+    assert repeated["action"] == "consolidate"
+    assert repeated["id"] == verified["id"]
+    assert repeated["superseded"] == [ambient["id"]]
+    ambient_meta = json.loads(
+        store._db.execute(
+            "SELECT meta FROM memories WHERE id=?", (ambient["id"],)
+        ).fetchone()[0]
+    )
+    verified_meta = json.loads(
+        store._db.execute(
+            "SELECT meta FROM memories WHERE id=?", (verified["id"],)
+        ).fetchone()[0]
+    )
+    assert ambient_meta["superseded_by"] == verified["id"]
+    assert ambient["id"] in verified_meta["supersedes"]
+
+
+def test_retire_canonical_keys_are_namespace_scoped(tmp_path):
+    store = Store(path=tmp_path, dim=3)
+    other = store.add_canonical(
+        "other project ambient",
+        vec(1, 0, 0),
+        ns="other",
+        canonical_key="episode:ambient:task",
+    )
+    store.add_canonical(
+        "verified result",
+        vec(1, 0, 0),
+        ns="project",
+        canonical_key="episode:verified:task",
+        retire_canonical_keys=["episode:ambient:task"],
+    )
+
+    other_meta = json.loads(
+        store._db.execute(
+            "SELECT meta FROM memories WHERE id=?", (other["id"],)
+        ).fetchone()[0]
+    )
+    assert other_meta["status"] == "active"

@@ -6882,3 +6882,74 @@ def test_http_feedback_rejects_invalid_payload(tmp_store, body):
     code, data = http_call(tmp_store, "POST", "/feedback", body)
     assert code == 400
     assert "error" in data
+
+
+def test_http_canonical_accepts_summary_and_retire_sibling_keys(tmp_store):
+    result = {
+        "action": "update",
+        "id": 12,
+        "superseded": [7],
+        "canonical_key": "episode:verified:task",
+        "ns": "sessions",
+        "encoder": "m",
+    }
+    with patch("mnemonics.server._canonical_ingest", return_value=result) as canonical:
+        code, data = http_call(
+            tmp_store,
+            "POST",
+            "/ingest",
+            {
+                "texts": ["verified result"],
+                "canonical_key": "episode:verified:task",
+                "retire_canonical_keys": ["episode:ambient:task"],
+                "summary": "the user request",
+                "meta": {"verified": True},
+            },
+        )
+
+    assert code == 200
+    assert data["canonical"]["id"] == 12
+    assert canonical.call_args.kwargs["summary"] == "the user request"
+    assert canonical.call_args.kwargs["retire_canonical_keys"] == [
+        "episode:ambient:task"
+    ]
+
+
+@pytest.mark.parametrize(
+    "retire_keys",
+    [
+        "episode:ambient:task",
+        [""],
+        [7],
+        ["x"] * 17,
+    ],
+)
+def test_http_canonical_rejects_bad_retire_sibling_keys(tmp_store, retire_keys):
+    code, data = http_call(
+        tmp_store,
+        "POST",
+        "/ingest",
+        {
+            "texts": ["verified result"],
+            "canonical_key": "episode:verified:task",
+            "retire_canonical_keys": retire_keys,
+        },
+    )
+    assert code == 400
+    assert "retire_canonical_keys" in data["error"]
+
+
+def test_http_canonical_rejects_ambiguous_summary_shape(tmp_store):
+    code, data = http_call(
+        tmp_store,
+        "POST",
+        "/ingest",
+        {
+            "texts": ["verified result"],
+            "canonical_key": "episode:verified:task",
+            "summary": "one",
+            "summaries": ["two"],
+        },
+    )
+    assert code == 400
+    assert "either summary or summaries" in data["error"]
