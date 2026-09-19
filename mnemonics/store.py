@@ -884,6 +884,116 @@ class Store:
             self._db.commit()
         return True
 
+    def add_canonical(
+        self,
+        text: str,
+        vector: np.ndarray,
+        *,
+        ns: str,
+        canonical_key: str,
+        summary: str | None = None,
+        meta: dict | None = None,
+        tier: int = 1,
+    ) -> dict[str, Any]:
+        """Atomically upsert one caller-defined canonical fact slot.
+
+        At most one active row for the key survives. Older/conflicting rows
+        are archived as superseded; exact re-ingest is idempotent and also
+        repairs duplicate active rows.
+        """
+        if tier not in (0, 1, 2):
+            raise ValueError("tier must be 0, 1, or 2")
+        key = canonical_key.strip()
+        if not key or len(key) > 256 or any(ord(ch) < 32 for ch in key):
+            raise ValueError("canonical_key must be 1-256 printable characters")
+        vec = np.asarray(vector, dtype=np.float32).reshape(1, -1)
+        if vec.shape[1] != self.dim:
+            raise ValueError(f"vector dim {vec.shape[1]} != store dim {self.dim}")
+
+        import json as _j_can
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        with self._ns_file_lock(ns, exclusive=True), self._lock:
+            self._reload_if_stale(ns)
+            rows = self._db.execute(
+                "SELECT id, text, meta FROM memories WHERE ns=? "
+                "AND json_extract(meta,'$.canonical_key')=? ORDER BY id",
+                (ns, key),
+            ).fetchall()
+            active: list[tuple[int, str, dict]] = []
+            for row_id, old_text, raw_meta in rows:
+                old_meta = _j_can.loads(raw_meta) if raw_meta else {}
+                if old_meta.get("status") != "superseded":
+                    active.append((int(row_id), old_text, old_meta))
+
+            exact = [row for row in active if row[1] == text]
+            if exact:
+                winner = max(exact, key=lambda row: row[0])
+                superseded: list[int] = []
+                for old_id, _old_text, old_meta in active:
+                    if old_id == winner[0]:
+                        continue
+                    old_meta.update({
+                        "status": "superseded",
+                        "superseded_by": winner[0],
+                        "superseded_at": now,
+                        "valid_until": now,
+                    })
+                    self._db.execute(
+                        "UPDATE memories SET meta=? WHERE id=?",
+                        (_j_can.dumps(old_meta, ensure_ascii=False), old_id),
+                    )
+                    superseded.append(old_id)
+                if superseded:
+                    self._db.commit()
+                return {
+                    "action": "consolidate" if superseded else "noop",
+                    "id": winner[0],
+                    "superseded": superseded,
+                }
+
+            old_ids = [row[0] for row in active]
+            new_meta = dict(meta or {})
+            new_meta.update({
+                "canonical_key": key,
+                "status": "active",
+                "valid_from": now,
+                "supersedes": old_ids,
+            })
+            cur = self._db.execute(
+                "INSERT INTO memories (ns, text, summary, meta, tier) VALUES (?, ?, ?, ?, ?)",
+                (ns, text, summary, _j_can.dumps(new_meta, ensure_ascii=False), tier),
+            )
+            new_id = int(cur.lastrowid)
+            for old_id, _old_text, old_meta in active:
+                old_meta.update({
+                    "status": "superseded",
+                    "superseded_by": new_id,
+                    "superseded_at": now,
+                    "valid_until": now,
+                })
+                self._db.execute(
+                    "UPDATE memories SET meta=? WHERE id=?",
+                    (_j_can.dumps(old_meta, ensure_ascii=False), old_id),
+                )
+            self._db.commit()
+
+            idx = self._index_for(ns)
+            needed = idx.get_current_count() + 1
+            if needed > idx.get_max_elements():
+                idx.resize_index(max(needed * 2, idx.get_max_elements() * 2))
+            idx.add_items(vec, [new_id])
+            idx_path = self.root / f"index_{ns}.bin"
+            idx.save_index(str(idx_path))
+            self._index_mtime[ns] = idx_path.stat().st_mtime
+
+        return {
+            "action": "update" if old_ids else "add",
+            "id": new_id,
+            "superseded": old_ids,
+        }
+
     def supersede(self, old_id: int, new_id: int, at: str | None = None) -> bool:
         """Mark *old_id* as replaced by *new_id* without deleting it.
 
