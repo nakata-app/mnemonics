@@ -863,6 +863,23 @@ class _Handler(BaseHTTPRequestHandler):
             if candidate_k < 1:
                 self._json(400, {"error": "candidate_k must be >= 1"})
                 return
+            project_hints = body.get("project_hints")
+            if project_hints is not None:
+                if (
+                    not isinstance(project_hints, list)
+                    or len(project_hints) > 8
+                    or any(
+                        not isinstance(hint, str)
+                        or not hint.strip()
+                        or len(hint) > 512
+                        for hint in project_hints
+                    )
+                ):
+                    self._json(
+                        400,
+                        {"error": "project_hints must be an array of <=8 non-empty strings"},
+                    )
+                    return
             try:
                 mt_min = body.get("min_tier")
                 mt_max = body.get("max_tier")
@@ -877,6 +894,7 @@ class _Handler(BaseHTTPRequestHandler):
                     rerank=bool(body.get("rerank", False)),
                     min_tier=int(mt_min) if mt_min is not None else None,
                     max_tier=int(mt_max) if mt_max is not None else None,
+                    project_hints=project_hints,
                 )
             except RuntimeError as e:
                 self._json(400, {"error": str(e)})

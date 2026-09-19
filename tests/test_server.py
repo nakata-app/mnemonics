@@ -6953,3 +6953,52 @@ def test_http_canonical_rejects_ambiguous_summary_shape(tmp_store):
     )
     assert code == 400
     assert "either summary or summaries" in data["error"]
+
+
+# ── POST /retrieve project scope ──────────────────────────────────────────────
+
+def test_http_retrieve_passes_project_hints_to_baseline_retriever(tmp_store):
+    payload = {"results": [{"id": 1, "text": "hit"}]}
+    with patch("mnemonics.server._retrieve", return_value=payload) as retrieve_mock:
+        code, data = http_call(
+            tmp_store,
+            "POST",
+            "/retrieve",
+            {
+                "query": "provider timeout",
+                "ns": "sessions",
+                "top_k": 5,
+                "project_hints": [
+                    "/Users/macmini/Projects/svelka-work",
+                    "svelka-work",
+                ],
+            },
+        )
+
+    assert code == 200
+    assert data == payload
+    assert retrieve_mock.call_args.kwargs["project_hints"] == [
+        "/Users/macmini/Projects/svelka-work",
+        "svelka-work",
+    ]
+
+
+@pytest.mark.parametrize(
+    "hints",
+    [
+        "svelka-work",
+        [""],
+        [7],
+        ["x" * 513],
+        ["x"] * 9,
+    ],
+)
+def test_http_retrieve_rejects_invalid_project_hints(tmp_store, hints):
+    code, data = http_call(
+        tmp_store,
+        "POST",
+        "/retrieve",
+        {"query": "provider timeout", "project_hints": hints},
+    )
+    assert code == 400
+    assert "project_hints" in data["error"]
