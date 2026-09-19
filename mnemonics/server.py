@@ -72,17 +72,24 @@ def _warm_store(ns: str = "sessions") -> dict[str, Any]:
     store = _get_store()
     resolved = _resolve_model_for_store("all-MiniLM-L6-v2", store)
     encoder = _get_encoder(resolved)
-    probe = encoder.encode(
-        ["mnemonics warmup"],
+    probes = encoder.encode(
+        [
+            "mnemonics warmup",
+            "src/agent/provider-attempt.ts",
+            "runProviderAttempt",
+            "provider timeout stall cleanup memory retrieval",
+        ],
+        batch_size=4,
+        show_progress_bar=False,
         normalize_embeddings=True,
         convert_to_numpy=True,
-    )[0]
+    )
     count = store.warm_namespace(ns)
     return {
         "status": "ready",
         "ns": ns,
         "encoder": resolved,
-        "dim": int(len(probe)),
+        "dim": int(len(probes[0])),
         "count": count,
         "elapsed_ms": round((perf_counter() - started) * 1000, 1),
     }
