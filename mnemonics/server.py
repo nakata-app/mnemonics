@@ -37,6 +37,7 @@ import json
 import os
 import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from time import perf_counter
 from typing import Any
 
 try:
@@ -45,7 +46,7 @@ except importlib.metadata.PackageNotFoundError:
     _VERSION = "0.3.0"
 
 from mnemonics.dedup import reconcile_ingest as _reconcile_ingest
-from mnemonics.ingest import ingest as _ingest
+from mnemonics.ingest import _get_encoder, _resolve_model_for_store, ingest as _ingest
 from mnemonics.query_plan import retrieve_planned as _retrieve_planned
 from mnemonics.retrieve import retrieve as _retrieve
 from mnemonics.store import Store
@@ -61,6 +62,28 @@ def _get_store() -> Store:
     if _store is None:
         _store = Store(MNEMONICS_PATH)
     return _store
+
+
+def _warm_store(ns: str = "sessions") -> dict[str, Any]:
+    """Preload the active encoder + namespace index without mutating access counters."""
+    started = perf_counter()
+    store = _get_store()
+    resolved = _resolve_model_for_store("all-MiniLM-L6-v2", store)
+    encoder = _get_encoder(resolved)
+    probe = encoder.encode(
+        ["mnemonics warmup"],
+        normalize_embeddings=True,
+        convert_to_numpy=True,
+    )[0]
+    count = store.warm_namespace(ns)
+    return {
+        "status": "ready",
+        "ns": ns,
+        "encoder": resolved,
+        "dim": int(len(probe)),
+        "count": count,
+        "elapsed_ms": round((perf_counter() - started) * 1000, 1),
+    }
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -131,7 +154,17 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(400, {"error": "invalid JSON"})
             return
 
-        if self.path == "/repair":
+        if self.path == "/warmup":
+            ns = body.get("ns", "sessions")
+            if not isinstance(ns, str) or not ns.strip():
+                self._json(400, {"error": "ns must be a non-empty string"})
+                return
+            try:
+                self._json(200, _warm_store(ns.strip()))
+            except Exception as e:
+                self._json(500, {"error": f"warmup failed: {e}"})
+
+        elif self.path == "/repair":
             self._json(200, _get_store().repair())
 
         elif self.path == "/reindex-all":
