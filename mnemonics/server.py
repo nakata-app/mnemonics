@@ -36,7 +36,7 @@ import importlib.metadata
 import json
 import os
 import sys
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from time import perf_counter
 from typing import Any
 
@@ -4518,7 +4518,7 @@ def serve(port: int = MNEMONICS_PORT, mcp: bool = False) -> None:
     print(f"[mnemonics] listening on 127.0.0.1:{port}", flush=True)
     # Bind to localhost only. Do NOT change to "0.0.0.0" — that would expose
     # the entire memory store to anyone on the local network.
-    server = HTTPServer(("127.0.0.1", port), _Handler)
+    server = ThreadingHTTPServer(("127.0.0.1", port), _Handler)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

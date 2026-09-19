@@ -3,12 +3,14 @@ from __future__ import annotations
 
 import os
 import re
+import threading
 from typing import Any, Literal, overload
 
 from mnemonics.store import Store
 
 _encoder: Any = None
 _encoder_name: str = "all-MiniLM-L6-v2"
+_encoder_lock = threading.Lock()
 
 
 # Preference / memory / concern phrase patterns. When ingest's
@@ -375,8 +377,11 @@ def _get_encoder(model: str = _encoder_name) -> Any:
     global _encoder, _encoder_name
     resolved = _resolve_model(model)
     if _encoder is None or resolved != _encoder_name:
-        _encoder = _build_encoder(resolved)
-        _encoder_name = resolved
+        with _encoder_lock:
+            if _encoder is None or resolved != _encoder_name:
+                built = _build_encoder(resolved)
+                _encoder = built
+                _encoder_name = resolved
     return _encoder
 
 
