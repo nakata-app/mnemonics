@@ -1016,10 +1016,14 @@ def main():
                             or "all-MiniLM-L6-v2"),
                 "dataset": "longmemeval_s",
                 "source": "longmemeval_eval.py",
+                "deterministic": os.environ.get("MNEMONICS_DETERMINISTIC") == "1",
+                "eligible_for_champion": False,
             })
-            _tag = "YENI SAMPIYON" if _r["champion"] else "kaydedildi"
-            print(f"\n[champion] {_tag}: R@1={_best.get('R@1')} -> {_champ.CHAMPION}",
-                  flush=True)
+            print(
+                f"\n[ledger] recorded R@1={_best.get('R@1')} "
+                f"(champion promotion disabled for generic evals)",
+                flush=True,
+            )
     except Exception as _e:
         print(f"[champion] kayit atlandi (eval sonucu korundu): {_e}", flush=True)
 

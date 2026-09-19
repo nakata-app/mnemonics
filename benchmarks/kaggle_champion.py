@@ -14,18 +14,23 @@ krun geri ceker.
 Kullanim:
   krun benchmarks/kaggle_champion.py --dataset atakanakbaba/mnemonics-lme --acc NvidiaTeslaT4
 """
-import os, sys, json, time, subprocess
+import json
+import os
+import subprocess
+import sys
+import time
 
 WORK = '/kaggle/working'
 REPO = f'{WORK}/mnemonics'
 RESULTS = f'{WORK}/results'
 os.makedirs(RESULTS, exist_ok=True)
 
-KAGGLE_DS = '/kaggle/input/mnemonics-lme/longmemeval_s_cleaned.json'
 DATA = f'{WORK}/longmemeval_s.json'
 URL = 'https://huggingface.co/datasets/xiaowu0162/longmemeval/resolve/main/longmemeval_s'
 MIN_BYTES = 100_000_000
 CE_MODEL = 'BAAI/bge-reranker-v2-m3'
+BRANCH = 'work/memory-sota'
+PINNED_SHA = '9bc64247cbe603ab61fe06834ae96db6cebc5689'
 
 
 def retry(fn, what, tries=3, wait=8):
@@ -43,8 +48,29 @@ def retry(fn, what, tries=3, wait=8):
 # 1) Repo
 def clone():
     subprocess.run(['rm', '-rf', REPO], check=False)
-    subprocess.run(['git', 'clone', '--depth', '1',
-                    'https://github.com/nakata-app/mnemonics.git', REPO], check=True)
+    subprocess.run([
+        'git', 'clone', '--depth', '1', '--branch', BRANCH,
+        'https://github.com/nakata-app/mnemonics.git', REPO,
+    ], check=True)
+    head = subprocess.check_output(
+        ['git', '-C', REPO, 'rev-parse', 'HEAD'],
+        text=True,
+    ).strip()
+    if head != PINNED_SHA:
+        subprocess.run(
+            ['git', '-C', REPO, 'fetch', '--depth', '1', 'origin', PINNED_SHA],
+            check=True,
+        )
+        subprocess.run(
+            ['git', '-C', REPO, 'checkout', '--detach', 'FETCH_HEAD'],
+            check=True,
+        )
+        head = subprocess.check_output(
+            ['git', '-C', REPO, 'rev-parse', 'HEAD'],
+            text=True,
+        ).strip()
+    if head != PINNED_SHA:
+        raise RuntimeError(f'checkout drift: expected {PINNED_SHA}, got {head}')
 retry(clone, 'git clone')
 subprocess.run(['git', '-C', REPO, 'log', '--oneline', '-3'])
 
@@ -59,8 +85,12 @@ print('Install OK', flush=True)
 def valid(p):
     return os.path.exists(p) and os.path.getsize(p) > MIN_BYTES
 
-if valid(KAGGLE_DS):
-    DATA = KAGGLE_DS
+mounted = []
+for root, _dirs, files in os.walk('/kaggle/input'):
+    if 'longmemeval_s_cleaned.json' in files:
+        mounted.append(os.path.join(root, 'longmemeval_s_cleaned.json'))
+if mounted and valid(sorted(mounted)[0]):
+    DATA = sorted(mounted)[0]
     print(f'Kaggle dataset: {DATA} ({os.path.getsize(DATA)/1e6:.1f} MB)', flush=True)
 elif valid(DATA):
     print(f'Cache var: {DATA} ({os.path.getsize(DATA)/1e6:.1f} MB)', flush=True)
@@ -81,6 +111,8 @@ env = os.environ.copy()
 env['LME_DATA'] = DATA
 env['PYTHONUNBUFFERED'] = '1'
 env['MNEMONICS_RERANK_MODEL'] = CE_MODEL
+env['MNEMONICS_DETERMINISTIC'] = '1'
+env['MNEMONICS_EMBED_BACKEND'] = 'sentence-transformers'
 
 EVAL = 'benchmarks/longmemeval_eval.py'
 # PEER_COORDINATION production config + augment-preferences
