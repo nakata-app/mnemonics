@@ -118,10 +118,31 @@ DIM = int(os.environ.get("MNEMONICS_DIM", "384"))
 class Store:
     """Thread-safe memory store backed by SQLite + hnswlib."""
 
-    def __init__(self, path: str | Path = "~/.mnemonics", dim: int = DIM):
+    def __init__(self, path: str | Path = "~/.mnemonics", dim: int | None = None):
         self.root = Path(path).expanduser()
         self.root.mkdir(parents=True, exist_ok=True)
-        self.dim = dim
+        self.dim = self._resolve_dim(dim, self.root)
+        self._init_db_and_locks()
+
+    @staticmethod
+    def _resolve_dim(dim: int | None, root: Path) -> int:
+        """Resolve vector dimensionality from explicit config or store provenance."""
+        if dim is not None:
+            return int(dim)
+        env = os.environ.get("MNEMONICS_DIM")
+        if env and env.strip():
+            return int(env)
+        try:
+            from mnemonics import embed_manifest as _em
+
+            stamped = _em.read(root)
+        except Exception:
+            stamped = None
+        if stamped and stamped.get("dim"):
+            return int(stamped["dim"])
+        return int(DIM)
+
+    def _init_db_and_locks(self) -> None:
         self._lock = threading.Lock()
         self._db = sqlite3.connect(str(self.root / "memories.db"), check_same_thread=False)
         _apply_key(self._db)
