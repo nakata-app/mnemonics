@@ -258,6 +258,11 @@ class _OnnxEmbeddingEncoder:
         self._tok.enable_padding(
             pad_id=self._tok.token_to_id("[PAD]"), pad_token="[PAD]"
         )
+        output_dim = self._session.get_outputs()[0].shape[-1]
+        self._dim = int(output_dim) if isinstance(output_dim, int) else 0
+
+    def get_sentence_embedding_dimension(self) -> int:
+        return self._dim
 
     def encode(
         self,
@@ -285,13 +290,32 @@ class _OnnxEmbeddingEncoder:
         return np.concatenate(outs, axis=0).astype("float32")
 
 
+def _fastembed_model_name(model_name: str) -> str:
+    """Map sentence-transformers shorthand ids to FastEmbed registry ids."""
+    if model_name == "all-MiniLM-L6-v2":
+        return "sentence-transformers/all-MiniLM-L6-v2"
+    return model_name
+
+
 class _FastEmbedEncoder:
     """encode()-compatible ONNX encoder for stock models (fastembed, torch-free)."""
 
     def __init__(self, model_name: str):
         from fastembed import TextEmbedding
 
-        self._emb = TextEmbedding(model_name=model_name)
+        self._model_name = _fastembed_model_name(model_name)
+        self._emb = TextEmbedding(model_name=self._model_name)
+        self._dim = next(
+            (
+                int(item["dim"])
+                for item in TextEmbedding.list_supported_models()
+                if item.get("model") == self._model_name and item.get("dim")
+            ),
+            0,
+        )
+
+    def get_sentence_embedding_dimension(self) -> int:
+        return self._dim
 
     def encode(
         self,
