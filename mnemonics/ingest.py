@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Any
+from typing import Any, Literal, overload
 
 from mnemonics.store import Store
 
@@ -391,6 +391,57 @@ def _chunk(text: str, size: int = 200, overlap: int = 40) -> list[str]:
         chunks.append(chunk)
         i += size - overlap
     return chunks
+
+
+@overload
+def ingest(
+    texts: list[str],
+    store: Store,
+    ns: str = "default",
+    meta: list[dict] | None = None,
+    summaries: list[str | None] | None = None,
+    model: str = "all-MiniLM-L6-v2",
+    chunk_size: int = 200,
+    chunk_overlap: int = 40,
+    augment_preferences: bool = False,
+    augment_assistant_facts: bool = False,
+    tier: int = 1,
+    return_ids: Literal[False] = False,
+) -> int: ...
+
+
+@overload
+def ingest(
+    texts: list[str],
+    store: Store,
+    ns: str = "default",
+    meta: list[dict] | None = None,
+    summaries: list[str | None] | None = None,
+    model: str = "all-MiniLM-L6-v2",
+    chunk_size: int = 200,
+    chunk_overlap: int = 40,
+    augment_preferences: bool = False,
+    augment_assistant_facts: bool = False,
+    tier: int = 1,
+    return_ids: Literal[True] = True,
+) -> list[int]: ...
+
+
+@overload
+def ingest(
+    texts: list[str],
+    store: Store,
+    ns: str = "default",
+    meta: list[dict] | None = None,
+    summaries: list[str | None] | None = None,
+    model: str = "all-MiniLM-L6-v2",
+    chunk_size: int = 200,
+    chunk_overlap: int = 40,
+    augment_preferences: bool = False,
+    augment_assistant_facts: bool = False,
+    tier: int = 1,
+    return_ids: bool = False,
+) -> int | list[int]: ...
 
 
 def ingest(
