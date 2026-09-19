@@ -44,8 +44,9 @@ try:
 except importlib.metadata.PackageNotFoundError:
     _VERSION = "0.3.0"
 
-from mnemonics.ingest import ingest as _ingest
 from mnemonics.dedup import reconcile_ingest as _reconcile_ingest
+from mnemonics.ingest import ingest as _ingest
+from mnemonics.query_plan import retrieve_planned as _retrieve_planned
 from mnemonics.retrieve import retrieve as _retrieve
 from mnemonics.store import Store
 
@@ -739,6 +740,38 @@ class _Handler(BaseHTTPRequestHandler):
                     decay=bool(body.get("decay", True)),
                     hybrid=hybrid,
                     candidate_k=candidate_k,
+                    rerank=bool(body.get("rerank", False)),
+                    min_tier=int(mt_min) if mt_min is not None else None,
+                    max_tier=int(mt_max) if mt_max is not None else None,
+                )
+            except RuntimeError as e:
+                self._json(400, {"error": str(e)})
+                return
+            self._json(200, result)
+
+        elif self.path == "/retrieve-plan":
+            query = body.get("query", "").strip()
+            if not query:
+                self._json(400, {"error": "query must not be empty"})
+                return
+            candidate_k = int(body.get("candidate_k", 50))
+            max_queries = int(body.get("max_queries", 4))
+            top_k = int(body.get("top_k", 5))
+            if candidate_k < 1 or top_k < 1 or max_queries < 1:
+                self._json(400, {"error": "candidate_k, top_k and max_queries must be >= 1"})
+                return
+            try:
+                mt_min = body.get("min_tier")
+                mt_max = body.get("max_tier")
+                result = _retrieve_planned(
+                    query=query,
+                    store=_get_store(),
+                    ns=body.get("ns", "default"),
+                    top_k=top_k,
+                    candidate_k=candidate_k,
+                    max_queries=min(max_queries, 8),
+                    decay=bool(body.get("decay", True)),
+                    hybrid=bool(body.get("hybrid", True)),
                     rerank=bool(body.get("rerank", False)),
                     min_tier=int(mt_min) if mt_min is not None else None,
                     max_tier=int(mt_max) if mt_max is not None else None,
