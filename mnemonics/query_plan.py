@@ -105,6 +105,38 @@ def _weighted_rrf(
     return out
 
 
+def _scope_factor(row: dict[str, Any], project_hints: list[str] | None) -> float:
+    """Prefer matching project metadata without hiding unscoped historical rows."""
+    if not project_hints:
+        return 1.0
+
+    hints = {
+        " ".join(h.strip().lower().split()).rstrip("/")
+        for h in project_hints
+        if isinstance(h, str) and h.strip()
+    }
+    if not hints:
+        return 1.0
+    hint_basenames = {h.rsplit("/", 1)[-1] for h in hints}
+
+    meta = row.get("meta")
+    if not isinstance(meta, dict):
+        return 1.0
+    values = [
+        value.strip().lower().rstrip("/")
+        for key in ("project", "cwd", "repo", "workspace")
+        if isinstance((value := meta.get(key)), str) and value.strip()
+    ]
+    if not values:
+        return 1.0
+    for value in values:
+        if value in hints:
+            return 1.35
+        if value.rsplit("/", 1)[-1] in hint_basenames:
+            return 1.25
+    return 0.90
+
+
 def retrieve_planned(
     query: str,
     store: Store,
@@ -118,6 +150,7 @@ def retrieve_planned(
     rerank: bool = False,
     min_tier: int | None = None,
     max_tier: int | None = None,
+    project_hints: list[str] | None = None,
 ) -> dict[str, Any]:
     """Retrieve with deterministic query expansion and weighted rank fusion.
 
@@ -160,6 +193,17 @@ def retrieve_planned(
         ranked.append((plan, result["results"]))
 
     fused = _weighted_rrf(ranked, top_k=max(top_k * 3, top_k))
+    if project_hints:
+        for row in fused:
+            factor = _scope_factor(row, project_hints)
+            row["scope_boost"] = factor
+            row["scope_score"] = round(float(row["plan_score"]) * factor, 8)
+        fused.sort(
+            key=lambda row: (
+                -float(row.get("scope_score", row["plan_score"])),
+                int(row["id"]),
+            )
+        )
     if rerank:
         fused = _ce_rerank(query, fused, top_k=top_k)
     else:
