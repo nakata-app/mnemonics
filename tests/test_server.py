@@ -6668,3 +6668,184 @@ def test_http_retrieve_plan_rejects_invalid_project_hints(tmp_store):
     )
     assert code == 400
     assert "project_hints" in data["error"]
+
+# ── memory SOTA REST/MCP edge coverage ────────────────────────────────────────
+
+def test_http_warmup_surfaces_internal_failure(tmp_store):
+    with patch("mnemonics.server._warm_store", side_effect=RuntimeError("boom")):
+        code, data = http_call(tmp_store, "POST", "/warmup", {"ns": "sessions"})
+    assert code == 500
+    assert "boom" in data["error"]
+
+
+@pytest.mark.parametrize("canonical_key", ["", "   ", 7])
+def test_http_canonical_rejects_invalid_key(tmp_store, canonical_key):
+    code, data = http_call(
+        tmp_store,
+        "POST",
+        "/ingest",
+        {"texts": ["x"], "canonical_key": canonical_key},
+    )
+    assert code == 400
+    assert "canonical_key" in data["error"]
+
+
+def test_http_canonical_requires_one_text(tmp_store):
+    code, data = http_call(
+        tmp_store,
+        "POST",
+        "/ingest",
+        {"texts": ["a", "b"], "canonical_key": "fact:x"},
+    )
+    assert code == 400
+    assert "exactly one" in data["error"]
+
+
+def test_http_canonical_accepts_one_item_meta_array(tmp_store):
+    result = {
+        "action": "add",
+        "id": 9,
+        "superseded": [],
+        "canonical_key": "fact:x",
+        "ns": "default",
+        "encoder": "m",
+    }
+    with patch("mnemonics.server._canonical_ingest", return_value=result) as canonical:
+        code, data = http_call(
+            tmp_store,
+            "POST",
+            "/ingest",
+            {
+                "texts": ["x"],
+                "canonical_key": "fact:x",
+                "meta": [{"project": "p"}],
+            },
+        )
+    assert code == 200
+    assert data["canonical"]["id"] == 9
+    assert canonical.call_args.kwargs["meta"] == {"project": "p"}
+
+
+def test_http_canonical_rejects_bad_meta(tmp_store):
+    code, data = http_call(
+        tmp_store,
+        "POST",
+        "/ingest",
+        {"texts": ["x"], "canonical_key": "fact:x", "meta": ["bad", "shape"]},
+    )
+    assert code == 400
+    assert "canonical meta" in data["error"]
+
+
+def test_http_retrieve_plan_rejects_invalid_bounds(tmp_store):
+    code, data = http_call(
+        tmp_store,
+        "POST",
+        "/retrieve-plan",
+        {"query": "q", "candidate_k": 0},
+    )
+    assert code == 400
+    assert "candidate_k" in data["error"]
+
+
+def test_http_retrieve_plan_surfaces_runtime_error(tmp_store):
+    with patch("mnemonics.server._retrieve_planned", side_effect=RuntimeError("bad model")):
+        code, data = http_call(
+            tmp_store,
+            "POST",
+            "/retrieve-plan",
+            {"query": "q"},
+        )
+    assert code == 400
+    assert "bad model" in data["error"]
+
+
+def _mcp_ingest_args(**extra):
+    args = {"texts": ["new fact"]}
+    args.update(extra)
+    return {
+        "jsonrpc": "2.0",
+        "id": 990,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_ingest", "arguments": args},
+    }
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"canonical_key": ""},
+        {"canonical_key": "fact:x", "texts": ["a", "b"]},
+        {"canonical_key": "fact:x", "supersede": [1]},
+    ],
+)
+def test_mcp_canonical_validation(tmp_store, extra):
+    resp = _mcp(tmp_store, _mcp_ingest_args(**extra))[0]
+    assert "error" in resp
+
+
+def test_mcp_canonical_happy_path(tmp_store):
+    result = {
+        "action": "update",
+        "id": 3,
+        "superseded": [1],
+        "canonical_key": "fact:x",
+        "ns": "default",
+        "encoder": "m",
+    }
+    with patch("mnemonics.server._canonical_ingest", return_value=result):
+        resp = _mcp(
+            tmp_store,
+            _mcp_ingest_args(
+                canonical_key="fact:x",
+                summary="gist",
+                meta={"project": "p"},
+                tier=0,
+            ),
+        )[0]
+    assert resp["result"]["canonical"] == result
+    assert "Canonical update" in resp["result"]["content"][0]["text"]
+
+
+def test_mcp_reconcile_rejects_bad_supersede_array(tmp_store):
+    resp = _mcp(tmp_store, _mcp_ingest_args(supersede=["bad"]))[0]
+    assert "error" in resp
+
+
+def test_mcp_reconcile_rejects_bad_supersede_object(tmp_store):
+    resp = _mcp(tmp_store, _mcp_ingest_args(supersede={"0": ["bad"]}))[0]
+    assert "error" in resp
+
+
+def test_mcp_reconcile_rejects_wrong_supersede_shape(tmp_store):
+    resp = _mcp(tmp_store, _mcp_ingest_args(supersede="bad"))[0]
+    assert "error" in resp
+
+
+@pytest.mark.parametrize(
+    "supersede,expected_map",
+    [
+        ([1, 2], {0: [1, 2]}),
+        ({"0": [1], "2": [3]}, {0: [1], 2: [3]}),
+    ],
+)
+def test_mcp_reconcile_builds_supersede_map_and_reports_all_outcomes(
+    tmp_store, supersede, expected_map
+):
+    result = {
+        "added": [10],
+        "noop_skipped": [{"index": 0}],
+        "superseded": [{"old_id": 1, "new_id": 10}],
+        "supersede_failed": [999],
+    }
+    with patch("mnemonics.server._reconcile_ingest", return_value=result) as reconcile:
+        resp = _mcp(
+            tmp_store,
+            _mcp_ingest_args(supersede=supersede, reconcile=True),
+        )[0]
+    assert reconcile.call_args.kwargs["supersede_map"] == expected_map
+    text = resp["result"]["content"][0]["text"]
+    assert "Skipped 1 duplicate" in text
+    assert "Superseded 1 old memory" in text
+    assert "not found" in text
+
