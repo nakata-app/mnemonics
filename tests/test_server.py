@@ -6583,3 +6583,27 @@ def test_http_retrieve_plan_rejects_empty_query(tmp_store):
     assert code == 400
     assert "query" in data["error"]
 
+# ── POST /warmup ──────────────────────────────────────────────────────────────
+
+def test_http_warmup_routes_to_warm_store(tmp_store):
+    payload = {
+        "status": "ready",
+        "ns": "sessions",
+        "encoder": "model",
+        "dim": 1024,
+        "count": 12,
+        "elapsed_ms": 1.2,
+    }
+    with patch("mnemonics.server._warm_store", return_value=payload) as warm:
+        code, data = http_call(tmp_store, "POST", "/warmup", {"ns": "sessions"})
+
+    assert code == 200
+    assert data == payload
+    warm.assert_called_once_with("sessions")
+
+
+def test_http_warmup_rejects_empty_namespace(tmp_store):
+    code, data = http_call(tmp_store, "POST", "/warmup", {"ns": "  "})
+    assert code == 400
+    assert "ns" in data["error"]
+
