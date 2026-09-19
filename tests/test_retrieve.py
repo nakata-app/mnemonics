@@ -1,8 +1,6 @@
 """Tests for mnemonics.retrieve (V2: tier + decay + reinforcement)."""
 import math
-import sqlite3
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -370,6 +368,7 @@ def test_get_rerank_ce_adaptmem_with_rerank(monkeypatch):
     """adaptmem available + has rerank → return AdaptMem instance."""
     import sys
     from unittest.mock import MagicMock
+
     from mnemonics import retrieve as _ret
 
     mock_am = MagicMock()
@@ -390,7 +389,7 @@ def test_get_rerank_ce_adaptmem_with_rerank(monkeypatch):
 def test_get_rerank_ce_missing_sentence_transformers(monkeypatch):
     """If sentence_transformers is missing and adaptmem fails → RuntimeError."""
     import sys
-    from unittest.mock import MagicMock
+
     from mnemonics import retrieve as _ret
 
     # Make adaptmem import fail
@@ -411,6 +410,7 @@ def test_get_rerank_ce_missing_sentence_transformers(monkeypatch):
 def test_retrieve_min_tier_filter(tmp_path, mock_enc):
     """retrieve min_tier excludes tier-0 items from results."""
     import numpy as np
+
     from mnemonics.store import DIM, Store
     s = Store(tmp_path)
     rng = np.random.default_rng(7)
@@ -427,6 +427,7 @@ def test_retrieve_min_tier_filter(tmp_path, mock_enc):
 def test_retrieve_max_tier_filter(tmp_path, mock_enc):
     """retrieve max_tier excludes tier-2 items from results."""
     import numpy as np
+
     from mnemonics.store import DIM, Store
     s = Store(tmp_path)
     rng = np.random.default_rng(13)
