@@ -46,6 +46,11 @@ def main() -> None:
         default=1,
         help="Initial tier for ingested chunks: 0=pinned, 1=default, 2=ambient (default: 1)",
     )
+    i.add_argument(
+        "--canonical-key",
+        default=None,
+        help="Explicit fact-slot identity. Re-ingesting this key supersedes its prior active value.",
+    )
 
     # retrieve
     r = sub.add_parser("retrieve", help="Search memory")
@@ -971,8 +976,31 @@ def main() -> None:
                 print("--meta: must be a JSON object", file=sys.stderr)
                 sys.exit(2)
         metas = [meta_dict] if meta_dict is not None else None
-        n = ingest(texts=[joined], store=store, ns=args.ns, summaries=summaries, meta=metas, tier=args.tier)
-        print(f"Stored {n} chunk(s).")
+        if args.canonical_key:
+            from mnemonics.lifecycle import canonical_ingest
+            result = canonical_ingest(
+                joined,
+                store,
+                canonical_key=args.canonical_key,
+                ns=args.ns,
+                summary=args.summary,
+                meta=meta_dict,
+                tier=args.tier,
+            )
+            print(
+                f"Canonical {result['action']}: {result['canonical_key']} -> "
+                f"id {result['id']} (superseded={result['superseded']})."
+            )
+        else:
+            n = ingest(
+                texts=[joined],
+                store=store,
+                ns=args.ns,
+                summaries=summaries,
+                meta=metas,
+                tier=args.tier,
+            )
+            print(f"Stored {n} chunk(s).")
 
     elif args.cmd == "retrieve":
         from mnemonics.retrieve import retrieve
