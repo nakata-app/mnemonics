@@ -195,6 +195,41 @@ def _reinforcement_boost(access_count: int) -> float:
     return min(1.0 + math.log(1 + access_count) * _BOOST_RATE, _BOOST_CAP)
 
 
+def project_scope_factor(
+    row: dict[str, Any],
+    project_hints: list[str] | None,
+) -> float:
+    """Prefer matching project metadata without hiding unscoped history."""
+    if not project_hints:
+        return 1.0
+
+    hints = {
+        " ".join(h.strip().lower().split()).rstrip("/")
+        for h in project_hints
+        if isinstance(h, str) and h.strip()
+    }
+    if not hints:
+        return 1.0
+    hint_basenames = {h.rsplit("/", 1)[-1] for h in hints}
+
+    meta = row.get("meta")
+    if not isinstance(meta, dict):
+        return 1.0
+    values = [
+        value.strip().lower().rstrip("/")
+        for key in ("project", "cwd", "repo", "workspace")
+        if isinstance((value := meta.get(key)), str) and value.strip()
+    ]
+    if not values:
+        return 1.0
+    for value in values:
+        if value in hints:
+            return 1.35
+        if value.rsplit("/", 1)[-1] in hint_basenames:
+            return 1.25
+    return 0.90
+
+
 def retrieve(
     query: str,
     store: Store,
@@ -210,6 +245,7 @@ def retrieve(
     max_tier: int | None = None,
     query_vector: Any | None = None,
     touch: bool = True,
+    project_hints: list[str] | None = None,
 ) -> dict[str, Any]:
     """Search the store for query. Tier-aware decay + reinforcement applied unless decay=False.
 
@@ -269,7 +305,7 @@ def retrieve(
     # champion (R@1 0.958) was measured with the current behaviour. Turn it on
     # to A/B it; do not flip the default until that A/B exists.
     score_full_band = os.environ.get("MNEMONICS_SCORE_FULL_BAND") == "1"
-    fusion_top = candidate_k if (rerank or score_full_band) else top_k
+    fusion_top = candidate_k if (rerank or score_full_band or project_hints) else top_k
     if hybrid:
         vec_results = store.search(
             qvec,
@@ -316,8 +352,28 @@ def retrieve(
             r["signal_boost"] = 1.0
 
     if rerank:
-        results = _ce_rerank(query, results, top_k=top_k)
-    else:
+        results = _ce_rerank(
+            query,
+            results,
+            top_k=candidate_k if project_hints else top_k,
+        )
+
+    if project_hints:
+        # Scope is a final live-routing preference. Apply it after optional CE
+        # so the factor multiplies the score that would otherwise decide the
+        # final order, and keep a full candidate band available for promotion.
+        for r in results:
+            factor = project_scope_factor(r, project_hints)
+            r["scope_boost"] = factor
+            r["scope_score"] = round(float(r["score"]) * factor, 8)
+        results.sort(
+            key=lambda r: (
+                -float(r.get("scope_score", r["score"])),
+                int(r["id"]),
+            )
+        )
+        results = results[:top_k]
+    elif not rerank:
         if decay or score_full_band:
             results.sort(key=lambda r: r["score"], reverse=True)
         if score_full_band:

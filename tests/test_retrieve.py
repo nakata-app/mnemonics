@@ -12,9 +12,10 @@ from mnemonics.retrieve import (
     _age_days,
     _decay_factor,
     _reinforcement_boost,
+    project_scope_factor,
     retrieve,
 )
-from mnemonics.store import DIM
+from mnemonics.store import DIM, Store
 
 
 def _enc_returning(vec: np.ndarray) -> MagicMock:
@@ -437,3 +438,73 @@ def test_retrieve_max_tier_filter(tmp_path, mock_enc):
     out = retrieve("dogs", store=s, top_k=5, max_tier=1)
     result_ids = {r["id"] for r in out["results"]}
     assert ids[1] not in result_ids
+
+
+# ── project scope ranking ─────────────────────────────────────────────────────
+
+def test_project_scope_factor_exact_basename_other_and_unscoped():
+    hints = ["/Users/macmini/Projects/svelka-work", "svelka-work"]
+    assert project_scope_factor(
+        {"meta": {"project": "/Users/macmini/Projects/svelka-work"}},
+        hints,
+    ) == 1.35
+    assert project_scope_factor(
+        {"meta": {"project": "/tmp/elsewhere/svelka-work"}},
+        ["/Users/macmini/Projects/svelka-work"],
+    ) == 1.25
+    assert project_scope_factor(
+        {"meta": {"project": "/Users/macmini/Projects/other"}},
+        hints,
+    ) == 0.90
+    assert project_scope_factor({"meta": {"kind": "episode"}}, hints) == 1.0
+
+
+def test_retrieve_project_hints_can_promote_current_project_from_candidate_band(tmp_path):
+    store = Store(path=tmp_path, dim=3)
+    ids = store.add(
+        ["other project result", "current project result", "unscoped result"],
+        np.asarray(
+            [
+                [1.0, 0.0, 0.0],
+                [0.995, 0.10, 0.0],
+                [0.98, 0.20, 0.0],
+            ],
+            dtype="float32",
+        ),
+        ns="sessions",
+        meta=[
+            {"project": "/Users/macmini/Projects/other"},
+            {"project": "/Users/macmini/Projects/svelka-work"},
+            {},
+        ],
+    )
+    qvec = np.asarray([1.0, 0.0, 0.0], dtype="float32")
+
+    baseline = retrieve(
+        "query",
+        store,
+        ns="sessions",
+        top_k=1,
+        candidate_k=3,
+        hybrid=False,
+        decay=False,
+        query_vector=qvec,
+        touch=False,
+    )
+    scoped = retrieve(
+        "query",
+        store,
+        ns="sessions",
+        top_k=1,
+        candidate_k=3,
+        hybrid=False,
+        decay=False,
+        query_vector=qvec,
+        touch=False,
+        project_hints=["/Users/macmini/Projects/svelka-work", "svelka-work"],
+    )
+
+    assert baseline["results"][0]["id"] == ids[0]
+    assert scoped["results"][0]["id"] == ids[1]
+    assert scoped["results"][0]["scope_boost"] == 1.35
+    assert scoped["results"][0]["scope_score"] > scoped["results"][0]["score"]

@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from mnemonics.ingest import _get_encoder, _resolve_model_for_store
-from mnemonics.retrieve import _ce_rerank, retrieve
+from mnemonics.retrieve import _ce_rerank, project_scope_factor, retrieve
 from mnemonics.store import Store
 
 _WORD_RE = re.compile(r"[A-Za-z0-9_./:@+-]+")
@@ -105,36 +105,8 @@ def _weighted_rrf(
     return out
 
 
-def _scope_factor(row: dict[str, Any], project_hints: list[str] | None) -> float:
-    """Prefer matching project metadata without hiding unscoped historical rows."""
-    if not project_hints:
-        return 1.0
-
-    hints = {
-        " ".join(h.strip().lower().split()).rstrip("/")
-        for h in project_hints
-        if isinstance(h, str) and h.strip()
-    }
-    if not hints:
-        return 1.0
-    hint_basenames = {h.rsplit("/", 1)[-1] for h in hints}
-
-    meta = row.get("meta")
-    if not isinstance(meta, dict):
-        return 1.0
-    values = [
-        value.strip().lower().rstrip("/")
-        for key in ("project", "cwd", "repo", "workspace")
-        if isinstance((value := meta.get(key)), str) and value.strip()
-    ]
-    if not values:
-        return 1.0
-    for value in values:
-        if value in hints:
-            return 1.35
-        if value.rsplit("/", 1)[-1] in hint_basenames:
-            return 1.25
-    return 0.90
+# Compatibility alias for tests/callers that imported the early private helper.
+_scope_factor = project_scope_factor
 
 
 def retrieve_planned(
