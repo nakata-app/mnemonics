@@ -216,6 +216,27 @@ def _resolve_model(model: str) -> str:
     return model
 
 
+def _resolve_model_for_store(model: str, store: Store) -> str:
+    """Resolve the encoder without letting a persisted store drift silently.
+
+    Explicit env overrides still win for intentional migration/A-B work. When
+    the caller uses the default model and no override is present, an existing
+    embed manifest is the source of truth: its encoder produced the vectors
+    already stored on disk and must also encode new queries/ingests.
+    """
+    resolved = _resolve_model(model)
+    if resolved != model or model != "all-MiniLM-L6-v2":
+        return resolved
+    try:
+        from mnemonics import embed_manifest as _em
+
+        stamped = _em.read(store.root)
+    except Exception:
+        stamped = None
+    encoder = stamped.get("encoder") if stamped else None
+    return encoder.strip() if isinstance(encoder, str) and encoder.strip() else resolved
+
+
 class _OnnxEmbeddingEncoder:
     """encode()-compatible ONNX encoder for the fine-tuned AdaptMem checkpoint.
 
@@ -361,7 +382,8 @@ def ingest(
         texts = [texts]
     if summaries is not None and len(summaries) != len(texts):
         raise ValueError("summaries length must match texts length")
-    enc = _get_encoder(model)
+    resolved_model = _resolve_model_for_store(model, store)
+    enc = _get_encoder(resolved_model)
     all_chunks: list[str] = []
     all_meta: list[dict] = []
     all_summaries: list[str | None] = []
@@ -396,7 +418,7 @@ def ingest(
     # ileride degisip re-embed atlanirsa retrieve drift'i fark eder.
     try:
         from mnemonics import embed_manifest as _em
-        _em.write(store.root, _em.encoder_fingerprint(_resolve_model(model), store.dim))
+        _em.write(store.root, _em.encoder_fingerprint(resolved_model, store.dim))
     except Exception:
         pass
     return ids if return_ids else len(all_chunks)
