@@ -47,6 +47,7 @@ except importlib.metadata.PackageNotFoundError:
 
 from mnemonics.dedup import reconcile_ingest as _reconcile_ingest
 from mnemonics.ingest import _get_encoder, _resolve_model_for_store, ingest as _ingest
+from mnemonics.lifecycle import canonical_ingest as _canonical_ingest
 from mnemonics.query_plan import retrieve_planned as _retrieve_planned
 from mnemonics.retrieve import retrieve as _retrieve
 from mnemonics.store import Store
@@ -742,6 +743,35 @@ class _Handler(BaseHTTPRequestHandler):
             if tier_val not in (0, 1, 2):
                 self._json(400, {"error": "tier must be 0, 1, or 2"})
                 return
+            canonical_key = body.get("canonical_key")
+            if canonical_key is not None:
+                if not isinstance(canonical_key, str) or not canonical_key.strip():
+                    self._json(400, {"error": "canonical_key must be a non-empty string"})
+                    return
+                if len(texts) != 1:
+                    self._json(400, {"error": "canonical_key requires exactly one text"})
+                    return
+                raw_meta = body.get("meta")
+                canonical_meta = None
+                if isinstance(raw_meta, dict):
+                    canonical_meta = raw_meta
+                elif isinstance(raw_meta, list) and len(raw_meta) == 1 and isinstance(raw_meta[0], dict):
+                    canonical_meta = raw_meta[0]
+                elif raw_meta is not None:
+                    self._json(400, {"error": "canonical meta must be an object or one-item object array"})
+                    return
+                result = _canonical_ingest(
+                    texts[0],
+                    _get_store(),
+                    canonical_key=canonical_key,
+                    ns=body.get("ns", "default"),
+                    summary=summaries[0] if summaries else None,
+                    meta=canonical_meta,
+                    tier=int(tier_val),
+                )
+                self._json(200, {"canonical": result})
+                return
+
             n = _ingest(
                 texts=texts,
                 store=_get_store(),
@@ -1560,6 +1590,10 @@ def _mcp_loop() -> None:
                             "meta": {
                                 "type": "object",
                                 "description": "Optional metadata dict attached to every chunk (e.g. {\"tag\": \"work\", \"source\": \"slack\"}). Same dict applied to all texts in this call.",
+                            },
+                            "canonical_key": {
+                                "type": "string",
+                                "description": "Optional explicit fact-slot identity for a single text. Re-ingesting the same key atomically supersedes the prior active value while preserving lineage.",
                             },
                             "tier": {
                                 "type": "integer",
@@ -2863,6 +2897,39 @@ def _mcp_loop() -> None:
                 tier_arg = args.get("tier", 1)
                 if tier_arg not in (0, 1, 2):
                     err("tier must be 0, 1, or 2")
+                    continue
+
+                canonical_key = args.get("canonical_key")
+                if canonical_key is not None:
+                    if not isinstance(canonical_key, str) or not canonical_key.strip():
+                        err("canonical_key must be a non-empty string")
+                        continue
+                    if len(texts) != 1:
+                        err("canonical_key requires exactly one text")
+                        continue
+                    if args.get("supersede") is not None:
+                        err("canonical_key cannot be combined with supersede")
+                        continue
+                    result = _canonical_ingest(
+                        texts[0],
+                        _get_store(),
+                        canonical_key=canonical_key,
+                        ns=args.get("ns", "default"),
+                        summary=summaries[0] if summaries else None,
+                        meta=meta_arg,
+                        tier=int(tier_arg),
+                    )
+                    ok({
+                        "content": [{
+                            "type": "text",
+                            "text": (
+                                f"Canonical {result['action']}: "
+                                f"{result['canonical_key']} -> id {result['id']} "
+                                f"(superseded={result['superseded']})."
+                            ),
+                        }],
+                        "canonical": result,
+                    })
                     continue
 
                 # Opt-in conflict-aware path. Plain ingest stays the default so
