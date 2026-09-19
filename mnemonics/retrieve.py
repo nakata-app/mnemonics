@@ -313,7 +313,7 @@ def retrieve(
             top_k=candidate_k,
             min_tier=min_tier,
             max_tier=max_tier,
-            touch=touch,
+            touch=False,
         )
         bm25_results = store.search_bm25(query, ns=ns, top_k=candidate_k, min_tier=min_tier, max_tier=max_tier)
         results = _rrf_fuse([vec_results, bm25_results], top_k=fusion_top)
@@ -324,7 +324,7 @@ def retrieve(
             top_k=fusion_top,
             min_tier=min_tier,
             max_tier=max_tier,
-            touch=touch,
+            touch=False,
         )
 
     quoted = _extract_quoted_phrases(query) if boost_signals else []
@@ -378,5 +378,8 @@ def retrieve(
             results.sort(key=lambda r: r["score"], reverse=True)
         if score_full_band:
             results = results[:top_k]
+
+    if touch and results:
+        store.touch_ids([int(r["id"]) for r in results])
 
     return {"results": results}
