@@ -208,6 +208,8 @@ def retrieve(
     boost_signals: bool = True,
     min_tier: int | None = None,
     max_tier: int | None = None,
+    query_vector: Any | None = None,
+    touch: bool = True,
 ) -> dict[str, Any]:
     """Search the store for query. Tier-aware decay + reinforcement applied unless decay=False.
 
@@ -227,8 +229,15 @@ def retrieve(
     or no candidate text matches; never penalizes.
     """
     resolved_model = _resolve_model_for_store(model, store)
-    enc = _get_encoder(resolved_model)
-    qvec = enc.encode([query], normalize_embeddings=True, convert_to_numpy=True)[0]
+    if query_vector is None:
+        enc = _get_encoder(resolved_model)
+        qvec = enc.encode(
+            [query],
+            normalize_embeddings=True,
+            convert_to_numpy=True,
+        )[0]
+    else:
+        qvec = query_vector
     # Encoder drift kontrolu: stored vektorler farkli encoder ile gomulduyse
     # sessiz kalite kaybini gorunur uyariya cevir. Bir kez (cached), hard fail
     # YOK (canli retrieval'i kirmaz). Eski (damgasiz) DB'leri ilk kullanimda damgalar.
@@ -262,11 +271,25 @@ def retrieve(
     score_full_band = os.environ.get("MNEMONICS_SCORE_FULL_BAND") == "1"
     fusion_top = candidate_k if (rerank or score_full_band) else top_k
     if hybrid:
-        vec_results = store.search(qvec, ns=ns, top_k=candidate_k, min_tier=min_tier, max_tier=max_tier)
+        vec_results = store.search(
+            qvec,
+            ns=ns,
+            top_k=candidate_k,
+            min_tier=min_tier,
+            max_tier=max_tier,
+            touch=touch,
+        )
         bm25_results = store.search_bm25(query, ns=ns, top_k=candidate_k, min_tier=min_tier, max_tier=max_tier)
         results = _rrf_fuse([vec_results, bm25_results], top_k=fusion_top)
     else:
-        results = store.search(qvec, ns=ns, top_k=fusion_top, min_tier=min_tier, max_tier=max_tier)
+        results = store.search(
+            qvec,
+            ns=ns,
+            top_k=fusion_top,
+            min_tier=min_tier,
+            max_tier=max_tier,
+            touch=touch,
+        )
 
     quoted = _extract_quoted_phrases(query) if boost_signals else []
     names = _extract_person_names(query) if boost_signals else []
