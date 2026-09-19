@@ -178,6 +178,25 @@ class _Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._json(500, {"error": f"warmup failed: {e}"})
 
+        elif self.path == "/feedback":
+            ids = body.get("ids")
+            success = body.get("success")
+            if (
+                not isinstance(ids, list)
+                or not ids
+                or len(ids) > 100
+                or any(not isinstance(mid, int) or mid <= 0 for mid in ids)
+            ):
+                self._json(400, {"error": "ids must be 1-100 positive integers"})
+                return
+            if not isinstance(success, bool):
+                self._json(400, {"error": "success must be boolean"})
+                return
+            self._json(
+                200,
+                _get_store().record_retrieval_feedback(ids, success=success),
+            )
+
         elif self.path == "/repair":
             self._json(200, _get_store().repair())
 

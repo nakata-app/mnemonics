@@ -6849,3 +6849,36 @@ def test_mcp_reconcile_builds_supersede_map_and_reports_all_outcomes(
     assert "Superseded 1 old memory" in text
     assert "not found" in text
 
+
+
+def test_http_feedback_records_outcome(tmp_store):
+    tmp_store.record_retrieval_feedback = MagicMock(
+        return_value={"updated": 2, "missing": 0}
+    )
+    code, data = http_call(
+        tmp_store,
+        "POST",
+        "/feedback",
+        {"ids": [1, 2], "success": True},
+    )
+    assert code == 200
+    assert data == {"updated": 2, "missing": 0}
+    tmp_store.record_retrieval_feedback.assert_called_once_with(
+        [1, 2],
+        success=True,
+    )
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {},
+        {"ids": [], "success": True},
+        {"ids": [0], "success": True},
+        {"ids": [1], "success": "yes"},
+    ],
+)
+def test_http_feedback_rejects_invalid_payload(tmp_store, body):
+    code, data = http_call(tmp_store, "POST", "/feedback", body)
+    assert code == 400
+    assert "error" in data

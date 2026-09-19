@@ -46,3 +46,43 @@ def test_touch_ids_reinforces_each_final_row_once(tmp_path):
         ).fetchall()
     )
     assert counts == {ids[0]: 1, ids[1]: 1}
+
+
+def test_record_retrieval_feedback_tracks_success_and_failure(tmp_path):
+    import json
+
+    store = Store(path=tmp_path, dim=3)
+    ids = store.add(
+        ["alpha", "beta"],
+        np.asarray([[1, 0, 0], [0, 1, 0]], dtype="float32"),
+        ns="t",
+    )
+
+    assert store.record_retrieval_feedback(
+        [ids[0], ids[0], ids[1], 999999],
+        success=True,
+    ) == {"updated": 2, "missing": 1}
+    assert store.record_retrieval_feedback([ids[0]], success=False) == {
+        "updated": 1,
+        "missing": 0,
+    }
+
+    rows = store._db.execute(
+        "SELECT id, meta FROM memories WHERE id IN (?, ?) ORDER BY id",
+        (ids[0], ids[1]),
+    ).fetchall()
+    metas = {row_id: json.loads(meta) for row_id, meta in rows}
+    assert metas[ids[0]]["retrieval_success_count"] == 1
+    assert metas[ids[0]]["retrieval_failure_count"] == 1
+    assert metas[ids[0]]["retrieval_feedback_last_outcome"] == "failure"
+    assert metas[ids[0]]["retrieval_feedback_last_at"]
+    assert metas[ids[1]]["retrieval_success_count"] == 1
+    assert "retrieval_failure_count" not in metas[ids[1]]
+
+
+def test_record_retrieval_feedback_empty_is_noop(tmp_path):
+    store = Store(path=tmp_path, dim=3)
+    assert store.record_retrieval_feedback([], success=True) == {
+        "updated": 0,
+        "missing": 0,
+    }

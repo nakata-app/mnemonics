@@ -435,6 +435,56 @@ class Store:
             self._db.commit()
         return int(cur.rowcount)
 
+    def record_retrieval_feedback(
+        self,
+        memory_ids: list[int],
+        *,
+        success: bool,
+    ) -> dict[str, int]:
+        """Record outcome telemetry for memories exposed to a completed turn.
+
+        This is deliberately dark telemetry: it does not change retrieval
+        ranking. It only accumulates correlation between exposure and later
+        turn outcome so future ranking changes can be benchmarked first.
+        """
+        import json as _j_feedback
+        from datetime import datetime, timezone
+
+        ids = sorted({int(mid) for mid in memory_ids if int(mid) > 0})
+        if not ids:
+            return {"updated": 0, "missing": 0}
+        placeholders = ",".join("?" * len(ids))
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        updated = 0
+        with self._lock:
+            rows = self._db.execute(
+                f"SELECT id, meta FROM memories WHERE id IN ({placeholders})",
+                ids,
+            ).fetchall()
+            found = {int(row[0]) for row in rows}
+            for row_id, raw_meta in rows:
+                try:
+                    meta = _j_feedback.loads(raw_meta) if raw_meta else {}
+                except (TypeError, _j_feedback.JSONDecodeError):
+                    meta = {}
+                key = (
+                    "retrieval_success_count"
+                    if success
+                    else "retrieval_failure_count"
+                )
+                meta[key] = int(meta.get(key, 0) or 0) + 1
+                meta["retrieval_feedback_last_at"] = now
+                meta["retrieval_feedback_last_outcome"] = (
+                    "success" if success else "failure"
+                )
+                self._db.execute(
+                    "UPDATE memories SET meta=? WHERE id=?",
+                    (_j_feedback.dumps(meta, ensure_ascii=False), int(row_id)),
+                )
+                updated += 1
+            self._db.commit()
+        return {"updated": updated, "missing": len(set(ids) - found)}
+
     # FTS5's MATCH grammar treats bare punctuation as syntax errors. We only
     # need word-level recall, so flatten the query to alphanumerics + space and
     # OR the surviving tokens together (subset match, not phrase).
