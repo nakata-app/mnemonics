@@ -775,6 +775,16 @@ class _Handler(BaseHTTPRequestHandler):
             if tier_val not in (0, 1, 2):
                 self._json(400, {"error": "tier must be 0, 1, or 2"})
                 return
+            augmentation = {
+                key: body.get(key, False)
+                for key in ("augment_preferences", "augment_assistant_facts")
+            }
+            if any(not isinstance(value, bool) for value in augmentation.values()):
+                self._json(400, {"error": "augmentation flags must be booleans"})
+                return
+            if body.get("canonical_key") is not None and any(augmentation.values()):
+                self._json(400, {"error": "canonical_key cannot be combined with augmentation"})
+                return
             canonical_key = body.get("canonical_key")
             if canonical_key is not None:
                 if not isinstance(canonical_key, str) or not canonical_key.strip():
@@ -850,6 +860,7 @@ class _Handler(BaseHTTPRequestHandler):
                 meta=body.get("meta"),
                 summaries=summaries,
                 tier=int(tier_val),
+                **augmentation,
             )
             self._json(200, {"ingested": n})
 
@@ -1706,6 +1717,14 @@ def _mcp_loop() -> None:
                                 "type": "integer",
                                 "enum": [0, 1, 2],
                                 "description": "Initial tier for all ingested chunks: 0=pinned, 1=default (default), 2=ambient",
+                            },
+                            "augment_preferences": {
+                                "type": "boolean",
+                                "description": "Opt-in derived preference memories; default false. Not supported with canonical_key.",
+                            },
+                            "augment_assistant_facts": {
+                                "type": "boolean",
+                                "description": "Independent opt-in derived assistant-fact memories; default false. Not supported with canonical_key.",
                             },
                             "reconcile": {
                                 "type": "boolean",
@@ -3006,6 +3025,17 @@ def _mcp_loop() -> None:
                     err("tier must be 0, 1, or 2")
                     continue
 
+                augmentation = {
+                    key: args.get(key, False)
+                    for key in ("augment_preferences", "augment_assistant_facts")
+                }
+                if any(not isinstance(value, bool) for value in augmentation.values()):
+                    err("augmentation flags must be booleans")
+                    continue
+                if args.get("canonical_key") is not None and any(augmentation.values()):
+                    err("canonical_key cannot be combined with augmentation")
+                    continue
+
                 canonical_key = args.get("canonical_key")
                 if canonical_key is not None:
                     if not isinstance(canonical_key, str) or not canonical_key.strip():
@@ -3073,6 +3103,7 @@ def _mcp_loop() -> None:
                         ns=args.get("ns", "default"),
                         supersede_map=supersede_map or None,
                         tier=int(tier_arg),
+                        **augmentation,
                     )
                     parts = [f"Added {len(res['added'])} chunk(s)."]
                     if res["noop_skipped"]:
@@ -3091,6 +3122,7 @@ def _mcp_loop() -> None:
                     summaries=summaries,
                     meta=metas,
                     tier=int(tier_arg),
+                    **augmentation,
                 )
                 ok({"content": [{"type": "text", "text": f"Stored {n} chunks."}]})
 

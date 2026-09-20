@@ -52,6 +52,21 @@ def main() -> None:
         help="Explicit fact-slot identity. Re-ingesting this key supersedes its prior active value.",
     )
 
+    i.add_argument(
+        "--augment-preferences",
+        action="store_true",
+        help="Also index a derived 'User has mentioned: ...' preference doc when the "
+             "text states a stable preference/concern. Opt-in: pattern extraction can "
+             "misfire on transient task instructions, so it is off by default.",
+    )
+    i.add_argument(
+        "--augment-facts",
+        action="store_true",
+        help="Also index a derived 'Key facts: ...' doc from numeric/declarative "
+             "assistant-turn statements. Separate opt-in from --augment-preferences; "
+             "off by default.",
+    )
+
     # retrieve
     r = sub.add_parser("retrieve", help="Search memory")
     r.add_argument("query")
@@ -976,6 +991,9 @@ def main() -> None:
                 print("--meta: must be a JSON object", file=sys.stderr)
                 sys.exit(2)
         metas = [meta_dict] if meta_dict is not None else None
+        if args.canonical_key and (args.augment_preferences or args.augment_facts):
+            print("--canonical-key cannot be combined with augmentation", file=sys.stderr)
+            sys.exit(2)
         if args.canonical_key:
             from mnemonics.lifecycle import canonical_ingest
             result = canonical_ingest(
@@ -999,6 +1017,8 @@ def main() -> None:
                 summaries=summaries,
                 meta=metas,
                 tier=args.tier,
+                augment_preferences=args.augment_preferences,
+                augment_assistant_facts=args.augment_facts,
             )
             print(f"Stored {n} chunk(s).")
 

@@ -72,6 +72,15 @@ except ImportError:  # pragma: no cover — Windows path, not supported
     _HAS_FCNTL = False
 
 
+_FTS_UPDATE_TRIGGER = """
+CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories
+WHEN old.id IS NOT new.id OR old.text IS NOT new.text OR old.summary IS NOT new.summary
+BEGIN
+    INSERT INTO memories_fts(memories_fts, rowid, text, summary) VALUES('delete', old.id, old.text, old.summary);
+    INSERT INTO memories_fts(rowid, text, summary) VALUES (new.id, new.text, new.summary);
+END;
+"""
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS memories (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -104,11 +113,7 @@ END;
 CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN
     INSERT INTO memories_fts(memories_fts, rowid, text, summary) VALUES('delete', old.id, old.text, old.summary);
 END;
-CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN
-    INSERT INTO memories_fts(memories_fts, rowid, text, summary) VALUES('delete', old.id, old.text, old.summary);
-    INSERT INTO memories_fts(rowid, text, summary) VALUES (new.id, new.text, new.summary);
-END;
-"""
+""" + _FTS_UPDATE_TRIGGER
 
 # Tier semantics:
 #   0 = pinned   (no decay, retained forever, manual)
@@ -222,6 +227,23 @@ class Store:
             self._db.execute("DROP TABLE IF EXISTS memories_fts")
             self._db.executescript(_SCHEMA)
             schema_was_replaced = True
+        # Older triggers re-indexed unchanged text on every access-count update.
+        # Upgrade atomically once, without rebuilding the FTS contents.
+        trigger = self._db.execute(
+            "SELECT sql FROM sqlite_master WHERE type='trigger' AND name='memories_au'"
+        ).fetchone()
+        expected = " ".join(_FTS_UPDATE_TRIGGER.replace("IF NOT EXISTS ", "").split()).rstrip(";")
+        actual = " ".join((trigger[0] if trigger else "").split()).rstrip(";")
+        if actual != expected:
+            self._db.execute("SAVEPOINT fts_update_trigger")
+            try:
+                self._db.execute("DROP TRIGGER IF EXISTS memories_au")
+                self._db.execute(_FTS_UPDATE_TRIGGER)
+            except Exception:
+                self._db.execute("ROLLBACK TO fts_update_trigger")
+                raise
+            finally:
+                self._db.execute("RELEASE fts_update_trigger")
         fts_count = self._db.execute("SELECT COUNT(*) FROM memories_fts").fetchone()[0]
         mem_count = self._db.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
         if schema_was_replaced and mem_count > 0:
@@ -363,16 +385,9 @@ class Store:
         with self._ns_file_lock(ns, exclusive=False), self._lock:
             self._reload_if_stale(ns)
             idx = self._index_for(ns)
-            n = min(top_k, idx.get_current_count())
-            if n == 0:
+            count = idx.get_current_count()
+            if top_k <= 0 or count == 0:
                 return []
-            try:
-                labels, distances = idx.knn_query(vector, k=n)
-            except RuntimeError:
-                # All elements in this index are mark_deleted; nothing to return.
-                return []
-            row_ids = [int(x) for x in labels[0]]
-            placeholders = ",".join("?" * len(row_ids))
             tier_clause = ""
             tier_params: list[int] = []
             if min_tier is not None:
@@ -385,28 +400,57 @@ class Store:
                 # A memory the caller has replaced (see supersede()) stays in the
                 # DB + index for audit, but must not surface in normal retrieval.
                 tier_clause += " AND (json_extract(meta,'$.status') IS NULL OR json_extract(meta,'$.status') != 'superseded')"
-            rows = self._db.execute(
-                f"SELECT id, text, summary, meta, created, tier, last_accessed, access_count "
-                f"FROM memories WHERE id IN ({placeholders}){tier_clause}",
-                (*row_ids, *tier_params),
-            ).fetchall()
-            by_id = {r[0]: r for r in rows}
-            results = []
-            for rid, dist in zip(labels[0], distances[0]):
-                row = by_id.get(int(rid))
-                if row is None:
-                    continue
-                results.append({
-                    "id": row[0],
-                    "text": row[1],
-                    "summary": row[2],
-                    "meta": json.loads(row[3]),
-                    "created": row[4],
-                    "tier": row[5],
-                    "last_accessed": row[6],
-                    "access_count": row[7],
-                    "score": float(1 - dist),
-                })
+            # Expansion may visit the entire index. Bound each SQL query,
+            # reserving bindings for filters, including on Python < 3.11.
+            variable_limit = 900
+            if hasattr(self._db, "getlimit") and hasattr(sqlite3, "SQLITE_LIMIT_VARIABLE_NUMBER"):
+                variable_limit = min(variable_limit, self._db.getlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER))
+            batch_size = max(1, variable_limit - len(tier_params))
+            k = min(top_k, count)
+            results: list[dict[str, Any]] = []
+            while True:
+                try:
+                    labels, distances = idx.knn_query(vector, k=k)
+                except RuntimeError:
+                    # HNSW counts deleted labels; cap retries at live SQLite rows.
+                    live = self._db.execute(
+                        "SELECT COUNT(*) FROM memories WHERE ns = ?", (ns,)
+                    ).fetchone()[0]
+                    if 0 < live < k:
+                        count = k = live
+                        continue
+                    break
+                row_ids = [int(x) for x in labels[0]]
+                by_id: dict[int, Any] = {}
+                for offset in range(0, len(row_ids), batch_size):
+                    batch_ids = row_ids[offset:offset + batch_size]
+                    placeholders = ",".join("?" * len(batch_ids))
+                    rows = self._db.execute(
+                        f"SELECT id, text, summary, meta, created, tier, last_accessed, access_count "
+                        f"FROM memories WHERE id IN ({placeholders}){tier_clause}",
+                        (*batch_ids, *tier_params),
+                    ).fetchall()
+                    by_id.update((r[0], r) for r in rows)
+                results = []
+                for rid, dist in zip(labels[0], distances[0]):
+                    row = by_id.get(int(rid))
+                    if row is None:
+                        continue
+                    results.append({
+                        "id": row[0],
+                        "text": row[1],
+                        "summary": row[2],
+                        "meta": json.loads(row[3]),
+                        "created": row[4],
+                        "tier": row[5],
+                        "last_accessed": row[6],
+                        "access_count": row[7],
+                        "score": float(1 - dist),
+                    })
+                if len(results) >= top_k or k >= count:
+                    break
+                k = min(count, k * 4)
+            results = results[:top_k]
             # Touch only user-visible retrievals. Internal candidate expansion
             # can pass touch=False and reinforce just the final fused rows once.
             if touch and results:
