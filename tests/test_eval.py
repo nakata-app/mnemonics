@@ -6,8 +6,12 @@ load it here; that path is exercised manually with the real eval set
 """
 from __future__ import annotations
 
+import json
 import math
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
 
 from mnemonics.eval import (
@@ -102,12 +106,7 @@ def test_compare_table_multi_encoder_renders_deltas():
 
 # ── run_eval with mocked encoder ─────────────────────────────────────────────
 
-import json
-import tempfile
-from pathlib import Path
-from unittest.mock import MagicMock, patch
 
-import numpy as np
 
 
 def _write_jsonl(path: Path, items: list):
@@ -208,8 +207,9 @@ def test_build_encoder_custom():
 
 
 def test_build_encoder_adaptmem_no_path_raises():
-    from mnemonics.eval import _build_encoder
     import os
+
+    from mnemonics.eval import _build_encoder
     env = {k: v for k, v in os.environ.items() if k != "MNEMONICS_ADAPTMEM_PATH"}
     with patch.dict("os.environ", env, clear=True):
         with pytest.raises(ValueError, match="adaptmem encoder"):
@@ -225,11 +225,10 @@ def test_build_encoder_adaptmem_with_path(tmp_path):
 
 
 def test_bm25_rank_fts_operational_error(tmp_path):
-    from mnemonics.eval import _build_bm25_index, _bm25_rank
+    from mnemonics.eval import _bm25_rank, _build_bm25_index
     conn = _build_bm25_index(["some text"])
     chunk_ids = ["c0"]
     # Unmatched paren triggers OperationalError → returns []
-    from unittest.mock import MagicMock as MM
     from mnemonics.store import Store
     with patch.object(Store, "_fts_sanitize", staticmethod(lambda q: "(((")):
         result = _bm25_rank(conn, "anything", chunk_ids, top_k=5)

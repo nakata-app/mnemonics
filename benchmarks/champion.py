@@ -72,16 +72,63 @@ def update(result: dict[str, Any], meta: dict[str, Any]) -> dict[str, Any]:
     with open(LEDGER, "a") as f:
         f.write(json.dumps({k: v for k, v in record.items() if k != "by_type"}) + "\n")
 
-    # 2) CHAMPION'i sadece ayni n'de R@1 gercekten gecilirse guncelle
-    cur = best()
-    is_champ = (
-        cur is None
-        or (record["n"] == cur.get("n") and record["R@1"] > cur.get("R@1", -1))
-        or (record["n"] or 0) > (cur.get("n") or 0)  # daha buyuk n her zaman daha guvenilir
+    # 2) CHAMPION promotion is explicit, full-set, and deterministic only.
+    # Generic/smoke/experimental evals still enter the immutable ledger but
+    # can never rewrite the canonical champion by accident.
+    eligible = (
+        meta.get("eligible_for_champion") is True
+        and meta.get("deterministic") is True
+        and int(record.get("n") or 0) >= 500
     )
+    cur = best()
+    is_champ = bool(
+        eligible
+        and (
+            cur is None
+            or (
+                record["n"] == cur.get("n")
+                and record["R@1"] > cur.get("R@1", -1)
+            )
+            or (
+                record["n"] > (cur.get("n") or 0)
+                and record["R@1"] >= cur.get("R@1", -1)
+            )
+        )
+    )
+    enriched = False
     if is_champ:
         _atomic_write(CHAMPION, json.dumps(record, indent=2))
-    return {"champion": is_champ, "record": record}
+    elif eligible and cur is not None:
+        same_metrics = (
+            record["n"] == cur.get("n")
+            and record["R@1"] == cur.get("R@1")
+            and record["R@5"] == cur.get("R@5")
+            and record["R@10"] == cur.get("R@10")
+        )
+        if (
+            same_metrics
+            and not cur.get("by_type")
+            and bool(record.get("by_type"))
+        ):
+            enriched_record = {
+                **cur,
+                "by_type": record["by_type"],
+                "reproduced_at": record["date"],
+                "reproduction_source": record.get("source"),
+                **(
+                    {"reproduction_sha": meta["pinned_sha"]}
+                    if meta.get("pinned_sha")
+                    else {}
+                ),
+            }
+            _atomic_write(CHAMPION, json.dumps(enriched_record, indent=2))
+            enriched = True
+    return {
+        "champion": is_champ,
+        "enriched": enriched,
+        "eligible_for_champion": eligible,
+        "record": record,
+    }
 
 
 if __name__ == "__main__":

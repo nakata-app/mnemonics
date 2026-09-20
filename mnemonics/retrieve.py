@@ -7,7 +7,7 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 
-from mnemonics.ingest import _get_encoder, _resolve_model
+from mnemonics.ingest import _get_encoder, _resolve_model_for_store
 from mnemonics.store import Store
 
 # Question-signal extractors. Lifted from longmemeval analysis: quoted phrases
@@ -195,6 +195,41 @@ def _reinforcement_boost(access_count: int) -> float:
     return min(1.0 + math.log(1 + access_count) * _BOOST_RATE, _BOOST_CAP)
 
 
+def project_scope_factor(
+    row: dict[str, Any],
+    project_hints: list[str] | None,
+) -> float:
+    """Prefer matching project metadata without hiding unscoped history."""
+    if not project_hints:
+        return 1.0
+
+    hints = {
+        " ".join(h.strip().lower().split()).rstrip("/")
+        for h in project_hints
+        if isinstance(h, str) and h.strip()
+    }
+    if not hints:
+        return 1.0
+    hint_basenames = {h.rsplit("/", 1)[-1] for h in hints}
+
+    meta = row.get("meta")
+    if not isinstance(meta, dict):
+        return 1.0
+    values = [
+        value.strip().lower().rstrip("/")
+        for key in ("project", "cwd", "repo", "workspace")
+        if isinstance((value := meta.get(key)), str) and value.strip()
+    ]
+    if not values:
+        return 1.0
+    for value in values:
+        if value in hints:
+            return 1.35
+        if value.rsplit("/", 1)[-1] in hint_basenames:
+            return 1.25
+    return 0.90
+
+
 def retrieve(
     query: str,
     store: Store,
@@ -208,6 +243,9 @@ def retrieve(
     boost_signals: bool = True,
     min_tier: int | None = None,
     max_tier: int | None = None,
+    query_vector: Any | None = None,
+    touch: bool = True,
+    project_hints: list[str] | None = None,
 ) -> dict[str, Any]:
     """Search the store for query. Tier-aware decay + reinforcement applied unless decay=False.
 
@@ -226,14 +264,22 @@ def retrieve(
     mid-sentence) extracted from the query. No-op when no signals are found
     or no candidate text matches; never penalizes.
     """
-    enc = _get_encoder(model)
-    qvec = enc.encode([query], normalize_embeddings=True, convert_to_numpy=True)[0]
+    resolved_model = _resolve_model_for_store(model, store)
+    if query_vector is None:
+        enc = _get_encoder(resolved_model)
+        qvec = enc.encode(
+            [query],
+            normalize_embeddings=True,
+            convert_to_numpy=True,
+        )[0]
+    else:
+        qvec = query_vector
     # Encoder drift kontrolu: stored vektorler farkli encoder ile gomulduyse
     # sessiz kalite kaybini gorunur uyariya cevir. Bir kez (cached), hard fail
     # YOK (canli retrieval'i kirmaz). Eski (damgasiz) DB'leri ilk kullanimda damgalar.
     try:
         from mnemonics import embed_manifest as _em
-        _resolved = _resolve_model(model)
+        _resolved = resolved_model
         _key = (str(store.root), _resolved, store.dim)
         _seen = retrieve.__dict__.setdefault("_enc_checked", set())
         if _key not in _seen:
@@ -259,13 +305,27 @@ def retrieve(
     # champion (R@1 0.958) was measured with the current behaviour. Turn it on
     # to A/B it; do not flip the default until that A/B exists.
     score_full_band = os.environ.get("MNEMONICS_SCORE_FULL_BAND") == "1"
-    fusion_top = candidate_k if (rerank or score_full_band) else top_k
+    fusion_top = candidate_k if (rerank or score_full_band or project_hints) else top_k
     if hybrid:
-        vec_results = store.search(qvec, ns=ns, top_k=candidate_k, min_tier=min_tier, max_tier=max_tier)
+        vec_results = store.search(
+            qvec,
+            ns=ns,
+            top_k=candidate_k,
+            min_tier=min_tier,
+            max_tier=max_tier,
+            touch=False,
+        )
         bm25_results = store.search_bm25(query, ns=ns, top_k=candidate_k, min_tier=min_tier, max_tier=max_tier)
         results = _rrf_fuse([vec_results, bm25_results], top_k=fusion_top)
     else:
-        results = store.search(qvec, ns=ns, top_k=fusion_top, min_tier=min_tier, max_tier=max_tier)
+        results = store.search(
+            qvec,
+            ns=ns,
+            top_k=fusion_top,
+            min_tier=min_tier,
+            max_tier=max_tier,
+            touch=False,
+        )
 
     quoted = _extract_quoted_phrases(query) if boost_signals else []
     names = _extract_person_names(query) if boost_signals else []
@@ -292,11 +352,34 @@ def retrieve(
             r["signal_boost"] = 1.0
 
     if rerank:
-        results = _ce_rerank(query, results, top_k=top_k)
-    else:
+        results = _ce_rerank(
+            query,
+            results,
+            top_k=candidate_k if project_hints else top_k,
+        )
+
+    if project_hints:
+        # Scope is a final live-routing preference. Apply it after optional CE
+        # so the factor multiplies the score that would otherwise decide the
+        # final order, and keep a full candidate band available for promotion.
+        for r in results:
+            factor = project_scope_factor(r, project_hints)
+            r["scope_boost"] = factor
+            r["scope_score"] = round(float(r["score"]) * factor, 8)
+        results.sort(
+            key=lambda r: (
+                -float(r.get("scope_score", r["score"])),
+                int(r["id"]),
+            )
+        )
+        results = results[:top_k]
+    elif not rerank:
         if decay or score_full_band:
             results.sort(key=lambda r: r["score"], reverse=True)
         if score_full_band:
             results = results[:top_k]
+
+    if touch and results:
+        store.touch_ids([int(r["id"]) for r in results])
 
     return {"results": results}

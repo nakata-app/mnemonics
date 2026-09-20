@@ -12,7 +12,6 @@ import json
 import os
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -121,7 +120,7 @@ def test_wrong_key_is_rejected(tmp_path: Path) -> None:
         env_extra={"MNEMONICS_ENCRYPT": "1", "MNEMONICS_DB_KEY": KEY_HEX_BETA},
     )
     assert wrong.returncode != 0, (
-        "wrong key should NOT yield a readable DB; got stdout=%r" % wrong.stdout
+        f"wrong key should NOT yield a readable DB; got stdout={wrong.stdout!r}"
     )
 
 

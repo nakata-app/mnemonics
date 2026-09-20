@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 import os
 import threading
 from pathlib import Path
@@ -12,6 +13,8 @@ import hnswlib
 import numpy as np
 
 from mnemonics import crypto
+
+_LOG = logging.getLogger("mnemonics")
 
 # Reproducible HNSW: hnswlib multi-threaded add_items builds a non-deterministic
 # graph (insertion order varies with thread scheduling / core count), which makes
@@ -69,6 +72,15 @@ except ImportError:  # pragma: no cover — Windows path, not supported
     _HAS_FCNTL = False
 
 
+_FTS_UPDATE_TRIGGER = """
+CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories
+WHEN old.id IS NOT new.id OR old.text IS NOT new.text OR old.summary IS NOT new.summary
+BEGIN
+    INSERT INTO memories_fts(memories_fts, rowid, text, summary) VALUES('delete', old.id, old.text, old.summary);
+    INSERT INTO memories_fts(rowid, text, summary) VALUES (new.id, new.text, new.summary);
+END;
+"""
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS memories (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -101,11 +113,7 @@ END;
 CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN
     INSERT INTO memories_fts(memories_fts, rowid, text, summary) VALUES('delete', old.id, old.text, old.summary);
 END;
-CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN
-    INSERT INTO memories_fts(memories_fts, rowid, text, summary) VALUES('delete', old.id, old.text, old.summary);
-    INSERT INTO memories_fts(rowid, text, summary) VALUES (new.id, new.text, new.summary);
-END;
-"""
+""" + _FTS_UPDATE_TRIGGER
 
 # Tier semantics:
 #   0 = pinned   (no decay, retained forever, manual)
@@ -126,19 +134,7 @@ class Store:
 
     @staticmethod
     def _resolve_dim(dim: int | None, root: Path) -> int:
-        """Resolve the vector dimensionality for this store, in priority order:
-
-        1. explicit ``dim=`` argument (tests, custom deployments)
-        2. ``MNEMONICS_DIM`` env (operator override)
-        3. the store's stamped embed manifest (``embed_manifest.json``) -- the
-           recorded dimensionality of the vectors already on disk, so a store
-           migrated to a 1024-dim encoder keeps opening correctly even when the
-           caller forgets the env var. An encoder/store mismatch then surfaces
-           as the embed-manifest drift warning instead of hnswlib silently
-           mis-reading the vectors (knn distances rot) or rejecting every
-           ingest with "Wrong dimensionality".
-        4. legacy 384 (all-MiniLM-L6-v2) only for fresh stores.
-        """
+        """Resolve vector dimensionality from explicit config or store provenance."""
         if dim is not None:
             return int(dim)
         env = os.environ.get("MNEMONICS_DIM")
@@ -231,6 +227,23 @@ class Store:
             self._db.execute("DROP TABLE IF EXISTS memories_fts")
             self._db.executescript(_SCHEMA)
             schema_was_replaced = True
+        # Older triggers re-indexed unchanged text on every access-count update.
+        # Upgrade atomically once, without rebuilding the FTS contents.
+        trigger = self._db.execute(
+            "SELECT sql FROM sqlite_master WHERE type='trigger' AND name='memories_au'"
+        ).fetchone()
+        expected = " ".join(_FTS_UPDATE_TRIGGER.replace("IF NOT EXISTS ", "").split()).rstrip(";")
+        actual = " ".join((trigger[0] if trigger else "").split()).rstrip(";")
+        if actual != expected:
+            self._db.execute("SAVEPOINT fts_update_trigger")
+            try:
+                self._db.execute("DROP TRIGGER IF EXISTS memories_au")
+                self._db.execute(_FTS_UPDATE_TRIGGER)
+            except Exception:
+                self._db.execute("ROLLBACK TO fts_update_trigger")
+                raise
+            finally:
+                self._db.execute("RELEASE fts_update_trigger")
         fts_count = self._db.execute("SELECT COUNT(*) FROM memories_fts").fetchone()[0]
         mem_count = self._db.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
         if schema_was_replaced and mem_count > 0:
@@ -285,7 +298,7 @@ class Store:
         try:
             idx.load_index(str(idx_path))
         except RuntimeError:
-            self._writer.warning(f"Corrupt index for ns={ns!r}, removing and rebuilding")
+            _LOG.warning("Corrupt index for ns=%r, removing and rebuilding", ns)
             idx_path.unlink(missing_ok=True)
             return
         idx.set_ef(64)
@@ -307,6 +320,12 @@ class Store:
             idx.set_num_threads(_INDEX_NUM_THREADS)
             self._index[ns] = idx
         return self._index[ns]
+
+    def warm_namespace(self, ns: str) -> int:
+        """Load/refresh a namespace HNSW index without touching retrieval counters."""
+        with self._ns_file_lock(ns, exclusive=False), self._lock:
+            self._reload_if_stale(ns)
+            return int(self._index_for(ns).get_current_count())
 
     def add(
         self,
@@ -358,6 +377,7 @@ class Store:
         min_tier: int | None = None,
         max_tier: int | None = None,
         exclude_superseded: bool = True,
+        touch: bool = True,
     ) -> list[dict[str, Any]]:
         # Shared lock — multiple peers may search the same ns concurrently;
         # only a writer needs to block them. Reload-if-stale picks up freshly
@@ -365,16 +385,9 @@ class Store:
         with self._ns_file_lock(ns, exclusive=False), self._lock:
             self._reload_if_stale(ns)
             idx = self._index_for(ns)
-            n = min(top_k, idx.get_current_count())
-            if n == 0:
+            count = idx.get_current_count()
+            if top_k <= 0 or count == 0:
                 return []
-            try:
-                labels, distances = idx.knn_query(vector, k=n)
-            except RuntimeError:
-                # All elements in this index are mark_deleted; nothing to return.
-                return []
-            row_ids = [int(x) for x in labels[0]]
-            placeholders = ",".join("?" * len(row_ids))
             tier_clause = ""
             tier_params: list[int] = []
             if min_tier is not None:
@@ -387,30 +400,60 @@ class Store:
                 # A memory the caller has replaced (see supersede()) stays in the
                 # DB + index for audit, but must not surface in normal retrieval.
                 tier_clause += " AND (json_extract(meta,'$.status') IS NULL OR json_extract(meta,'$.status') != 'superseded')"
-            rows = self._db.execute(
-                f"SELECT id, text, summary, meta, created, tier, last_accessed, access_count "
-                f"FROM memories WHERE id IN ({placeholders}){tier_clause}",
-                (*row_ids, *tier_params),
-            ).fetchall()
-            by_id = {r[0]: r for r in rows}
-            results = []
-            for rid, dist in zip(labels[0], distances[0]):
-                row = by_id.get(int(rid))
-                if row is None:
-                    continue
-                results.append({
-                    "id": row[0],
-                    "text": row[1],
-                    "summary": row[2],
-                    "meta": json.loads(row[3]),
-                    "created": row[4],
-                    "tier": row[5],
-                    "last_accessed": row[6],
-                    "access_count": row[7],
-                    "score": float(1 - dist),
-                })
-            # Touch retrieved rows: bump access_count, update last_accessed.
-            if results:
+            # Expansion may visit the entire index. Bound each SQL query,
+            # reserving bindings for filters, including on Python < 3.11.
+            variable_limit = 900
+            if hasattr(self._db, "getlimit") and hasattr(sqlite3, "SQLITE_LIMIT_VARIABLE_NUMBER"):
+                variable_limit = min(variable_limit, self._db.getlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER))
+            batch_size = max(1, variable_limit - len(tier_params))
+            k = min(top_k, count)
+            results: list[dict[str, Any]] = []
+            while True:
+                try:
+                    labels, distances = idx.knn_query(vector, k=k)
+                except RuntimeError:
+                    # HNSW counts deleted labels; cap retries at live SQLite rows.
+                    live = self._db.execute(
+                        "SELECT COUNT(*) FROM memories WHERE ns = ?", (ns,)
+                    ).fetchone()[0]
+                    if 0 < live < k:
+                        count = k = live
+                        continue
+                    break
+                row_ids = [int(x) for x in labels[0]]
+                by_id: dict[int, Any] = {}
+                for offset in range(0, len(row_ids), batch_size):
+                    batch_ids = row_ids[offset:offset + batch_size]
+                    placeholders = ",".join("?" * len(batch_ids))
+                    rows = self._db.execute(
+                        f"SELECT id, text, summary, meta, created, tier, last_accessed, access_count "
+                        f"FROM memories WHERE id IN ({placeholders}){tier_clause}",
+                        (*batch_ids, *tier_params),
+                    ).fetchall()
+                    by_id.update((r[0], r) for r in rows)
+                results = []
+                for rid, dist in zip(labels[0], distances[0]):
+                    row = by_id.get(int(rid))
+                    if row is None:
+                        continue
+                    results.append({
+                        "id": row[0],
+                        "text": row[1],
+                        "summary": row[2],
+                        "meta": json.loads(row[3]),
+                        "created": row[4],
+                        "tier": row[5],
+                        "last_accessed": row[6],
+                        "access_count": row[7],
+                        "score": float(1 - dist),
+                    })
+                if len(results) >= top_k or k >= count:
+                    break
+                k = min(count, k * 4)
+            results = results[:top_k]
+            # Touch only user-visible retrievals. Internal candidate expansion
+            # can pass touch=False and reinforce just the final fused rows once.
+            if touch and results:
                 touched_ids = [r["id"] for r in results]
                 touch_placeholders = ",".join("?" * len(touched_ids))
                 self._db.execute(
@@ -420,6 +463,71 @@ class Store:
                 )
                 self._db.commit()
         return results
+
+    def touch_ids(self, memory_ids: list[int]) -> int:
+        """Bump access metadata once for a deduplicated set of final results."""
+        ids = sorted({int(mid) for mid in memory_ids})
+        if not ids:
+            return 0
+        placeholders = ",".join("?" * len(ids))
+        with self._lock:
+            cur = self._db.execute(
+                f"UPDATE memories SET last_accessed = datetime('now'), "
+                f"access_count = access_count + 1 WHERE id IN ({placeholders})",
+                ids,
+            )
+            self._db.commit()
+        return int(cur.rowcount)
+
+    def record_retrieval_feedback(
+        self,
+        memory_ids: list[int],
+        *,
+        success: bool,
+    ) -> dict[str, int]:
+        """Record outcome telemetry for memories exposed to a completed turn.
+
+        This is deliberately dark telemetry: it does not change retrieval
+        ranking. It only accumulates correlation between exposure and later
+        turn outcome so future ranking changes can be benchmarked first.
+        """
+        import json as _j_feedback
+        from datetime import datetime, timezone
+
+        ids = sorted({int(mid) for mid in memory_ids if int(mid) > 0})
+        if not ids:
+            return {"updated": 0, "missing": 0}
+        placeholders = ",".join("?" * len(ids))
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        updated = 0
+        with self._lock:
+            rows = self._db.execute(
+                f"SELECT id, meta FROM memories WHERE id IN ({placeholders})",
+                ids,
+            ).fetchall()
+            found = {int(row[0]) for row in rows}
+            for row_id, raw_meta in rows:
+                try:
+                    meta = _j_feedback.loads(raw_meta) if raw_meta else {}
+                except (TypeError, _j_feedback.JSONDecodeError):
+                    meta = {}
+                key = (
+                    "retrieval_success_count"
+                    if success
+                    else "retrieval_failure_count"
+                )
+                meta[key] = int(meta.get(key, 0) or 0) + 1
+                meta["retrieval_feedback_last_at"] = now
+                meta["retrieval_feedback_last_outcome"] = (
+                    "success" if success else "failure"
+                )
+                self._db.execute(
+                    "UPDATE memories SET meta=? WHERE id=?",
+                    (_j_feedback.dumps(meta, ensure_ascii=False), int(row_id)),
+                )
+                updated += 1
+            self._db.commit()
+        return {"updated": updated, "missing": len(set(ids) - found)}
 
     # FTS5's MATCH grammar treats bare punctuation as syntax errors. We only
     # need word-level recall, so flatten the query to alphanumerics + space and
@@ -889,6 +997,171 @@ class Store:
             )
             self._db.commit()
         return True
+
+    def add_canonical(
+        self,
+        text: str,
+        vector: np.ndarray,
+        *,
+        ns: str,
+        canonical_key: str,
+        summary: str | None = None,
+        meta: dict | None = None,
+        tier: int = 1,
+        retire_canonical_keys: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Atomically upsert one caller-defined canonical fact slot.
+
+        At most one active row for the key survives. Older/conflicting rows
+        are archived as superseded; exact re-ingest is idempotent and also
+        repairs duplicate active rows.
+        """
+        if tier not in (0, 1, 2):
+            raise ValueError("tier must be 0, 1, or 2")
+        key = canonical_key.strip()
+        if not key or len(key) > 256 or any(ord(ch) < 32 for ch in key):
+            raise ValueError("canonical_key must be 1-256 printable characters")
+        retire_keys: list[str] = []
+        for raw_key in retire_canonical_keys or []:
+            if not isinstance(raw_key, str):
+                raise ValueError("retire_canonical_keys must contain strings")
+            sibling_key = raw_key.strip()
+            if (
+                not sibling_key
+                or len(sibling_key) > 256
+                or any(ord(ch) < 32 for ch in sibling_key)
+            ):
+                raise ValueError(
+                    "retire_canonical_keys must contain 1-256 printable characters"
+                )
+            if sibling_key != key and sibling_key not in retire_keys:
+                retire_keys.append(sibling_key)
+        if len(retire_keys) > 16:
+            raise ValueError("retire_canonical_keys supports at most 16 keys")
+        vec = np.asarray(vector, dtype=np.float32).reshape(1, -1)
+        if vec.shape[1] != self.dim:
+            raise ValueError(f"vector dim {vec.shape[1]} != store dim {self.dim}")
+
+        import json as _j_can
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        with self._ns_file_lock(ns, exclusive=True), self._lock:
+            self._reload_if_stale(ns)
+            rows = self._db.execute(
+                "SELECT id, text, meta FROM memories WHERE ns=? "
+                "AND json_extract(meta,'$.canonical_key')=? ORDER BY id",
+                (ns, key),
+            ).fetchall()
+            active: list[tuple[int, str, dict]] = []
+            for row_id, old_text, raw_meta in rows:
+                old_meta = _j_can.loads(raw_meta) if raw_meta else {}
+                if old_meta.get("status") != "superseded":
+                    active.append((int(row_id), old_text, old_meta))
+
+            retire_active: list[tuple[int, str, dict]] = []
+            if retire_keys:
+                placeholders = ",".join("?" * len(retire_keys))
+                sibling_rows = self._db.execute(
+                    "SELECT id, text, meta FROM memories WHERE ns=? "
+                    f"AND json_extract(meta,'$.canonical_key') IN ({placeholders}) "
+                    "ORDER BY id",
+                    (ns, *retire_keys),
+                ).fetchall()
+                for row_id, old_text, raw_meta in sibling_rows:
+                    old_meta = _j_can.loads(raw_meta) if raw_meta else {}
+                    if old_meta.get("status") != "superseded":
+                        retire_active.append((int(row_id), old_text, old_meta))
+
+            exact = [row for row in active if row[1] == text]
+            if exact:
+                winner = max(exact, key=lambda row: row[0])
+                superseded: list[int] = []
+                retire_rows = [
+                    row for row in active
+                    if row[0] != winner[0]
+                ] + retire_active
+                for old_id, _old_text, old_meta in retire_rows:
+                    old_meta.update({
+                        "status": "superseded",
+                        "superseded_by": winner[0],
+                        "superseded_at": now,
+                        "valid_until": now,
+                    })
+                    self._db.execute(
+                        "UPDATE memories SET meta=? WHERE id=?",
+                        (_j_can.dumps(old_meta, ensure_ascii=False), old_id),
+                    )
+                    superseded.append(old_id)
+                if superseded:
+                    winner_meta = dict(winner[2])
+                    prior = [
+                        int(mid)
+                        for mid in winner_meta.get("supersedes", [])
+                        if isinstance(mid, int)
+                    ]
+                    winner_meta["supersedes"] = list(dict.fromkeys(
+                        [*prior, *superseded]
+                    ))
+                    self._db.execute(
+                        "UPDATE memories SET meta=? WHERE id=?",
+                        (
+                            _j_can.dumps(winner_meta, ensure_ascii=False),
+                            winner[0],
+                        ),
+                    )
+                    self._db.commit()
+                return {
+                    "action": "consolidate" if superseded else "noop",
+                    "id": winner[0],
+                    "superseded": superseded,
+                }
+
+            old_rows = [*active, *retire_active]
+            old_ids = list(dict.fromkeys(row[0] for row in old_rows))
+            new_meta = dict(meta or {})
+            new_meta.update({
+                "canonical_key": key,
+                "status": "active",
+                "valid_from": now,
+                "supersedes": old_ids,
+            })
+            cur = self._db.execute(
+                "INSERT INTO memories (ns, text, summary, meta, tier) VALUES (?, ?, ?, ?, ?)",
+                (ns, text, summary, _j_can.dumps(new_meta, ensure_ascii=False), tier),
+            )
+            new_id = int(cur.lastrowid)
+            seen_old: set[int] = set()
+            for old_id, _old_text, old_meta in old_rows:
+                if old_id in seen_old:
+                    continue
+                seen_old.add(old_id)
+                old_meta.update({
+                    "status": "superseded",
+                    "superseded_by": new_id,
+                    "superseded_at": now,
+                    "valid_until": now,
+                })
+                self._db.execute(
+                    "UPDATE memories SET meta=? WHERE id=?",
+                    (_j_can.dumps(old_meta, ensure_ascii=False), old_id),
+                )
+            self._db.commit()
+
+            idx = self._index_for(ns)
+            needed = idx.get_current_count() + 1
+            if needed > idx.get_max_elements():
+                idx.resize_index(max(needed * 2, idx.get_max_elements() * 2))
+            idx.add_items(vec, [new_id])
+            idx_path = self.root / f"index_{ns}.bin"
+            idx.save_index(str(idx_path))
+            self._index_mtime[ns] = idx_path.stat().st_mtime
+
+        return {
+            "action": "update" if old_ids else "add",
+            "id": new_id,
+            "superseded": old_ids,
+        }
 
     def supersede(self, old_id: int, new_id: int, at: str | None = None) -> bool:
         """Mark *old_id* as replaced by *new_id* without deleting it.

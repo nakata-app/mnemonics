@@ -1,4 +1,16 @@
-import subprocess, sys, os, json, time, tempfile
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import time
+
+from openai import OpenAI
+from tqdm import tqdm
+
+from mnemonics.ingest import ingest
+from mnemonics.retrieve import retrieve
+from mnemonics.store import Store
 
 # 1) PyPI versiyonu varsa sök (eskisi çakışıyor)
 subprocess.run([sys.executable, "-m", "pip", "uninstall", "mnemonics", "-y"],
@@ -24,13 +36,9 @@ if REPO not in sys.path:
     sys.path.insert(0, REPO)
 
 # 5) Import testi
-from mnemonics.store import Store
-from mnemonics.ingest import ingest
-from mnemonics.retrieve import retrieve
+
 print("mnemonics import OK")
 
-from tqdm import tqdm
-from openai import OpenAI
 
 # locomo10.json Kaggle'da "atakanakbaba/locomo" dataset'i olarak eklenmiş
 _candidates = [

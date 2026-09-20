@@ -1,10 +1,9 @@
 """Shared fixtures."""
-import pytest
-import tempfile
-import numpy as np
-from pathlib import Path
 
-from mnemonics.store import Store, DIM
+import numpy as np
+import pytest
+
+from mnemonics.store import DIM, Store
 
 
 @pytest.fixture

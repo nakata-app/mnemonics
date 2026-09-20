@@ -46,6 +46,26 @@ def main() -> None:
         default=1,
         help="Initial tier for ingested chunks: 0=pinned, 1=default, 2=ambient (default: 1)",
     )
+    i.add_argument(
+        "--canonical-key",
+        default=None,
+        help="Explicit fact-slot identity. Re-ingesting this key supersedes its prior active value.",
+    )
+
+    i.add_argument(
+        "--augment-preferences",
+        action="store_true",
+        help="Also index a derived 'User has mentioned: ...' preference doc when the "
+             "text states a stable preference/concern. Opt-in: pattern extraction can "
+             "misfire on transient task instructions, so it is off by default.",
+    )
+    i.add_argument(
+        "--augment-facts",
+        action="store_true",
+        help="Also index a derived 'Key facts: ...' doc from numeric/declarative "
+             "assistant-turn statements. Separate opt-in from --augment-preferences; "
+             "off by default.",
+    )
 
     # retrieve
     r = sub.add_parser("retrieve", help="Search memory")
@@ -60,6 +80,19 @@ def main() -> None:
     r.add_argument("--max-tier", type=int, choices=[0, 1, 2], default=None, help="Only return memories at or below this tier")
     r.add_argument("--json", dest="json_out", action="store_true", help="Output results as JSON array")
     r.add_argument("--path", default="~/.mnemonics")
+
+    # retrieve-plan (bounded deterministic multi-query retrieval)
+    rp = sub.add_parser("retrieve-plan", help="Search memory with deterministic multi-query planning + RRF fusion")
+    rp.add_argument("query")
+    rp.add_argument("--ns", default="default")
+    rp.add_argument("--top-k", type=int, default=5)
+    rp.add_argument("--candidate-k", type=int, default=50)
+    rp.add_argument("--max-queries", type=int, default=4)
+    rp.add_argument("--rerank", action="store_true")
+    rp.add_argument("--no-decay", action="store_true")
+    rp.add_argument("--no-hybrid", dest="hybrid", action="store_false", default=True)
+    rp.add_argument("--json", dest="json_out", action="store_true")
+    rp.add_argument("--path", default="~/.mnemonics")
 
     # bm25 (pure keyword search)
     bm = sub.add_parser("bm25", help="Pure BM25 keyword search (no vector encoding)")
@@ -958,8 +991,36 @@ def main() -> None:
                 print("--meta: must be a JSON object", file=sys.stderr)
                 sys.exit(2)
         metas = [meta_dict] if meta_dict is not None else None
-        n = ingest(texts=[joined], store=store, ns=args.ns, summaries=summaries, meta=metas, tier=args.tier)
-        print(f"Stored {n} chunk(s).")
+        if args.canonical_key and (args.augment_preferences or args.augment_facts):
+            print("--canonical-key cannot be combined with augmentation", file=sys.stderr)
+            sys.exit(2)
+        if args.canonical_key:
+            from mnemonics.lifecycle import canonical_ingest
+            result = canonical_ingest(
+                joined,
+                store,
+                canonical_key=args.canonical_key,
+                ns=args.ns,
+                summary=args.summary,
+                meta=meta_dict,
+                tier=args.tier,
+            )
+            print(
+                f"Canonical {result['action']}: {result['canonical_key']} -> "
+                f"id {result['id']} (superseded={result['superseded']})."
+            )
+        else:
+            n = ingest(
+                texts=[joined],
+                store=store,
+                ns=args.ns,
+                summaries=summaries,
+                meta=metas,
+                tier=args.tier,
+                augment_preferences=args.augment_preferences,
+                augment_assistant_facts=args.augment_facts,
+            )
+            print(f"Stored {n} chunk(s).")
 
     elif args.cmd == "retrieve":
         from mnemonics.retrieve import retrieve
@@ -994,6 +1055,35 @@ def main() -> None:
                     print(f"      └─ raw: {r['text'][:120]}")
                 else:
                     print(f"{header} {r['text'][:120]}")
+
+    elif args.cmd == "retrieve-plan":
+        from mnemonics.query_plan import retrieve_planned
+        from mnemonics.store import Store
+        store = Store(args.path)
+        result = retrieve_planned(
+            query=args.query,
+            store=store,
+            ns=args.ns,
+            top_k=args.top_k,
+            candidate_k=args.candidate_k,
+            max_queries=args.max_queries,
+            decay=not args.no_decay,
+            hybrid=args.hybrid,
+            rerank=args.rerank,
+        )
+        if args.json_out:
+            print(json.dumps(result, default=str, ensure_ascii=False))
+        else:
+            print("planned queries:")
+            for q in result["queries"]:
+                print(f"  [{q['kind']} w={q['weight']:.2f}] {q['text']}")
+            print("results:")
+            for row in result["results"]:
+                matched = ",".join(row.get("matched_queries", []))
+                print(
+                    f"  [plan={row.get('plan_score', 0.0):.5f}] "
+                    f"[id={row['id']} via={matched}] {row['text'][:120]}"
+                )
 
     elif args.cmd == "bm25":
         from mnemonics.store import Store

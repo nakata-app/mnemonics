@@ -1,7 +1,8 @@
 """Tests for mnemonics.store."""
 import numpy as np
 import pytest
-from mnemonics.store import Store, DIM
+
+from mnemonics.store import DIM, Store
 
 
 def make_vecs(n: int, seed: int = 0) -> np.ndarray:
@@ -207,7 +208,7 @@ def test_forget_before_date(tmp_path):
 def test_forget_candidates_dry_run(tmp_path):
     vecs = make_vecs(2)
     s = Store(tmp_path)
-    ids = s.add(["a", "b"], vecs, ns="test-ns")
+    s.add(["a", "b"], vecs, ns="test-ns")
 
     candidates = s.forget_candidates(ns="test-ns")
     assert len(candidates) == 2
@@ -735,8 +736,6 @@ def test_search_bm25_fts_operational_error(tmp_store, monkeypatch):
 
 def test_search_skips_orphan_vector(tmp_store):
     """Vectors in the index that have no DB row are silently skipped."""
-    import numpy as np
-    from mnemonics.store import DIM
     vecs = make_vecs(1)
     ids = tmp_store.add(["text to delete"], vecs)
     # Remove from DB but NOT from index — creates an orphan vector
@@ -826,8 +825,8 @@ def test_repair_rebuild_runtime_error(tmp_path, monkeypatch):
 
 def test_repair_orphan_unlink_exception(tmp_path, monkeypatch):
     """repair() catches exception from orphan index unlink (lines 725-726)."""
-    from unittest.mock import patch as _patch
     from pathlib import Path
+    from unittest.mock import patch as _patch
     s = Store(tmp_path)
     orphan_path = str(tmp_path / "index_orphan.bin")
     fake_report = {
@@ -854,7 +853,6 @@ def test_ns_file_lock_no_fcntl(tmp_store, monkeypatch):
 
 def test_rebuild_ns_index_collision(tmp_path):
     """rebuild_ns_index raises RuntimeError when index path collides (lines 516-518)."""
-    import os, shutil
     s = Store(tmp_path)
     s.add(["a", "b"], make_vecs(2), ns="alpha")
     # Simulate collision: create 'beta' namespace whose .bin resolves to same path
@@ -913,8 +911,9 @@ def test_migrate_fts_rebuild_when_behind(tmp_path):
 def test_apply_key_invalid_hex_raises(monkeypatch):
     """_apply_key raises when key is not 64 hex chars (lines 44-51)."""
     import sqlite3 as _sqlite
-    import mnemonics.store as _store_mod
+
     import mnemonics.crypto as _crypto_mod
+    import mnemonics.store as _store_mod
 
     monkeypatch.setattr(_store_mod, "_ENCRYPTED", True)
     monkeypatch.setattr(_crypto_mod, "require_key", lambda: "tooshort")
@@ -926,10 +925,10 @@ def test_apply_key_invalid_hex_raises(monkeypatch):
 
 def test_apply_key_valid_hex_executes(monkeypatch):
     """_apply_key runs PRAGMA key when key is valid 64-char hex (line 52)."""
-    import sqlite3 as _sqlite
     from unittest.mock import MagicMock
-    import mnemonics.store as _store_mod
+
     import mnemonics.crypto as _crypto_mod
+    import mnemonics.store as _store_mod
 
     valid_key = "a" * 64
     monkeypatch.setattr(_store_mod, "_ENCRYPTED", True)
@@ -944,8 +943,9 @@ def test_apply_key_valid_hex_executes(monkeypatch):
 
 def test_wal_switch_error_swallowed(tmp_path, monkeypatch):
     """lines 130-133: OperationalError during WAL switch is silently swallowed."""
-    import mnemonics.store as _s
     import sqlite3 as _sqlite
+
+    import mnemonics.store as _s
 
     original_connect = _sqlite.connect
     triggered = [False]
@@ -975,15 +975,12 @@ def test_wal_switch_error_swallowed(tmp_path, monkeypatch):
 
 def test_rebuild_ns_index_get_items_exception_skips(tmp_path, monkeypatch):
     """lines 553-554: get_items exception in rebuild_ns_index → item skipped."""
-    from unittest.mock import MagicMock, patch as _patch
-    import mnemonics.store as _s
 
     s = Store(tmp_path)
     s.add(["a", "b"], make_vecs(2), ns="ns1")
 
     # patch hnswlib.Index.get_items to fail for the second call
     call_count = [0]
-    orig_get_items = None
 
     import hnswlib
     real_get_items = hnswlib.Index.get_items
@@ -1029,7 +1026,6 @@ def test_count_all_namespaces_with_none(tmp_store):
 
 def test_search_bm25_min_tier_filter(tmp_path):
     """search_bm25 min_tier excludes items below threshold."""
-    from mnemonics.ingest import ingest
     s = Store(tmp_path)
     ids = s.add(["pinned document keyword", "ambient document keyword"], make_vecs(2))
     s.pin(ids[0])      # tier=0
@@ -1078,6 +1074,7 @@ def test_search_bm25_tier_range_filter(tmp_path):
 def test_search_min_tier_excludes_pinned(tmp_path):
     """search min_tier=1 excludes tier-0 (pinned) items."""
     import numpy as np
+
     from mnemonics.store import DIM, Store
     rng = np.random.default_rng(42)
     s = Store(tmp_path)
@@ -1094,6 +1091,7 @@ def test_search_min_tier_excludes_pinned(tmp_path):
 def test_search_max_tier_excludes_ambient(tmp_path):
     """search max_tier=1 excludes tier-2 (ambient) items."""
     import numpy as np
+
     from mnemonics.store import DIM, Store
     rng = np.random.default_rng(99)
     s = Store(tmp_path)
@@ -1511,7 +1509,8 @@ def test_recent_accessed_ns_filter(populated_store):
     """recent_accessed filters by namespace."""
     import numpy as np
     store, docs, vecs = populated_store
-    v = np.random.rand(384).astype("float32"); v /= np.linalg.norm(v)
+    v = np.random.rand(384).astype("float32")
+    v /= np.linalg.norm(v)
     store.add(["row in other"], v[None], ns="other")
     hits = store.recent_accessed(ns="default")
     assert all(h["ns"] == "default" for h in hits)
@@ -1521,7 +1520,8 @@ def test_recent_accessed_all_ns(populated_store):
     """recent_accessed with ns=None spans all namespaces."""
     import numpy as np
     store, docs, vecs = populated_store
-    v = np.random.rand(384).astype("float32"); v /= np.linalg.norm(v)
+    v = np.random.rand(384).astype("float32")
+    v /= np.linalg.norm(v)
     store.add(["row in other"], v[None], ns="other")
     hits = store.recent_accessed(ns=None)
     ns_set = {h["ns"] for h in hits}
@@ -1583,7 +1583,8 @@ def test_top_accessed_tier_filter(populated_store):
 def test_top_accessed_all_ns(populated_store):
     import numpy as np
     store, docs, vecs = populated_store
-    v = np.random.rand(384).astype("float32"); v /= np.linalg.norm(v)
+    v = np.random.rand(384).astype("float32")
+    v /= np.linalg.norm(v)
     store.add(["ns2 doc"], v[None], ns="ns2")
     hits = store.top_accessed(ns=None)
     assert {h["ns"] for h in hits} >= {"default", "ns2"}
@@ -1649,7 +1650,6 @@ def test_stats_by_ns_basic(populated_store):
 
 def test_stats_by_ns_tier_breakdown(populated_store):
     """stats_by_ns reflects tier changes."""
-    import numpy as np
     store, docs, vecs = populated_store
     ids = [r[0] for r in store._db.execute("SELECT id FROM memories").fetchall()]
     store.pin(ids[0])
@@ -1663,7 +1663,8 @@ def test_stats_by_ns_multiple_namespaces(populated_store):
     """stats_by_ns returns one entry per distinct namespace."""
     import numpy as np
     store, docs, vecs = populated_store
-    v = np.random.rand(384).astype("float32"); v /= np.linalg.norm(v)
+    v = np.random.rand(384).astype("float32")
+    v /= np.linalg.norm(v)
     store.add(["other"], v[None], ns="other")
     stats = store.stats_by_ns()
     ns_set = {s["ns"] for s in stats}
@@ -1688,8 +1689,10 @@ def test_stats_by_ns_oldest_newest_update(tmp_store):
     """stats_by_ns correctly updates oldest/newest when multiple tiers differ in creation time."""
     import numpy as np
     rng = np.random.default_rng(99)
-    v1 = rng.random((1, 384)).astype("float32"); v1 /= np.linalg.norm(v1, axis=1, keepdims=True)
-    v2 = rng.random((1, 384)).astype("float32"); v2 /= np.linalg.norm(v2, axis=1, keepdims=True)
+    v1 = rng.random((1, 384)).astype("float32")
+    v1 /= np.linalg.norm(v1, axis=1, keepdims=True)
+    v2 = rng.random((1, 384)).astype("float32")
+    v2 /= np.linalg.norm(v2, axis=1, keepdims=True)
     tmp_store.add(["early memory"], v1, tier=0)
     id1 = tmp_store._db.execute("SELECT id FROM memories").fetchone()[0]
     tmp_store.add(["late memory"], v2, tier=2)
@@ -1714,8 +1717,10 @@ def test_stats_by_ns_oldest_update_trigger(tmp_store):
     tier=2 (second in GROUP BY) has an earlier date → oldest update fires."""
     import numpy as np
     rng = np.random.default_rng(77)
-    v0 = rng.random((1, 384)).astype("float32"); v0 /= np.linalg.norm(v0, axis=1, keepdims=True)
-    v2 = rng.random((1, 384)).astype("float32"); v2 /= np.linalg.norm(v2, axis=1, keepdims=True)
+    v0 = rng.random((1, 384)).astype("float32")
+    v0 /= np.linalg.norm(v0, axis=1, keepdims=True)
+    v2 = rng.random((1, 384)).astype("float32")
+    v2 /= np.linalg.norm(v2, axis=1, keepdims=True)
     # tier=0 will come first in GROUP BY (tier ASC); give it the LATER date
     tmp_store.add(["pinned late"], v0, tier=0)
     id0 = tmp_store._db.execute("SELECT id FROM memories").fetchone()[0]
@@ -1737,7 +1742,8 @@ def test_merge_ns_basic(populated_store):
     """merge_ns moves all rows from src to dst and empties src."""
     import numpy as np
     store, docs, vecs = populated_store
-    v = np.random.rand(384).astype("float32"); v /= np.linalg.norm(v)
+    v = np.random.rand(384).astype("float32")
+    v /= np.linalg.norm(v)
     store.add(["dst doc"], v[None], ns="dst")
     n_src = len(docs)
     moved = store.merge_ns("default", "dst")
@@ -1767,7 +1773,8 @@ def test_merge_ns_removes_src_bin(populated_store):
     """merge_ns removes the source .bin index file."""
     import numpy as np
     store, docs, vecs = populated_store
-    v = np.random.rand(384).astype("float32"); v /= np.linalg.norm(v)
+    v = np.random.rand(384).astype("float32")
+    v /= np.linalg.norm(v)
     store.add(["extra"], v[None], ns="src2")
     # ensure .bin exists
     _ = store.search(v, ns="src2", top_k=1)
@@ -1877,6 +1884,7 @@ def test_hybrid_search_rrf_score_fields(populated_store):
 def test_hybrid_search_empty_ns(tmp_store):
     """hybrid_search on empty namespace returns []."""
     import numpy as np
+
     from mnemonics.store import DIM
     rng = np.random.default_rng(0)
     v = rng.random((DIM,)).astype("float32")
@@ -1913,6 +1921,7 @@ def test_hybrid_search_bm25_only_hit(tmp_store):
     must then add it via the BM25-only branch (lines 474-475).
     """
     import numpy as np
+
     from mnemonics.store import DIM
     rng = np.random.default_rng(42)
     n = 25
@@ -1966,6 +1975,7 @@ def test_similar_to_not_found(populated_store):
 def test_similar_to_single_doc(tmp_store):
     """similar_to returns [] when only one memory exists (no neighbors)."""
     import numpy as np
+
     from mnemonics.store import DIM
     rng = np.random.default_rng(1)
     v = rng.random((DIM,)).astype("float32")
@@ -2002,7 +2012,9 @@ def test_similar_to_min_tier_filter(populated_store):
 
 def test_similar_to_get_items_exception(tmp_store):
     """similar_to returns [] when get_items raises (ID not in hnswlib index)."""
-    import numpy as np, hnswlib
+    import hnswlib
+    import numpy as np
+
     from mnemonics.store import DIM
     rng = np.random.default_rng(7)
     vec = rng.random((DIM,)).astype("float32")
@@ -2024,6 +2036,7 @@ def test_similar_to_get_items_exception(tmp_store):
 def test_similar_to_empty_index_after_deletes(tmp_store):
     """similar_to returns [] when all other docs in index are mark_deleted."""
     import numpy as np
+
     from mnemonics.store import DIM
     rng = np.random.default_rng(5)
     vecs = rng.random((2, DIM)).astype("float32")
@@ -2039,8 +2052,10 @@ def test_similar_to_empty_index_after_deletes(tmp_store):
 
 def test_similar_to_knn_runtime_error(tmp_store):
     """similar_to returns [] when knn_query raises RuntimeError (all elements mark_deleted)."""
+    from unittest.mock import MagicMock, patch
+
     import numpy as np
-    from unittest.mock import patch, MagicMock
+
     from mnemonics.store import DIM
     rng = np.random.default_rng(77)
     vecs = rng.random((2, DIM)).astype("float32")
@@ -2057,8 +2072,10 @@ def test_similar_to_knn_runtime_error(tmp_store):
 
 def test_similar_to_fetch_n_zero(tmp_store):
     """similar_to returns [] when get_current_count returns 0 (fetch_n == 0 path)."""
+    from unittest.mock import MagicMock, patch
+
     import numpy as np
-    from unittest.mock import patch, MagicMock
+
     from mnemonics.store import DIM
     rng = np.random.default_rng(88)
     v = rng.random((DIM,)).astype("float32")
@@ -2130,7 +2147,7 @@ def test_expire_ns_filter(populated_store):
     other_ids = store.add(["other ns doc"], v, ns="other")
     store._db.execute("UPDATE memories SET last_accessed=datetime('now', '-100 days')")
     store._db.commit()
-    n = store.expire(ns="default", age_days=1)
+    store.expire(ns="default", age_days=1)
     # other namespace not affected
     row = store._db.execute("SELECT tier FROM memories WHERE id=?", (other_ids[0],)).fetchone()
     assert row[0] == 1  # still tier-1 in other ns
@@ -2189,12 +2206,13 @@ def test_bulk_update_summary_clears(populated_store):
 def test_deduplicate_finds_exact_duplicates(tmp_store):
     """deduplicate finds pairs with similarity >= threshold."""
     import numpy as np
+
     from mnemonics.store import DIM
     rng = np.random.default_rng(42)
     v = rng.random((DIM,)).astype("float32")
     v /= np.linalg.norm(v)
     # Two identical vectors → similarity == 1.0
-    ids = tmp_store.add(["doc A", "doc B"], np.stack([v, v]))
+    tmp_store.add(["doc A", "doc B"], np.stack([v, v]))
     result = tmp_store.deduplicate(threshold=0.99, dry_run=True)
     assert len(result["pairs"]) == 1
     assert result["removed"] == 0  # dry_run
@@ -2203,11 +2221,12 @@ def test_deduplicate_finds_exact_duplicates(tmp_store):
 def test_deduplicate_dry_run_does_not_delete(tmp_store):
     """dry_run=True returns pairs but does not actually delete."""
     import numpy as np
+
     from mnemonics.store import DIM
     rng = np.random.default_rng(5)
     v = rng.random((DIM,)).astype("float32")
     v /= np.linalg.norm(v)
-    ids = tmp_store.add(["A", "B"], np.stack([v, v]))
+    tmp_store.add(["A", "B"], np.stack([v, v]))
     result = tmp_store.deduplicate(threshold=0.99, dry_run=True)
     assert len(result["pairs"]) >= 1
     assert tmp_store.count() == 2  # still 2 after dry run
@@ -2216,6 +2235,7 @@ def test_deduplicate_dry_run_does_not_delete(tmp_store):
 def test_deduplicate_execute_deletes(tmp_store):
     """dry_run=False actually deletes the duplicate."""
     import numpy as np
+
     from mnemonics.store import DIM
     rng = np.random.default_rng(9)
     v = rng.random((DIM,)).astype("float32")
@@ -2229,6 +2249,7 @@ def test_deduplicate_execute_deletes(tmp_store):
 def test_deduplicate_keep_oldest(tmp_store):
     """keep='oldest' retains the lower ID."""
     import numpy as np
+
     from mnemonics.store import DIM
     rng = np.random.default_rng(7)
     v = rng.random((DIM,)).astype("float32")
@@ -2257,6 +2278,7 @@ def test_deduplicate_empty_ns(tmp_store):
 def test_deduplicate_single_doc(tmp_store):
     """deduplicate with only 1 doc returns empty result (no pairs possible)."""
     import numpy as np
+
     from mnemonics.store import DIM
     v = np.ones((1, DIM), dtype="float32")
     v /= np.linalg.norm(v)
@@ -2275,8 +2297,10 @@ def test_deduplicate_index_for_exception(tmp_store):
 
 def test_deduplicate_few_ids_in_db(tmp_store):
     """deduplicate returns empty when index has 2+ but SQL has <2 (line 1373)."""
+    from unittest.mock import MagicMock, patch
+
     import numpy as np
-    from unittest.mock import patch, MagicMock
+
     from mnemonics.store import DIM
     rng = np.random.default_rng(111)
     v = rng.random((DIM,)).astype("float32")
@@ -2292,8 +2316,10 @@ def test_deduplicate_few_ids_in_db(tmp_store):
 
 def test_deduplicate_get_items_exception(tmp_store):
     """deduplicate continues to next ID when get_items raises (line 1381-1382)."""
+    from unittest.mock import MagicMock, patch
+
     import numpy as np
-    from unittest.mock import patch, MagicMock
+
     from mnemonics.store import DIM
     rng = np.random.default_rng(222)
     v = rng.random((DIM,)).astype("float32")
@@ -2309,8 +2335,10 @@ def test_deduplicate_get_items_exception(tmp_store):
 
 def test_deduplicate_knn_runtime_error(tmp_store):
     """deduplicate continues when knn_query raises RuntimeError (line 1386-1387)."""
+    from unittest.mock import MagicMock, patch
+
     import numpy as np
-    from unittest.mock import patch, MagicMock
+
     from mnemonics.store import DIM
     rng = np.random.default_rng(333)
     v = rng.random((DIM,)).astype("float32")
@@ -2372,6 +2400,7 @@ def test_sample_is_random(populated_store):
 def test_reindex_all_rebuilds_all_namespaces(tmp_store):
     """reindex_all rebuilds indexes for every namespace."""
     import numpy as np
+
     from mnemonics.store import DIM
     rng = np.random.default_rng(10)
     v1 = rng.random((2, DIM)).astype("float32")
@@ -2395,9 +2424,11 @@ def test_reindex_all_empty_store(tmp_store):
 
 def test_reindex_all_reports_error(tmp_store):
     """reindex_all catches per-namespace errors and includes them in result."""
-    import numpy as np
-    from mnemonics.store import DIM
     from unittest.mock import patch
+
+    import numpy as np
+
+    from mnemonics.store import DIM
     rng = np.random.default_rng(20)
     v = rng.random((2, DIM)).astype("float32")
     v /= np.linalg.norm(v, axis=1, keepdims=True)
@@ -3028,7 +3059,7 @@ def test_text_stats_empty_ns(tmp_store):
 
 # ── rename_ns ─────────────────────────────────────────────────────────────────
 
-def test_rename_ns_moves_rows(populated_store):
+def test_rename_ns_moves_all_rows(populated_store):
     """rename_ns moves all memories to the new namespace."""
     store, docs, vecs = populated_store
     n = store.rename_ns("default", "renamed-ns")
@@ -3090,7 +3121,7 @@ def test_bulk_delete_missing_ids(populated_store):
 
 def test_bulk_delete_mark_deleted_exception_swallowed(populated_store):
     """bulk_delete swallows mark_deleted errors and still returns deleted count."""
-    from unittest.mock import patch, MagicMock
+    from unittest.mock import MagicMock, patch
     store, docs, vecs = populated_store
     ids_to_del = [r[0] for r in store._db.execute("SELECT id FROM memories LIMIT 1").fetchall()]
     mock_idx = MagicMock()
@@ -3104,7 +3135,8 @@ def test_bulk_delete_mark_deleted_exception_swallowed(populated_store):
 
 def test_filter_by_meta_finds_match(tmp_store):
     """filter_by_meta returns memories where meta[key]==value."""
-    import numpy as np, json as _j
+
+    import numpy as np
     vecs = np.random.rand(3, 384).astype(np.float32)
     tmp_store.add(["alpha", "beta", "gamma"], vecs, ns="default",
                   meta=[{"kind": "note"}, {"kind": "note"}, {"kind": "other"}])
@@ -3344,7 +3376,9 @@ def test_rotate_ns_by_tier(tmp_store):
 
 def test_compact_meta_strips_all(tmp_store):
     """compact_meta with keep_keys=None strips all meta fields."""
-    import json, numpy as np
+    import json
+
+    import numpy as np
     vecs = np.random.rand(2, 384).astype(np.float32)
     tmp_store.add(["a", "b"], vecs, ns="default",
                   meta=[{"important": "yes", "noise": "x"}, {"tags": ["t"]}])
@@ -3357,7 +3391,9 @@ def test_compact_meta_strips_all(tmp_store):
 
 def test_compact_meta_keeps_specified(tmp_store):
     """compact_meta with keep_keys retains only those keys."""
-    import json, numpy as np
+    import json
+
+    import numpy as np
     vecs = np.random.rand(1, 384).astype(np.float32)
     tmp_store.add(["doc"], vecs, ns="default", meta=[{"a": 1, "b": 2, "c": 3}])
     n = tmp_store.compact_meta(ns="default", keep_keys=["a"])
@@ -3643,7 +3679,9 @@ def test_copy_to_ns_preserves_non_default_tier(tmp_store):
 
 def test_rename_tag_renames_correctly(tmp_store):
     """rename_tag replaces old_tag with new_tag in meta.tags."""
-    import numpy as np, json
+    import json
+
+    import numpy as np
     vecs = np.random.rand(2, 384).astype(np.float32)
     ids = tmp_store.add(["a", "b"], vecs, ns="default",
                         meta=[{"tags": ["alpha", "beta"]}, {"tags": ["beta", "gamma"]}])
@@ -4051,7 +4089,9 @@ def test_untagged_memories_limit(tmp_store):
 
 def test_set_meta_for_untagged_updates(tmp_store):
     """set_meta_for_untagged sets key on untagged memories."""
-    import numpy as np, json
+    import json
+
+    import numpy as np
     vecs = np.random.rand(3, 384).astype(np.float32)
     tmp_store.add(["a", "b", "c"], vecs, ns="default",
                   meta=[{"tags": ["t"]}, {}, {}])
@@ -4170,7 +4210,7 @@ def test_pin_by_tag(tmp_store):
 
 def test_pin_by_tag_all_ns(tmp_store):
     import numpy as np
-    vecs = np.zeros((2, 384), dtype=np.float32)
+    np.zeros((2, 384), dtype=np.float32)
     ids_a = tmp_store.add(["a"], np.zeros((1, 384), dtype=np.float32), ns="ns1")
     ids_b = tmp_store.add(["b"], np.zeros((1, 384), dtype=np.float32), ns="ns2")
     tmp_store.tag(ids_a[0], "vip")

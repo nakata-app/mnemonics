@@ -10,7 +10,14 @@ exact local file that produced the floor numbers, with no push required.
 
   krun benchmarks/kaggle_beam_ce.py --acc NvidiaTeslaT4
 """
-import base64, json, os, subprocess, sys, time
+import base64
+import json
+import os
+import subprocess
+import sys
+import time
+
+import torch
 
 WORK = '/kaggle/working'
 REPO = f'{WORK}/mnemonics'
@@ -69,7 +76,7 @@ with open(probe, 'wb') as f:
     f.write(base64.b64decode(PROBE_B64))
 print(f'probe written: {os.path.getsize(probe)} bytes', flush=True)
 
-import torch
+
 print('cuda:', torch.cuda.is_available(),
       torch.cuda.get_device_name(0) if torch.cuda.is_available() else '', flush=True)
 

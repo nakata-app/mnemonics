@@ -1,4 +1,7 @@
-import os, subprocess, sys, json
+import json
+import os
+import subprocess
+import sys
 
 # 1) Repo
 WORK = '/kaggle/working'
@@ -49,7 +52,7 @@ subprocess.run([
 
 r100 = json.load(open(f'{WORK}/results/lme100_eval1.json'))['mnemonics_rerank']
 print(f'\nEval-1 100q → R@1={r100["R@1"]:.3f}  R@5={r100["R@5"]:.3f}  R@10={r100["R@10"]:.3f}')
-print(f'Baseline (lme-0.954 config): R@1=0.954 R@5=0.988 R@10=0.994')
+print('Baseline (lme-0.954 config): R@1=0.954 R@5=0.988 R@10=0.994')
 
 # 6) 500q
 print('\n=== 500q basliyor ===')
@@ -66,15 +69,15 @@ subprocess.run([
 
 # 7) Sonuc
 r500 = json.load(open(f'{WORK}/results/lme500_eval1.json'))['mnemonics_rerank']
-print(f'\n=== EVAL-1 FINAL 500q ===')
-print(f'Config: turn + temporal-aware + augment-preferences + default MiniLM CE')
+print('\n=== EVAL-1 FINAL 500q ===')
+print('Config: turn + temporal-aware + augment-preferences + default MiniLM CE')
 print(f'R@1={r500["R@1"]:.3f}  R@5={r500["R@5"]:.3f}  R@10={r500["R@10"]:.3f}')
-print(f'\nKarsilastirma:')
-print(f'  lme-0.954 baseline: R@1=0.954  R@5=0.988  R@10=0.994')
-print(f'  Hedef:              R@1=0.980  R@5=0.990  R@10=1.000')
+print('\nKarsilastirma:')
+print('  lme-0.954 baseline: R@1=0.954  R@5=0.988  R@10=0.994')
+print('  Hedef:              R@1=0.980  R@5=0.990  R@10=1.000')
 delta = r500["R@1"] - 0.954
 print(f'  Delta R@1: {delta:+.3f}')
-print(f'\nBy type:')
+print('\nBy type:')
 for qt in sorted(r500['by_type']):
     b = r500['by_type'][qt]
     print(f'  {qt:30} n={b["n"]:3}  R@1={b["R@1"]:.3f}')

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from mnemonics.eval import _build_bm25_index, _bm25_rank, rrf_fuse_ids
+from mnemonics.eval import _bm25_rank, _build_bm25_index, rrf_fuse_ids
 from mnemonics.store import Store
 
 

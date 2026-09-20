@@ -1,11 +1,11 @@
 """Tests for mnemonics.ingest."""
-import numpy as np
-import pytest
 from unittest.mock import MagicMock, patch
 
-from mnemonics.ingest import _chunk, ingest
-from mnemonics.store import Store, DIM
+import numpy as np
+import pytest
 
+from mnemonics.ingest import _chunk, ingest
+from mnemonics.store import DIM, Store
 
 # ── _chunk ───────────────────────────────────────────────────────────────────
 

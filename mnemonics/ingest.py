@@ -1,14 +1,19 @@
 """Ingest text into the store: chunk → embed → save."""
 from __future__ import annotations
 
+import logging
 import os
 import re
-from typing import Any
+import shutil
+import threading
+from pathlib import Path
+from typing import Any, Literal, overload
 
 from mnemonics.store import Store
 
 _encoder: Any = None
 _encoder_name: str = "all-MiniLM-L6-v2"
+_encoder_lock = threading.Lock()
 
 
 # Preference / memory / concern phrase patterns. When ingest's
@@ -216,6 +221,27 @@ def _resolve_model(model: str) -> str:
     return model
 
 
+def _resolve_model_for_store(model: str, store: Store) -> str:
+    """Resolve the encoder without letting a persisted store drift silently.
+
+    Explicit env overrides still win for intentional migration/A-B work. When
+    the caller uses the default model and no override is present, an existing
+    embed manifest is the source of truth: its encoder produced the vectors
+    already stored on disk and must also encode new queries/ingests.
+    """
+    resolved = _resolve_model(model)
+    if resolved != model or model != "all-MiniLM-L6-v2":
+        return resolved
+    try:
+        from mnemonics import embed_manifest as _em
+
+        stamped = _em.read(store.root)
+    except Exception:
+        stamped = None
+    encoder = stamped.get("encoder") if stamped else None
+    return encoder.strip() if isinstance(encoder, str) and encoder.strip() else resolved
+
+
 class _OnnxEmbeddingEncoder:
     """encode()-compatible ONNX encoder for the fine-tuned AdaptMem checkpoint.
 
@@ -237,6 +263,11 @@ class _OnnxEmbeddingEncoder:
         self._tok.enable_padding(
             pad_id=self._tok.token_to_id("[PAD]"), pad_token="[PAD]"
         )
+        output_dim = self._session.get_outputs()[0].shape[-1]
+        self._dim = int(output_dim) if isinstance(output_dim, int) else 0
+
+    def get_sentence_embedding_dimension(self) -> int:
+        return self._dim
 
     def encode(
         self,
@@ -264,13 +295,224 @@ class _OnnxEmbeddingEncoder:
         return np.concatenate(outs, axis=0).astype("float32")
 
 
+def _fastembed_model_name(model_name: str) -> str:
+    """Map sentence-transformers shorthand ids to FastEmbed registry ids."""
+    if model_name == "all-MiniLM-L6-v2":
+        return "sentence-transformers/all-MiniLM-L6-v2"
+    return model_name
+
+
+def _fastembed_hf_cache_dir(model_name: str, cache_dir: str) -> Path | None:
+    """Return the exact Hugging Face cache directory used by FastEmbed.
+
+    This never guesses outside cache_dir. The directory name comes from
+    FastEmbed's own supported-model metadata and is flattened the same way as
+    huggingface_hub (owner/repo -> models--owner--repo).
+    """
+    try:
+        from fastembed import TextEmbedding
+
+        resolved = _fastembed_model_name(model_name)
+        spec = next(
+            (
+                item
+                for item in TextEmbedding.list_supported_models()
+                if item.get("model") == resolved
+            ),
+            None,
+        )
+        source = (spec or {}).get("sources", {}).get("hf")
+        if not isinstance(source, str) or not source.strip():
+            return None
+        safe_name = source.strip().replace("/", "--")
+        if not re.fullmatch(r"[A-Za-z0-9._-]+(?:--[A-Za-z0-9._-]+)+", safe_name):
+            return None
+        return Path(cache_dir).expanduser() / f"models--{safe_name}"
+    except Exception:
+        return None
+
+
+def _fastembed_gcs_cache_dir(model_name: str, cache_dir: str) -> Path | None:
+    """Return FastEmbed's local GCS-extracted model directory, if defined."""
+    try:
+        from fastembed import TextEmbedding
+
+        resolved = _fastembed_model_name(model_name)
+        spec = next(
+            (
+                item
+                for item in TextEmbedding.list_supported_models()
+                if item.get("model") == resolved
+            ),
+            None,
+        )
+        sources = (spec or {}).get("sources", {})
+        if not isinstance(sources, dict) or not sources.get("url"):
+            return None
+        leaf = resolved.rsplit("/", 1)[-1]
+        if not re.fullmatch(r"[A-Za-z0-9._-]+", leaf):
+            return None
+        prefix = "fast-" if bool(sources.get("_deprecated_tar_struct")) else ""
+        return Path(cache_dir).expanduser() / f"{prefix}{leaf}"
+    except Exception:
+        return None
+
+
+def _fastembed_cache_looks_corrupt(
+    model_name: str,
+    cache_dir: str,
+    error: Exception,
+) -> bool:
+    candidate = _fastembed_hf_cache_dir(model_name, cache_dir)
+    if candidate is not None and candidate.exists():
+        try:
+            if any(candidate.rglob("*.incomplete")):
+                return True
+        except OSError:
+            pass
+
+    message = str(error).lower()
+    markers = (
+        "no_suchfile",
+        "no such file",
+        "file doesn't exist",
+        "files have been corrupted",
+        "corrupted during downloading",
+        "model.onnx failed",
+    )
+    return any(marker in message for marker in markers)
+
+
+def _purge_fastembed_model_cache(model_name: str, cache_dir: str) -> bool:
+    """Delete only the one FastEmbed HF model cache entry, never the root."""
+    candidate = _fastembed_hf_cache_dir(model_name, cache_dir)
+    if candidate is None or not candidate.exists():
+        return False
+    try:
+        if candidate.is_symlink():
+            candidate.unlink()
+        else:
+            shutil.rmtree(candidate)
+        return True
+    except OSError:
+        return False
+
+
+def _recover_fastembed_from_gcs(model_name: str, cache_dir: str) -> Path | None:
+    """Download one supported FastEmbed model through its registry GCS mirror."""
+    try:
+        from fastembed import TextEmbedding
+
+        resolved = _fastembed_model_name(model_name)
+        for embedding_type in TextEmbedding.EMBEDDINGS_REGISTRY:
+            try:
+                description = embedding_type._get_model_description(resolved)
+            except ValueError:
+                continue
+            source_url = description.sources.url
+            if not source_url:
+                return None
+            return embedding_type.retrieve_model_gcs(
+                description.model,
+                str(source_url),
+                str(Path(cache_dir).expanduser()),
+                deprecated_tar_struct=description.sources.deprecated_tar_struct,
+                local_files_only=False,
+            )
+    except Exception:
+        return None
+    return None
+
+
 class _FastEmbedEncoder:
     """encode()-compatible ONNX encoder for stock models (fastembed, torch-free)."""
 
     def __init__(self, model_name: str):
         from fastembed import TextEmbedding
 
-        self._emb = TextEmbedding(model_name=model_name)
+        self._model_name = _fastembed_model_name(model_name)
+        cache_dir = os.environ.get(
+            "MNEMONICS_FASTEMBED_CACHE",
+            os.path.expanduser("~/.cache/fastembed"),
+        )
+        local_gcs = _fastembed_gcs_cache_dir(self._model_name, cache_dir)
+        local_gcs_ready = bool(
+            local_gcs is not None
+            and (local_gcs / "model.onnx").is_file()
+        )
+        offline = os.environ.get("HF_HUB_OFFLINE", "").strip().upper() in {
+            "1", "TRUE", "YES", "ON"
+        }
+        repair_enabled = os.environ.get(
+            "MNEMONICS_FASTEMBED_REPAIR", "1"
+        ).strip().lower() not in {"0", "false", "off", "no"}
+
+        # A stale *.incomplete file is evidence of a previously interrupted
+        # download. Do not enter Hugging Face resolution first: that path may
+        # wait indefinitely on the same broken snapshot instead of raising,
+        # which means the post-error repair below would never run.
+        if (
+            not local_gcs_ready
+            and repair_enabled
+            and not offline
+            and _fastembed_cache_looks_corrupt(
+                self._model_name,
+                cache_dir,
+                RuntimeError(""),
+            )
+        ):
+            # Remove only the broken HF snapshot. FastEmbed already implements
+            # the correct single download pipeline (local HF -> online HF ->
+            # GCS fallback); invoking GCS ourselves here duplicates network work.
+            _purge_fastembed_model_cache(self._model_name, cache_dir)
+
+        try:
+            if local_gcs_ready and local_gcs is not None:
+                self._emb = TextEmbedding(
+                    model_name=self._model_name,
+                    cache_dir=cache_dir,
+                    specific_model_path=str(local_gcs),
+                )
+            else:
+                self._emb = TextEmbedding(
+                    model_name=self._model_name,
+                    cache_dir=cache_dir,
+                )
+        except Exception as first_error:
+            repaired = (
+                repair_enabled
+                and not offline
+                and _fastembed_cache_looks_corrupt(
+                    self._model_name,
+                    cache_dir,
+                    first_error,
+                )
+                and _purge_fastembed_model_cache(self._model_name, cache_dir)
+            )
+            if not repaired:
+                raise
+            recovered_dir = _recover_fastembed_from_gcs(
+                self._model_name,
+                cache_dir,
+            )
+            if recovered_dir is None:
+                raise first_error
+            self._emb = TextEmbedding(
+                model_name=self._model_name,
+                cache_dir=cache_dir,
+                specific_model_path=str(recovered_dir),
+            )
+        self._dim = next(
+            (
+                int(item["dim"])
+                for item in TextEmbedding.list_supported_models()
+                if item.get("model") == self._model_name and item.get("dim")
+            ),
+            0,
+        )
+
+    def get_sentence_embedding_dimension(self) -> int:
+        return self._dim
 
     def encode(
         self,
@@ -297,16 +539,42 @@ def _build_encoder(resolved: str) -> Any:
         from sentence_transformers import SentenceTransformer
 
         return SentenceTransformer(resolved)
-    # Stock model (MNEMONICS_ENCODER_MODEL or default): fastembed, torch-free.
-    return _FastEmbedEncoder(resolved)
+    # Stock model (MNEMONICS_ENCODER_MODEL or default): prefer FastEmbed
+    # for the low-RSS ONNX path. Benchmarks that must reproduce the historical
+    # sentence-transformers champion can pin the old backend explicitly.
+    backend = os.environ.get("MNEMONICS_EMBED_BACKEND", "fastembed").strip().lower()
+    if backend == "sentence-transformers":
+        from sentence_transformers import SentenceTransformer
+
+        return SentenceTransformer(resolved)
+    if backend not in ("", "fastembed", "auto"):
+        raise ValueError(
+            "MNEMONICS_EMBED_BACKEND must be fastembed, auto, or sentence-transformers"
+        )
+    # A corrupt/incomplete cache or an unsupported registry id must not make a
+    # fresh store unusable, so fall back to sentence-transformers.
+    try:
+        return _FastEmbedEncoder(resolved)
+    except Exception as error:
+        logging.getLogger("mnemonics").warning(
+            "FastEmbed unavailable for %s (%s); falling back to sentence-transformers",
+            resolved,
+            error,
+        )
+        from sentence_transformers import SentenceTransformer
+
+        return SentenceTransformer(resolved)
 
 
 def _get_encoder(model: str = _encoder_name) -> Any:
     global _encoder, _encoder_name
     resolved = _resolve_model(model)
     if _encoder is None or resolved != _encoder_name:
-        _encoder = _build_encoder(resolved)
-        _encoder_name = resolved
+        with _encoder_lock:
+            if _encoder is None or resolved != _encoder_name:
+                built = _build_encoder(resolved)
+                _encoder = built
+                _encoder_name = resolved
     return _encoder
 
 
@@ -321,6 +589,57 @@ def _chunk(text: str, size: int = 200, overlap: int = 40) -> list[str]:
         chunks.append(chunk)
         i += size - overlap
     return chunks
+
+
+@overload
+def ingest(
+    texts: list[str],
+    store: Store,
+    ns: str = "default",
+    meta: list[dict] | None = None,
+    summaries: list[str | None] | None = None,
+    model: str = "all-MiniLM-L6-v2",
+    chunk_size: int = 200,
+    chunk_overlap: int = 40,
+    augment_preferences: bool = False,
+    augment_assistant_facts: bool = False,
+    tier: int = 1,
+    return_ids: Literal[False] = False,
+) -> int: ...
+
+
+@overload
+def ingest(
+    texts: list[str],
+    store: Store,
+    ns: str = "default",
+    meta: list[dict] | None = None,
+    summaries: list[str | None] | None = None,
+    model: str = "all-MiniLM-L6-v2",
+    chunk_size: int = 200,
+    chunk_overlap: int = 40,
+    augment_preferences: bool = False,
+    augment_assistant_facts: bool = False,
+    tier: int = 1,
+    return_ids: Literal[True] = True,
+) -> list[int]: ...
+
+
+@overload
+def ingest(
+    texts: list[str],
+    store: Store,
+    ns: str = "default",
+    meta: list[dict] | None = None,
+    summaries: list[str | None] | None = None,
+    model: str = "all-MiniLM-L6-v2",
+    chunk_size: int = 200,
+    chunk_overlap: int = 40,
+    augment_preferences: bool = False,
+    augment_assistant_facts: bool = False,
+    tier: int = 1,
+    return_ids: bool = False,
+) -> int | list[int]: ...
 
 
 def ingest(
@@ -361,7 +680,8 @@ def ingest(
         texts = [texts]
     if summaries is not None and len(summaries) != len(texts):
         raise ValueError("summaries length must match texts length")
-    enc = _get_encoder(model)
+    resolved_model = _resolve_model_for_store(model, store)
+    enc = _get_encoder(resolved_model)
     all_chunks: list[str] = []
     all_meta: list[dict] = []
     all_summaries: list[str | None] = []
@@ -396,7 +716,7 @@ def ingest(
     # ileride degisip re-embed atlanirsa retrieve drift'i fark eder.
     try:
         from mnemonics import embed_manifest as _em
-        _em.write(store.root, _em.encoder_fingerprint(_resolve_model(model), store.dim))
+        _em.write(store.root, _em.encoder_fingerprint(resolved_model, store.dim))
     except Exception:
         pass
     return ids if return_ids else len(all_chunks)

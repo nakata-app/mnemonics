@@ -18,9 +18,9 @@ import os
 import re
 import subprocess
 import sys
-from datetime import datetime, timezone, timedelta
-from pathlib import Path
 from collections import defaultdict
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 LIVE_DIR = Path(os.environ.get("MNEMONICS_LIVE_DIR", os.path.expanduser("~/.mnemonics/live")))
 OBSERVE_MIN = int(os.environ.get("LIVE_OBSERVE_MIN", "15"))
@@ -56,7 +56,7 @@ def collect_events(feed: Path, my_session: str) -> list[dict]:
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=OBSERVE_MIN)
     out = []
     try:
-        with open(feed, "r", encoding="utf-8") as f:
+        with open(feed, encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if not line:

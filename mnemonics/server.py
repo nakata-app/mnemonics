@@ -36,7 +36,8 @@ import importlib.metadata
 import json
 import os
 import sys
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from time import perf_counter
 from typing import Any
 
 try:
@@ -44,8 +45,11 @@ try:
 except importlib.metadata.PackageNotFoundError:
     _VERSION = "0.3.0"
 
-from mnemonics.ingest import ingest as _ingest
 from mnemonics.dedup import reconcile_ingest as _reconcile_ingest
+from mnemonics.ingest import _get_encoder, _resolve_model_for_store
+from mnemonics.ingest import ingest as _ingest
+from mnemonics.lifecycle import canonical_ingest as _canonical_ingest
+from mnemonics.query_plan import retrieve_planned as _retrieve_planned
 from mnemonics.retrieve import retrieve as _retrieve
 from mnemonics.store import Store
 
@@ -60,6 +64,40 @@ def _get_store() -> Store:
     if _store is None:
         _store = Store(MNEMONICS_PATH)
     return _store
+
+
+def _warm_store(ns: str = "sessions") -> dict[str, Any]:
+    """Preload the active encoder + namespace index without mutating access counters."""
+    started = perf_counter()
+    store = _get_store()
+    resolved = _resolve_model_for_store("all-MiniLM-L6-v2", store)
+    encoder = _get_encoder(resolved)
+    probes = encoder.encode(
+        [
+            "mnemonics warmup",
+            "src/agent/provider-attempt.ts",
+            "runProviderAttempt",
+            "provider timeout stall cleanup memory retrieval",
+        ],
+        batch_size=4,
+        show_progress_bar=False,
+        normalize_embeddings=True,
+        convert_to_numpy=True,
+    )
+    count = store.warm_namespace(ns)
+    if count:
+        # Prime the actual retrieval path too: HNSW query + SQLite FTS page
+        # cache. Candidate warmup is explicitly non-reinforcing.
+        store.search(probes[-1], ns=ns, top_k=min(5, count), touch=False)
+        store.search_bm25("provider timeout cleanup", ns=ns, top_k=5)
+    return {
+        "status": "ready",
+        "ns": ns,
+        "encoder": resolved,
+        "dim": int(len(probes[0])),
+        "count": count,
+        "elapsed_ms": round((perf_counter() - started) * 1000, 1),
+    }
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -130,7 +168,36 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(400, {"error": "invalid JSON"})
             return
 
-        if self.path == "/repair":
+        if self.path == "/warmup":
+            ns = body.get("ns", "sessions")
+            if not isinstance(ns, str) or not ns.strip():
+                self._json(400, {"error": "ns must be a non-empty string"})
+                return
+            try:
+                self._json(200, _warm_store(ns.strip()))
+            except Exception as e:
+                self._json(500, {"error": f"warmup failed: {e}"})
+
+        elif self.path == "/feedback":
+            ids = body.get("ids")
+            success = body.get("success")
+            if (
+                not isinstance(ids, list)
+                or not ids
+                or len(ids) > 100
+                or any(not isinstance(mid, int) or mid <= 0 for mid in ids)
+            ):
+                self._json(400, {"error": "ids must be 1-100 positive integers"})
+                return
+            if not isinstance(success, bool):
+                self._json(400, {"error": "success must be boolean"})
+                return
+            self._json(
+                200,
+                _get_store().record_retrieval_feedback(ids, success=success),
+            )
+
+        elif self.path == "/repair":
             self._json(200, _get_store().repair())
 
         elif self.path == "/reindex-all":
@@ -708,6 +775,84 @@ class _Handler(BaseHTTPRequestHandler):
             if tier_val not in (0, 1, 2):
                 self._json(400, {"error": "tier must be 0, 1, or 2"})
                 return
+            augmentation = {
+                key: body.get(key, False)
+                for key in ("augment_preferences", "augment_assistant_facts")
+            }
+            if any(not isinstance(value, bool) for value in augmentation.values()):
+                self._json(400, {"error": "augmentation flags must be booleans"})
+                return
+            if body.get("canonical_key") is not None and any(augmentation.values()):
+                self._json(400, {"error": "canonical_key cannot be combined with augmentation"})
+                return
+            canonical_key = body.get("canonical_key")
+            if canonical_key is not None:
+                if not isinstance(canonical_key, str) or not canonical_key.strip():
+                    self._json(400, {"error": "canonical_key must be a non-empty string"})
+                    return
+                if len(texts) != 1:
+                    self._json(400, {"error": "canonical_key requires exactly one text"})
+                    return
+                retire_keys = body.get("retire_canonical_keys")
+                if retire_keys is not None and (
+                    not isinstance(retire_keys, list)
+                    or len(retire_keys) > 16
+                    or any(
+                        not isinstance(item, str)
+                        or not item.strip()
+                        or len(item.strip()) > 256
+                        or any(ord(ch) < 32 for ch in item.strip())
+                        for item in retire_keys
+                    )
+                ):
+                    self._json(
+                        400,
+                        {
+                            "error": (
+                                "retire_canonical_keys must be an array of <=16 "
+                                "non-empty printable strings"
+                            )
+                        },
+                    )
+                    return
+                canonical_summary = body.get("summary")
+                if canonical_summary is not None and not isinstance(
+                    canonical_summary, str
+                ):
+                    self._json(400, {"error": "summary must be a string"})
+                    return
+                if canonical_summary is not None and summaries is not None:
+                    self._json(
+                        400,
+                        {"error": "use either summary or summaries, not both"},
+                    )
+                    return
+                raw_meta = body.get("meta")
+                canonical_meta = None
+                if isinstance(raw_meta, dict):
+                    canonical_meta = raw_meta
+                elif isinstance(raw_meta, list) and len(raw_meta) == 1 and isinstance(raw_meta[0], dict):
+                    canonical_meta = raw_meta[0]
+                elif raw_meta is not None:
+                    self._json(400, {"error": "canonical meta must be an object or one-item object array"})
+                    return
+                result = _canonical_ingest(
+                    texts[0],
+                    _get_store(),
+                    canonical_key=canonical_key,
+                    ns=body.get("ns", "default"),
+                    summary=(
+                        canonical_summary
+                        if canonical_summary is not None
+                        else (summaries[0] if summaries else None)
+                    ),
+                    meta=canonical_meta,
+                    tier=int(tier_val),
+                    retire_canonical_keys=retire_keys,
+                )
+                self._json(200, {"canonical": result})
+                return
+
             n = _ingest(
                 texts=texts,
                 store=_get_store(),
@@ -715,6 +860,7 @@ class _Handler(BaseHTTPRequestHandler):
                 meta=body.get("meta"),
                 summaries=summaries,
                 tier=int(tier_val),
+                **augmentation,
             )
             self._json(200, {"ingested": n})
 
@@ -728,6 +874,23 @@ class _Handler(BaseHTTPRequestHandler):
             if candidate_k < 1:
                 self._json(400, {"error": "candidate_k must be >= 1"})
                 return
+            project_hints = body.get("project_hints")
+            if project_hints is not None:
+                if (
+                    not isinstance(project_hints, list)
+                    or len(project_hints) > 8
+                    or any(
+                        not isinstance(hint, str)
+                        or not hint.strip()
+                        or len(hint) > 512
+                        for hint in project_hints
+                    )
+                ):
+                    self._json(
+                        400,
+                        {"error": "project_hints must be an array of <=8 non-empty strings"},
+                    )
+                    return
             try:
                 mt_min = body.get("min_tier")
                 mt_max = body.get("max_tier")
@@ -742,6 +905,57 @@ class _Handler(BaseHTTPRequestHandler):
                     rerank=bool(body.get("rerank", False)),
                     min_tier=int(mt_min) if mt_min is not None else None,
                     max_tier=int(mt_max) if mt_max is not None else None,
+                    project_hints=project_hints,
+                )
+            except RuntimeError as e:
+                self._json(400, {"error": str(e)})
+                return
+            self._json(200, result)
+
+        elif self.path == "/retrieve-plan":
+            query = body.get("query", "").strip()
+            if not query:
+                self._json(400, {"error": "query must not be empty"})
+                return
+            candidate_k = int(body.get("candidate_k", 50))
+            max_queries = int(body.get("max_queries", 4))
+            top_k = int(body.get("top_k", 5))
+            if candidate_k < 1 or top_k < 1 or max_queries < 1:
+                self._json(400, {"error": "candidate_k, top_k and max_queries must be >= 1"})
+                return
+            project_hints = body.get("project_hints")
+            if project_hints is not None:
+                if (
+                    not isinstance(project_hints, list)
+                    or len(project_hints) > 8
+                    or any(
+                        not isinstance(hint, str)
+                        or not hint.strip()
+                        or len(hint) > 512
+                        for hint in project_hints
+                    )
+                ):
+                    self._json(
+                        400,
+                        {"error": "project_hints must be an array of <=8 non-empty strings"},
+                    )
+                    return
+            try:
+                mt_min = body.get("min_tier")
+                mt_max = body.get("max_tier")
+                result = _retrieve_planned(
+                    query=query,
+                    store=_get_store(),
+                    ns=body.get("ns", "default"),
+                    top_k=top_k,
+                    candidate_k=candidate_k,
+                    max_queries=min(max_queries, 8),
+                    decay=bool(body.get("decay", True)),
+                    hybrid=bool(body.get("hybrid", True)),
+                    rerank=bool(body.get("rerank", False)),
+                    min_tier=int(mt_min) if mt_min is not None else None,
+                    max_tier=int(mt_max) if mt_max is not None else None,
+                    project_hints=project_hints,
                 )
             except RuntimeError as e:
                 self._json(400, {"error": str(e)})
@@ -1495,10 +1709,22 @@ def _mcp_loop() -> None:
                                 "type": "object",
                                 "description": "Optional metadata dict attached to every chunk (e.g. {\"tag\": \"work\", \"source\": \"slack\"}). Same dict applied to all texts in this call.",
                             },
+                            "canonical_key": {
+                                "type": "string",
+                                "description": "Optional explicit fact-slot identity for a single text. Re-ingesting the same key atomically supersedes the prior active value while preserving lineage.",
+                            },
                             "tier": {
                                 "type": "integer",
                                 "enum": [0, 1, 2],
                                 "description": "Initial tier for all ingested chunks: 0=pinned, 1=default (default), 2=ambient",
+                            },
+                            "augment_preferences": {
+                                "type": "boolean",
+                                "description": "Opt-in derived preference memories; default false. Not supported with canonical_key.",
+                            },
+                            "augment_assistant_facts": {
+                                "type": "boolean",
+                                "description": "Independent opt-in derived assistant-fact memories; default false. Not supported with canonical_key.",
                             },
                             "reconcile": {
                                 "type": "boolean",
@@ -2799,6 +3025,50 @@ def _mcp_loop() -> None:
                     err("tier must be 0, 1, or 2")
                     continue
 
+                augmentation = {
+                    key: args.get(key, False)
+                    for key in ("augment_preferences", "augment_assistant_facts")
+                }
+                if any(not isinstance(value, bool) for value in augmentation.values()):
+                    err("augmentation flags must be booleans")
+                    continue
+                if args.get("canonical_key") is not None and any(augmentation.values()):
+                    err("canonical_key cannot be combined with augmentation")
+                    continue
+
+                canonical_key = args.get("canonical_key")
+                if canonical_key is not None:
+                    if not isinstance(canonical_key, str) or not canonical_key.strip():
+                        err("canonical_key must be a non-empty string")
+                        continue
+                    if len(texts) != 1:
+                        err("canonical_key requires exactly one text")
+                        continue
+                    if args.get("supersede") is not None:
+                        err("canonical_key cannot be combined with supersede")
+                        continue
+                    result = _canonical_ingest(
+                        texts[0],
+                        _get_store(),
+                        canonical_key=canonical_key,
+                        ns=args.get("ns", "default"),
+                        summary=summaries[0] if summaries else None,
+                        meta=meta_arg,
+                        tier=int(tier_arg),
+                    )
+                    ok({
+                        "content": [{
+                            "type": "text",
+                            "text": (
+                                f"Canonical {result['action']}: "
+                                f"{result['canonical_key']} -> id {result['id']} "
+                                f"(superseded={result['superseded']})."
+                            ),
+                        }],
+                        "canonical": result,
+                    })
+                    continue
+
                 # Opt-in conflict-aware path. Plain ingest stays the default so
                 # session-end appends are untouched; reconcile only engages when
                 # the caller asks for NOOP dedup or names memories to supersede.
@@ -2833,6 +3103,7 @@ def _mcp_loop() -> None:
                         ns=args.get("ns", "default"),
                         supersede_map=supersede_map or None,
                         tier=int(tier_arg),
+                        **augmentation,
                     )
                     parts = [f"Added {len(res['added'])} chunk(s)."]
                     if res["noop_skipped"]:
@@ -2851,6 +3122,7 @@ def _mcp_loop() -> None:
                     summaries=summaries,
                     meta=metas,
                     tier=int(tier_arg),
+                    **augmentation,
                 )
                 ok({"content": [{"type": "text", "text": f"Stored {n} chunks."}]})
 
@@ -4335,7 +4607,7 @@ def serve(port: int = MNEMONICS_PORT, mcp: bool = False) -> None:
     print(f"[mnemonics] listening on 127.0.0.1:{port}", flush=True)
     # Bind to localhost only. Do NOT change to "0.0.0.0" — that would expose
     # the entire memory store to anyone on the local network.
-    server = HTTPServer(("127.0.0.1", port), _Handler)
+    server = ThreadingHTTPServer(("127.0.0.1", port), _Handler)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

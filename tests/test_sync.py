@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import tarfile
-from pathlib import Path
 
 import pytest
 
@@ -191,7 +190,8 @@ def test_imported_rows_are_searchable(tmp_path):
 
 def test_read_manifest_unreadable_member(tmp_path):
     """Line 103: manifest member extractfile returns None → ValueError."""
-    import tarfile, io
+    import tarfile
+
     from mnemonics.sync import _read_manifest
     arc = tmp_path / "bad.tar.gz"
     with tarfile.open(arc, "w:gz") as tf:

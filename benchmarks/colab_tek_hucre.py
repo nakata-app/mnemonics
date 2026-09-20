@@ -1,4 +1,7 @@
-import os, subprocess, sys, json
+import json
+import os
+import subprocess
+import sys
 
 # 1) Dizin
 os.chdir('/content')
@@ -37,7 +40,7 @@ subprocess.run([
 # 6) 100q sonuç
 r100 = json.load(open('/content/results/lme100_v2m3.json'))['mnemonics_rerank']
 print(f'\nbge-v2-m3 100q → R@1={r100["R@1"]:.3f}  R@5={r100["R@5"]:.3f}  R@10={r100["R@10"]:.3f}')
-print(f'Referans MiniLM: R@1=0.880 | Hedef MemPalace: R@1=0.920')
+print('Referans MiniLM: R@1=0.880 | Hedef MemPalace: R@1=0.920')
 
 # 7) 500q eval
 print('\n=== 500q başlıyor ===')
@@ -51,12 +54,12 @@ subprocess.run([
 
 # 8) Final
 r500 = json.load(open('/content/results/lme500_v2m3.json'))['mnemonics_rerank']
-print(f'\n=== FINAL 500q ===')
+print('\n=== FINAL 500q ===')
 print(f'R@1={r500["R@1"]:.3f}  R@5={r500["R@5"]:.3f}  R@10={r500["R@10"]:.3f}')
-print(f'\nKarşılaştırma:')
-print(f'  Eski baseline: R@1=0.846')
-print(f'  MemPalace:     R@1=0.920')
-print(f'\nBy type:')
+print('\nKarşılaştırma:')
+print('  Eski baseline: R@1=0.846')
+print('  MemPalace:     R@1=0.920')
+print('\nBy type:')
 for qt in sorted(r500['by_type']):
     b = r500['by_type'][qt]
     print(f'  {qt:28} n={b["n"]:3}  R@1={b["R@1"]:.3f}')

@@ -88,10 +88,11 @@ def run_arm(name: str, questions: list[dict], candidate_k: int,
 
     # Import after the env is set; _get_encoder resolves the model by name and
     # reloads when the resolved name changes, so arms stay isolated.
+    from longmemeval_eval import _session_turn_chunks
+
     from mnemonics.ingest import _get_encoder, ingest
     from mnemonics.retrieve import retrieve
     from mnemonics.store import Store
-    from longmemeval_eval import _session_turn_chunks
 
     enc = _get_encoder()
     dim = enc.get_sentence_embedding_dimension()

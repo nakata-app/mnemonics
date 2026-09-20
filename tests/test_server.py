@@ -1,15 +1,12 @@
 """Tests for REST and MCP server logic."""
 import io
 import json
-import threading
-from http.client import HTTPConnection
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from mnemonics import server as srv
 from mnemonics.store import DIM, Store
-
 
 # ── helper: in-process server ────────────────────────────────────────────────
 
@@ -60,7 +57,7 @@ def http_call(store, method: str, path: str, body: dict | None = None) -> tuple[
         f"\r\n"
     ).encode() + body_bytes
 
-    fs = FakeSocket(raw)
+    FakeSocket(raw)
 
     with patch("mnemonics.server._get_store", return_value=store):
         handler = srv._Handler.__new__(srv._Handler)
@@ -467,7 +464,7 @@ def test_ingest_summaries_valid(tmp_store):
 
 
 def test_ingest_success(tmp_store):
-    with patch("mnemonics.server._ingest", return_value=2) as mock_ingest:
+    with patch("mnemonics.server._ingest", return_value=2):
         code, data = http_call(tmp_store, "POST", "/ingest", {"texts": ["a", "b"]})
     assert code == 200
     assert data["ingested"] == 2
@@ -911,7 +908,7 @@ def test_mcp_stats_tier_breakdown(populated_store):
 
 
 def test_mcp_ingest(tmp_store):
-    with patch("mnemonics.server._ingest", return_value=3) as mock_ingest:
+    with patch("mnemonics.server._ingest", return_value=3):
         resp = _mcp(tmp_store, {
             "jsonrpc": "2.0", "id": 3,
             "method": "tools/call",
@@ -1218,6 +1215,7 @@ def test_mcp_ingest_summaries_bad_length(tmp_store):
 
 def test_mcp_gc_apply(tmp_store):
     import numpy as np
+
     from mnemonics.store import DIM
     rng = np.random.default_rng(0)
     vecs = rng.random((1, DIM)).astype("float32")
@@ -1302,6 +1300,7 @@ def test_mcp_invalid_json_line_skipped(tmp_store):
 
 def test_mcp_bm25_shows_summary(tmp_store):
     import numpy as np
+
     from mnemonics.store import DIM
     rng = np.random.default_rng(0)
     vecs = rng.random((1, DIM)).astype("float32")
@@ -1387,13 +1386,12 @@ def test_serve_http_path(monkeypatch, tmp_path):
     monkeypatch.setattr(srv, "_store", None)
     monkeypatch.setattr(srv, "MNEMONICS_PATH", str(tmp_path))
     with (
-        patch("mnemonics.server.HTTPServer") as mock_httpserver,
+        patch("mnemonics.server.ThreadingHTTPServer") as mock_httpserver,
         patch("builtins.print"),
     ):
         mock_instance = MagicMock()
         mock_httpserver.return_value = mock_instance
         mock_instance.serve_forever.side_effect = KeyboardInterrupt
-        import sys as _sys
         with pytest.raises(SystemExit):
             srv.serve(port=9999, mcp=False)
     monkeypatch.setattr(srv, "_store", None)
@@ -1449,11 +1447,11 @@ def test_handler_log_message_suppressed():
 def test_version_fallback(monkeypatch):
     """lines 44-45: _VERSION falls back when package not installed."""
     import importlib.metadata
-    import importlib as _il
     with patch("importlib.metadata.version",
                side_effect=importlib.metadata.PackageNotFoundError("mnemonics")):
-        import mnemonics.server as _fresh
         import importlib
+
+        import mnemonics.server as _fresh
         importlib.reload(_fresh)
         assert _fresh._VERSION == "0.3.0"
 
@@ -2008,7 +2006,6 @@ def test_http_import_jsonl_basic(tmp_store):
 
 def test_http_import_jsonl_empty_body(tmp_store):
     """POST /import-jsonl with empty body returns 400."""
-    body_bytes = b""
     import io as _io
     with patch("mnemonics.server._get_store", return_value=tmp_store):
         handler = srv._Handler.__new__(srv._Handler)
@@ -2075,7 +2072,7 @@ def test_mcp_export_all(populated_store):
     store, docs, vecs = populated_store
     r = _mcp_export(store)
     text = r["result"]["content"][0]["text"]
-    lines = [l for l in text.splitlines() if l.strip()]
+    lines = [line for line in text.splitlines() if line.strip()]
     assert len(lines) == len(docs)
     obj = _json.loads(lines[0])
     assert "id" in obj and "text" in obj and "ns" in obj
@@ -2091,7 +2088,7 @@ def test_mcp_export_ns_filter(populated_store):
     store.add(["other ns row"], v[None], ns="other")
     r = _mcp_export(store, ns="default")
     text = r["result"]["content"][0]["text"]
-    objs = [_json.loads(l) for l in text.splitlines() if l.strip()]
+    objs = [_json.loads(line) for line in text.splitlines() if line.strip()]
     assert all(o["ns"] == "default" for o in objs)
 
 
@@ -2103,7 +2100,7 @@ def test_mcp_export_tier_filter(populated_store):
     store.pin(first_id)
     r = _mcp_export(store, tier=0)
     text = r["result"]["content"][0]["text"]
-    objs = [_json.loads(l) for l in text.splitlines() if l.strip()]
+    objs = [_json.loads(line) for line in text.splitlines() if line.strip()]
     assert len(objs) == 1
     assert objs[0]["id"] == first_id
 
@@ -2130,7 +2127,7 @@ def test_mcp_export_limit(populated_store):
     store, docs, vecs = populated_store
     r = _mcp_export(store, limit=1)
     text = r["result"]["content"][0]["text"]
-    objs = [_json.loads(l) for l in text.splitlines() if l.strip()]
+    objs = [_json.loads(line) for line in text.splitlines() if line.strip()]
     assert len(objs) == 1
 
 
@@ -2317,7 +2314,8 @@ def test_http_rename_ns_conflict(populated_store):
     """POST /rename-ns when target ns exists returns 409."""
     import numpy as np
     store, docs, vecs = populated_store
-    v = np.random.rand(384).astype("float32"); v /= np.linalg.norm(v)
+    v = np.random.rand(384).astype("float32")
+    v /= np.linalg.norm(v)
     store.add(["other row"], v[None], ns="other")
     code, data = http_call(store, "POST", "/rename-ns",
                            {"old_ns": "default", "new_ns": "other"})
@@ -2357,7 +2355,8 @@ def test_mcp_rename_ns_conflict(populated_store):
     """mnemonics_rename_ns when target exists returns error."""
     import numpy as np
     store, docs, vecs = populated_store
-    v = np.random.rand(384).astype("float32"); v /= np.linalg.norm(v)
+    v = np.random.rand(384).astype("float32")
+    v /= np.linalg.norm(v)
     store.add(["other"], v[None], ns="other")
     r = _mcp_rename(store, "default", "other")
     assert "error" in r
@@ -2421,7 +2420,8 @@ def test_mcp_count_all_ns(populated_store):
     """mnemonics_count with ns=null counts all namespaces."""
     import numpy as np
     store, docs, vecs = populated_store
-    v = np.random.rand(384).astype("float32"); v /= np.linalg.norm(v)
+    v = np.random.rand(384).astype("float32")
+    v /= np.linalg.norm(v)
     store.add(["extra row"], v[None], ns="other")
     r = _mcp(store, {
         "jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -2450,7 +2450,7 @@ def test_mcp_get_many_basic(populated_store):
         "params": {"name": "mnemonics_get_many", "arguments": {"ids": ids}},
     })[0]
     text = r["result"]["content"][0]["text"]
-    objs = [_json.loads(l) for l in text.splitlines() if l.strip()]
+    objs = [_json.loads(line) for line in text.splitlines() if line.strip()]
     assert len(objs) == 2
     assert {o["id"] for o in objs} == set(ids)
 
@@ -2564,7 +2564,8 @@ def test_http_recent_all_ns(populated_store):
     """GET /recent?ns=all returns memories from all namespaces."""
     import numpy as np
     store, docs, vecs = populated_store
-    v = np.random.rand(384).astype("float32"); v /= np.linalg.norm(v)
+    v = np.random.rand(384).astype("float32")
+    v /= np.linalg.norm(v)
     store.add(["other ns row"], v[None], ns="other")
     code, data = http_call(store, "GET", "/recent?ns=all")
     assert code == 200
@@ -2762,7 +2763,8 @@ def test_mcp_stats_by_ns_in_tools_list(tmp_store):
 def test_http_merge_ns_basic(populated_store):
     import numpy as np
     store, docs, vecs = populated_store
-    v = np.random.rand(384).astype("float32"); v /= np.linalg.norm(v)
+    v = np.random.rand(384).astype("float32")
+    v /= np.linalg.norm(v)
     store.add(["dst doc"], v[None], ns="dst_m")
     code, data = http_call(store, "POST", "/merge-ns", {"src_ns": "default", "dst_ns": "dst_m"})
     assert code == 200
@@ -2781,7 +2783,8 @@ def test_http_merge_ns_missing_fields(tmp_store):
 def test_mcp_merge_ns_basic(populated_store):
     import numpy as np
     store, docs, vecs = populated_store
-    v = np.random.rand(384).astype("float32"); v /= np.linalg.norm(v)
+    v = np.random.rand(384).astype("float32")
+    v /= np.linalg.norm(v)
     store.add(["dst doc"], v[None], ns="mgdst")
     r = _mcp(store, {
         "jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -2935,6 +2938,7 @@ def test_mcp_update_meta_in_tools_list(tmp_store):
 def test_http_hybrid_search_ok(populated_store):
     """POST /hybrid-search returns combined results."""
     import numpy as np
+
     from mnemonics.store import DIM
     store, docs, vecs = populated_store
     rng = np.random.default_rng(7)
@@ -2949,6 +2953,7 @@ def test_http_hybrid_search_ok(populated_store):
 def test_http_hybrid_search_missing_params(populated_store):
     """POST /hybrid-search without query returns 400."""
     import numpy as np
+
     from mnemonics.store import DIM
     store, docs, vecs = populated_store
     rng = np.random.default_rng(8)
@@ -2967,6 +2972,7 @@ def test_http_hybrid_search_missing_vector(populated_store):
 def test_mcp_hybrid_search_ok(populated_store):
     """MCP mnemonics_hybrid_search returns formatted results."""
     import numpy as np
+
     from mnemonics.store import DIM
     store, docs, vecs = populated_store
     rng = np.random.default_rng(9)
@@ -2995,6 +3001,7 @@ def test_mcp_hybrid_search_missing_args(populated_store):
 def test_mcp_hybrid_search_no_results(tmp_store):
     """MCP mnemonics_hybrid_search returns text when no hits (covers line 1177)."""
     import numpy as np
+
     from mnemonics.store import DIM
     rng = np.random.default_rng(0)
     qv = rng.random((DIM,)).astype("float32").tolist()
@@ -3010,6 +3017,7 @@ def test_mcp_hybrid_search_no_results(tmp_store):
 def test_mcp_hybrid_search_with_summary(populated_store):
     """MCP mnemonics_hybrid_search shows summary line when present (covers line 1188)."""
     import numpy as np
+
     from mnemonics.store import DIM
     store, docs, vecs = populated_store
     mid = store._db.execute("SELECT id FROM memories LIMIT 1").fetchone()[0]
@@ -3208,6 +3216,7 @@ def test_mcp_deduplicate_ok(populated_store):
 def test_mcp_deduplicate_with_pairs(tmp_store):
     """MCP mnemonics_deduplicate formats pair lines when duplicates exist."""
     import numpy as np
+
     from mnemonics.store import DIM
     rng = np.random.default_rng(321)
     v = rng.random((DIM,)).astype("float32")
@@ -4274,7 +4283,7 @@ def test_mcp_rename_ns_ok(populated_store):
     assert "renamed-mcp" in r["result"]["content"][0]["text"]
 
 
-def test_mcp_rename_ns_missing_args(tmp_store):
+def test_mcp_rename_ns_missing_args_late_variant(tmp_store):
     """MCP mnemonics_rename_ns without args returns error."""
     r = _mcp(tmp_store, {
         "jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -4296,7 +4305,7 @@ def test_mcp_merge_ns_ok(populated_store):
     assert "result" in r
 
 
-def test_mcp_merge_ns_missing_args(tmp_store):
+def test_mcp_merge_ns_missing_args_late_variant(tmp_store):
     """MCP mnemonics_merge_ns without args returns error."""
     r = _mcp(tmp_store, {
         "jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -4475,8 +4484,9 @@ def test_http_update_meta_key_not_found(tmp_path):
 
 def test_http_update_meta_key_remove(tmp_path):
     """POST /update-meta-key with value=null removes the key."""
-    import numpy as np
     import json
+
+    import numpy as np
     store = Store(tmp_path)
     vecs = np.random.rand(1, DIM).astype(np.float32)
     ids = store.add(["test doc"], vecs, ns="default")
@@ -4646,7 +4656,8 @@ def test_http_compact_meta_strips_all(tmp_path):
 
 def test_http_compact_meta_keeps_keys(tmp_path):
     """GET /compact-meta?keep= keeps specified keys."""
-    import numpy as np, json
+
+    import numpy as np
     store = Store(tmp_path)
     vecs = np.random.rand(1, DIM).astype(np.float32)
     store.add(["doc"], vecs, ns="default", meta=[{"keep": 1, "drop": 2}])
@@ -4759,7 +4770,7 @@ def test_http_recent_returns_results(tmp_path):
     assert data["count"] == 2
 
 
-def test_http_recent_all_ns(tmp_path):
+def test_http_newest_all_ns(tmp_path):
     """GET /newest without ns spans all namespaces."""
     import numpy as np
     store = Store(tmp_path)
@@ -5085,7 +5096,8 @@ def test_mcp_copy_to_ns_missing(tmp_path):
 
 def test_http_rename_tag(tmp_path):
     """POST /rename-tag renames tag in memories."""
-    import numpy as np, json as _j
+
+    import numpy as np
     store = Store(tmp_path)
     vecs = np.random.rand(1, DIM).astype(np.float32)
     store.add(["m"], vecs, ns="default", meta=[{"tags": ["old"]}])
@@ -6554,3 +6566,451 @@ def test_mcp_search_by_date_range_tier_arg(tmp_store):
                    "arguments": {"start": "2000-01-01", "end": "2099-12-31", "tier": 0}},
     })[0]
     assert "result" in resp
+
+
+# ── POST /retrieve-plan ───────────────────────────────────────────────────────
+
+def test_http_retrieve_plan_routes_to_planned_retrieval(tmp_store):
+    payload = {
+        "results": [{"id": 1, "text": "hit", "tier": 1}],
+        "queries": [{"text": "query", "weight": 1.0, "kind": "original"}],
+    }
+    with patch("mnemonics.server._retrieve_planned", return_value=payload) as planned:
+        code, data = http_call(
+            tmp_store,
+            "POST",
+            "/retrieve-plan",
+            {
+                "query": "query",
+                "ns": "sessions",
+                "top_k": 3,
+                "max_queries": 3,
+                "project_hints": ["/repo/svelka", "svelka"],
+            },
+        )
+
+    assert code == 200
+    assert data == payload
+    planned.assert_called_once()
+    assert planned.call_args.kwargs["ns"] == "sessions"
+    assert planned.call_args.kwargs["top_k"] == 3
+    assert planned.call_args.kwargs["max_queries"] == 3
+    assert planned.call_args.kwargs["project_hints"] == ["/repo/svelka", "svelka"]
+
+
+def test_http_retrieve_plan_rejects_empty_query(tmp_store):
+    code, data = http_call(tmp_store, "POST", "/retrieve-plan", {"query": "  "})
+    assert code == 400
+    assert "query" in data["error"]
+
+
+# ── POST /warmup ──────────────────────────────────────────────────────────────
+
+def test_http_warmup_routes_to_warm_store(tmp_store):
+    payload = {
+        "status": "ready",
+        "ns": "sessions",
+        "encoder": "model",
+        "dim": 1024,
+        "count": 12,
+        "elapsed_ms": 1.2,
+    }
+    with patch("mnemonics.server._warm_store", return_value=payload) as warm:
+        code, data = http_call(tmp_store, "POST", "/warmup", {"ns": "sessions"})
+
+    assert code == 200
+    assert data == payload
+    warm.assert_called_once_with("sessions")
+
+
+def test_http_warmup_rejects_empty_namespace(tmp_store):
+    code, data = http_call(tmp_store, "POST", "/warmup", {"ns": "  "})
+    assert code == 400
+    assert "ns" in data["error"]
+
+
+# ── POST /ingest canonical lifecycle ──────────────────────────────────────────
+
+def test_http_ingest_canonical_routes_to_lifecycle(tmp_store):
+    payload = {
+        "action": "update",
+        "id": 9,
+        "superseded": [4],
+        "canonical_key": "repo:head",
+        "ns": "sessions",
+        "encoder": "model",
+    }
+    with patch("mnemonics.server._canonical_ingest", return_value=payload) as canonical:
+        code, data = http_call(
+            tmp_store,
+            "POST",
+            "/ingest",
+            {
+                "texts": ["head is def"],
+                "ns": "sessions",
+                "canonical_key": "repo:head",
+                "meta": {"source": "test"},
+            },
+        )
+
+    assert code == 200
+    assert data == {"canonical": payload}
+    canonical.assert_called_once()
+    assert canonical.call_args.kwargs["canonical_key"] == "repo:head"
+    assert canonical.call_args.kwargs["meta"] == {"source": "test"}
+
+
+def test_http_ingest_canonical_rejects_multiple_texts(tmp_store):
+    code, data = http_call(
+        tmp_store,
+        "POST",
+        "/ingest",
+        {"texts": ["a", "b"], "canonical_key": "fact:x"},
+    )
+    assert code == 400
+    assert "exactly one" in data["error"]
+
+
+def test_http_retrieve_plan_rejects_invalid_project_hints(tmp_store):
+    code, data = http_call(
+        tmp_store,
+        "POST",
+        "/retrieve-plan",
+        {"query": "query", "project_hints": ["ok", 7]},
+    )
+    assert code == 400
+    assert "project_hints" in data["error"]
+
+# ── memory SOTA REST/MCP edge coverage ────────────────────────────────────────
+
+def test_http_warmup_surfaces_internal_failure(tmp_store):
+    with patch("mnemonics.server._warm_store", side_effect=RuntimeError("boom")):
+        code, data = http_call(tmp_store, "POST", "/warmup", {"ns": "sessions"})
+    assert code == 500
+    assert "boom" in data["error"]
+
+
+@pytest.mark.parametrize("canonical_key", ["", "   ", 7])
+def test_http_canonical_rejects_invalid_key(tmp_store, canonical_key):
+    code, data = http_call(
+        tmp_store,
+        "POST",
+        "/ingest",
+        {"texts": ["x"], "canonical_key": canonical_key},
+    )
+    assert code == 400
+    assert "canonical_key" in data["error"]
+
+
+def test_http_canonical_requires_one_text(tmp_store):
+    code, data = http_call(
+        tmp_store,
+        "POST",
+        "/ingest",
+        {"texts": ["a", "b"], "canonical_key": "fact:x"},
+    )
+    assert code == 400
+    assert "exactly one" in data["error"]
+
+
+def test_http_canonical_accepts_one_item_meta_array(tmp_store):
+    result = {
+        "action": "add",
+        "id": 9,
+        "superseded": [],
+        "canonical_key": "fact:x",
+        "ns": "default",
+        "encoder": "m",
+    }
+    with patch("mnemonics.server._canonical_ingest", return_value=result) as canonical:
+        code, data = http_call(
+            tmp_store,
+            "POST",
+            "/ingest",
+            {
+                "texts": ["x"],
+                "canonical_key": "fact:x",
+                "meta": [{"project": "p"}],
+            },
+        )
+    assert code == 200
+    assert data["canonical"]["id"] == 9
+    assert canonical.call_args.kwargs["meta"] == {"project": "p"}
+
+
+def test_http_canonical_rejects_bad_meta(tmp_store):
+    code, data = http_call(
+        tmp_store,
+        "POST",
+        "/ingest",
+        {"texts": ["x"], "canonical_key": "fact:x", "meta": ["bad", "shape"]},
+    )
+    assert code == 400
+    assert "canonical meta" in data["error"]
+
+
+def test_http_retrieve_plan_rejects_invalid_bounds(tmp_store):
+    code, data = http_call(
+        tmp_store,
+        "POST",
+        "/retrieve-plan",
+        {"query": "q", "candidate_k": 0},
+    )
+    assert code == 400
+    assert "candidate_k" in data["error"]
+
+
+def test_http_retrieve_plan_surfaces_runtime_error(tmp_store):
+    with patch("mnemonics.server._retrieve_planned", side_effect=RuntimeError("bad model")):
+        code, data = http_call(
+            tmp_store,
+            "POST",
+            "/retrieve-plan",
+            {"query": "q"},
+        )
+    assert code == 400
+    assert "bad model" in data["error"]
+
+
+def _mcp_ingest_args(**extra):
+    args = {"texts": ["new fact"]}
+    args.update(extra)
+    return {
+        "jsonrpc": "2.0",
+        "id": 990,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_ingest", "arguments": args},
+    }
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"canonical_key": ""},
+        {"canonical_key": "fact:x", "texts": ["a", "b"]},
+        {"canonical_key": "fact:x", "supersede": [1]},
+    ],
+)
+def test_mcp_canonical_validation(tmp_store, extra):
+    resp = _mcp(tmp_store, _mcp_ingest_args(**extra))[0]
+    assert "error" in resp
+
+
+def test_mcp_canonical_happy_path(tmp_store):
+    result = {
+        "action": "update",
+        "id": 3,
+        "superseded": [1],
+        "canonical_key": "fact:x",
+        "ns": "default",
+        "encoder": "m",
+    }
+    with patch("mnemonics.server._canonical_ingest", return_value=result):
+        resp = _mcp(
+            tmp_store,
+            _mcp_ingest_args(
+                canonical_key="fact:x",
+                summary="gist",
+                meta={"project": "p"},
+                tier=0,
+            ),
+        )[0]
+    assert resp["result"]["canonical"] == result
+    assert "Canonical update" in resp["result"]["content"][0]["text"]
+
+
+def test_mcp_reconcile_rejects_bad_supersede_array(tmp_store):
+    resp = _mcp(tmp_store, _mcp_ingest_args(supersede=["bad"]))[0]
+    assert "error" in resp
+
+
+def test_mcp_reconcile_rejects_bad_supersede_object(tmp_store):
+    resp = _mcp(tmp_store, _mcp_ingest_args(supersede={"0": ["bad"]}))[0]
+    assert "error" in resp
+
+
+def test_mcp_reconcile_rejects_wrong_supersede_shape(tmp_store):
+    resp = _mcp(tmp_store, _mcp_ingest_args(supersede="bad"))[0]
+    assert "error" in resp
+
+
+@pytest.mark.parametrize(
+    "supersede,expected_map",
+    [
+        ([1, 2], {0: [1, 2]}),
+        ({"0": [1], "2": [3]}, {0: [1], 2: [3]}),
+    ],
+)
+def test_mcp_reconcile_builds_supersede_map_and_reports_all_outcomes(
+    tmp_store, supersede, expected_map
+):
+    result = {
+        "added": [10],
+        "noop_skipped": [{"index": 0}],
+        "superseded": [{"old_id": 1, "new_id": 10}],
+        "supersede_failed": [999],
+    }
+    with patch("mnemonics.server._reconcile_ingest", return_value=result) as reconcile:
+        resp = _mcp(
+            tmp_store,
+            _mcp_ingest_args(supersede=supersede, reconcile=True),
+        )[0]
+    assert reconcile.call_args.kwargs["supersede_map"] == expected_map
+    text = resp["result"]["content"][0]["text"]
+    assert "Skipped 1 duplicate" in text
+    assert "Superseded 1 old memory" in text
+    assert "not found" in text
+
+
+
+def test_http_feedback_records_outcome(tmp_store):
+    tmp_store.record_retrieval_feedback = MagicMock(
+        return_value={"updated": 2, "missing": 0}
+    )
+    code, data = http_call(
+        tmp_store,
+        "POST",
+        "/feedback",
+        {"ids": [1, 2], "success": True},
+    )
+    assert code == 200
+    assert data == {"updated": 2, "missing": 0}
+    tmp_store.record_retrieval_feedback.assert_called_once_with(
+        [1, 2],
+        success=True,
+    )
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {},
+        {"ids": [], "success": True},
+        {"ids": [0], "success": True},
+        {"ids": [1], "success": "yes"},
+    ],
+)
+def test_http_feedback_rejects_invalid_payload(tmp_store, body):
+    code, data = http_call(tmp_store, "POST", "/feedback", body)
+    assert code == 400
+    assert "error" in data
+
+
+def test_http_canonical_accepts_summary_and_retire_sibling_keys(tmp_store):
+    result = {
+        "action": "update",
+        "id": 12,
+        "superseded": [7],
+        "canonical_key": "episode:verified:task",
+        "ns": "sessions",
+        "encoder": "m",
+    }
+    with patch("mnemonics.server._canonical_ingest", return_value=result) as canonical:
+        code, data = http_call(
+            tmp_store,
+            "POST",
+            "/ingest",
+            {
+                "texts": ["verified result"],
+                "canonical_key": "episode:verified:task",
+                "retire_canonical_keys": ["episode:ambient:task"],
+                "summary": "the user request",
+                "meta": {"verified": True},
+            },
+        )
+
+    assert code == 200
+    assert data["canonical"]["id"] == 12
+    assert canonical.call_args.kwargs["summary"] == "the user request"
+    assert canonical.call_args.kwargs["retire_canonical_keys"] == [
+        "episode:ambient:task"
+    ]
+
+
+@pytest.mark.parametrize(
+    "retire_keys",
+    [
+        "episode:ambient:task",
+        [""],
+        [7],
+        ["x"] * 17,
+    ],
+)
+def test_http_canonical_rejects_bad_retire_sibling_keys(tmp_store, retire_keys):
+    code, data = http_call(
+        tmp_store,
+        "POST",
+        "/ingest",
+        {
+            "texts": ["verified result"],
+            "canonical_key": "episode:verified:task",
+            "retire_canonical_keys": retire_keys,
+        },
+    )
+    assert code == 400
+    assert "retire_canonical_keys" in data["error"]
+
+
+def test_http_canonical_rejects_ambiguous_summary_shape(tmp_store):
+    code, data = http_call(
+        tmp_store,
+        "POST",
+        "/ingest",
+        {
+            "texts": ["verified result"],
+            "canonical_key": "episode:verified:task",
+            "summary": "one",
+            "summaries": ["two"],
+        },
+    )
+    assert code == 400
+    assert "either summary or summaries" in data["error"]
+
+
+# ── POST /retrieve project scope ──────────────────────────────────────────────
+
+def test_http_retrieve_passes_project_hints_to_baseline_retriever(tmp_store):
+    payload = {"results": [{"id": 1, "text": "hit"}]}
+    with patch("mnemonics.server._retrieve", return_value=payload) as retrieve_mock:
+        code, data = http_call(
+            tmp_store,
+            "POST",
+            "/retrieve",
+            {
+                "query": "provider timeout",
+                "ns": "sessions",
+                "top_k": 5,
+                "project_hints": [
+                    "/Users/macmini/Projects/svelka-work",
+                    "svelka-work",
+                ],
+            },
+        )
+
+    assert code == 200
+    assert data == payload
+    assert retrieve_mock.call_args.kwargs["project_hints"] == [
+        "/Users/macmini/Projects/svelka-work",
+        "svelka-work",
+    ]
+
+
+@pytest.mark.parametrize(
+    "hints",
+    [
+        "svelka-work",
+        [""],
+        [7],
+        ["x" * 513],
+        ["x"] * 9,
+    ],
+)
+def test_http_retrieve_rejects_invalid_project_hints(tmp_store, hints):
+    code, data = http_call(
+        tmp_store,
+        "POST",
+        "/retrieve",
+        {"query": "provider timeout", "project_hints": hints},
+    )
+    assert code == 400
+    assert "project_hints" in data["error"]
