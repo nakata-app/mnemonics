@@ -17,15 +17,15 @@ from mnemonics.retrieve import retrieve
 from mnemonics.store import DIM, Store
 
 
-def _vecs(n):
+def _vecs(n, dim=DIM):
     """n unit-ish vectors of the store dimension."""
-    return np.ones((n, DIM), dtype="float32")
+    return np.ones((n, dim), dtype="float32")
 
 
-def _enc_mock():
+def _enc_mock(dim=DIM):
     """Encoder whose encode() returns the right (n, DIM) shape for any input."""
     enc = MagicMock()
-    enc.encode.side_effect = lambda texts, **kw: _vecs(len(texts))
+    enc.encode.side_effect = lambda texts, **kw: _vecs(len(texts), dim)
     return enc
 
 
@@ -259,3 +259,62 @@ def test_store_dim_corrupt_manifest_falls_back_to_default(tmp_path, monkeypatch)
     (tmp_path / "embed_manifest.json").write_text("{not json")
     s = Store(str(tmp_path))
     assert s.dim == DIM
+
+
+def test_fresh_unpinned_ingest_adopts_encoder_dimension(tmp_path, monkeypatch):
+    monkeypatch.delenv("MNEMONICS_DIM", raising=False)
+    store = Store(tmp_path)
+    with patch("mnemonics.ingest._get_encoder", return_value=_enc_mock(1024)):
+        assert ingest(["first"], store, model="fake-1024") == 1
+    assert store.dim == 1024
+    assert em.read(tmp_path)["dim"] == 1024
+    assert Store(tmp_path).dim == 1024
+
+
+def test_fresh_adoption_replaces_empty_fallback_index_cache(tmp_path, monkeypatch):
+    monkeypatch.delenv("MNEMONICS_DIM", raising=False)
+    store = Store(tmp_path)
+    assert store.warm_namespace("empty") == 0
+    with patch("mnemonics.ingest._get_encoder", return_value=_enc_mock(1024)):
+        assert ingest(["first"], store, ns="other", model="fake-1024") == 1
+    assert store.dim == 1024
+
+
+def test_peer_dimension_stamp_replaces_empty_fallback_cache(tmp_path, monkeypatch):
+    monkeypatch.delenv("MNEMONICS_DIM", raising=False)
+    winner = Store(tmp_path)
+    peer = Store(tmp_path)
+    assert peer.warm_namespace("empty") == 0
+    winner.add(["first"], _vecs(1, 1024), ns="first")
+    peer.add(["second"], _vecs(1, 1024), ns="second")
+    assert peer.dim == 1024
+    assert peer.count("second") == 1
+
+
+def test_direct_add_dimension_rejection_leaves_no_sql_row(tmp_path):
+    store = Store(tmp_path, dim=384)
+    with pytest.raises(ValueError, match="vector dimension 1024"):
+        store.add(["bad"], _vecs(1, 1024))
+    assert store.count() == 0
+
+
+def test_direct_add_rejects_bad_vector_shape_before_sql(tmp_path):
+    store = Store(tmp_path, dim=384)
+    with pytest.raises(ValueError, match="two-dimensional"):
+        store.add(["bad"], np.ones(DIM, dtype="float32"))
+    assert store.count() == 0
+
+
+def test_direct_first_write_stamps_default_dimension(tmp_path, monkeypatch):
+    monkeypatch.delenv("MNEMONICS_DIM", raising=False)
+    store = Store(tmp_path)
+    store.add(["first"], _vecs(1))
+    assert Store(tmp_path).dim == DIM
+
+
+def test_pinned_dimension_rejects_conflicting_manifest_before_sql(tmp_path):
+    em.write(tmp_path, {"encoder": "x", "dim": 1024, "fingerprint": "x", "kind": "hub"})
+    store = Store(tmp_path, dim=384)
+    with pytest.raises(ValueError, match="configured store dimension"):
+        store.add(["bad"], _vecs(1))
+    assert store.count() == 0

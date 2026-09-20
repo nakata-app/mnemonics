@@ -121,6 +121,7 @@ END;
 #   2 = ambient  (fast decay)
 
 DIM = int(os.environ.get("MNEMONICS_DIM", "384"))
+_DIM_STAMP_NAME = "store_dimension.json"
 
 
 class Store:
@@ -129,8 +130,32 @@ class Store:
     def __init__(self, path: str | Path = "~/.mnemonics", dim: int | None = None):
         self.root = Path(path).expanduser()
         self.root.mkdir(parents=True, exist_ok=True)
+        self._dim_is_pinned = self._has_pinned_dim(dim, self.root)
         self.dim = self._resolve_dim(dim, self.root)
         self._init_db_and_locks()
+
+    @staticmethod
+    def _has_pinned_dim(dim: int | None, root: Path) -> bool:
+        if dim is not None:
+            return True
+        env = os.environ.get("MNEMONICS_DIM")
+        if env and env.strip():
+            return True
+        try:
+            from mnemonics import embed_manifest as _em
+
+            stamped = _em.read(root)
+        except Exception:
+            stamped = None
+        return bool(stamped and stamped.get("dim")) or Store._read_dim_stamp(root) is not None
+
+    @staticmethod
+    def _read_dim_stamp(root: Path) -> int | None:
+        try:
+            value = json.loads((root / _DIM_STAMP_NAME).read_text()).get("dim")
+            return int(value) if value else None
+        except (OSError, ValueError, json.JSONDecodeError, AttributeError):
+            return None
 
     @staticmethod
     def _resolve_dim(dim: int | None, root: Path) -> int:
@@ -148,6 +173,9 @@ class Store:
             stamped = None
         if stamped and stamped.get("dim"):
             return int(stamped["dim"])
+        stored_dim = Store._read_dim_stamp(root)
+        if stored_dim is not None:
+            return stored_dim
         return int(DIM)
 
     def _init_db_and_locks(self) -> None:
@@ -280,6 +308,78 @@ class Store:
         finally:
             fh.close()
 
+    @contextlib.contextmanager
+    def _dimension_file_lock(self):
+        """Serialize first-vector dimension adoption across every namespace."""
+        if not _HAS_FCNTL:
+            yield
+            return
+        lock_path = self.root / "store_dimension.lock"
+        lock_path.touch(exist_ok=True)
+        fh = open(lock_path, "r+")
+        try:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+        finally:
+            fh.close()
+
+    def _admit_vector_dim(self, vectors: np.ndarray) -> bool:
+        """Validate one batch before SQL writes; return whether it must stamp a dim."""
+        if vectors.ndim != 2:
+            raise ValueError("vectors must be a two-dimensional array")
+        if vectors.shape[1] <= 0:
+            raise ValueError("vectors must have a positive dimension")
+        actual_dim = int(vectors.shape[1])
+        try:
+            from mnemonics import embed_manifest as _em
+
+            stamped = _em.read(self.root)
+        except Exception:
+            stamped = None
+        stamped_dim = int(stamped["dim"]) if stamped and stamped.get("dim") else self._read_dim_stamp(self.root)
+        has_rows = self._db.execute("SELECT 1 FROM memories LIMIT 1").fetchone() is not None
+        fresh = stamped_dim is None and not has_rows
+        if stamped_dim is not None:
+            if self._dim_is_pinned and self.dim != stamped_dim:
+                raise ValueError(
+                    f"configured store dimension {self.dim} does not match stamped dimension {stamped_dim}"
+                )
+            self._switch_dim(stamped_dim)
+        if actual_dim != self.dim:
+            if not self._dim_is_pinned and fresh:
+                # A process may have warmed an empty fallback-dimension index
+                # before the real encoder arrives. It has no vectors or disk
+                # file, so discard that cache before adopting the first width.
+                if any(self.root.glob("index_*.bin")):
+                    raise ValueError("cannot adopt a dimension with an on-disk index")
+                self._switch_dim(actual_dim)
+                return True
+            raise ValueError(
+                f"vector dimension {actual_dim} does not match store dimension {self.dim}"
+            )
+        # Persist even a first direct 384-dimension write. Without this, a
+        # second process can treat the same populated store as fallback state.
+        return fresh
+
+    def _switch_dim(self, dim: int) -> None:
+        if dim == self.dim:
+            return
+        if any(idx.get_current_count() for idx in self._index.values()):
+            raise ValueError("cannot change dimension after vectors were initialized")
+        self._index.clear()
+        self._index_mtime.clear()
+        self.dim = dim
+
+    def _stamp_adopted_dim(self) -> None:
+        """Persist a direct-add dimension until ingest supplies an encoder fingerprint."""
+        path = self.root / _DIM_STAMP_NAME
+        tmp = path.with_name(f".{path.name}.tmp")
+        tmp.write_text(json.dumps({"dim": self.dim}))
+        os.replace(tmp, path)
+
     def _reload_if_stale(self, ns: str) -> None:
         """Force an on-disk reload of the namespace index when a peer has
         written since we last loaded it. No-op if there is no disk file yet
@@ -338,8 +438,15 @@ class Store:
     ) -> list[int]:
         if tier not in (0, 1, 2):
             raise ValueError(f"tier must be 0, 1, or 2; got {tier!r}")
+        vectors = np.asarray(vectors)
+        if vectors.ndim != 2:
+            raise ValueError("vectors must be a two-dimensional array")
+        if len(vectors) != len(texts):
+            raise ValueError("vectors length must match texts length")
         if meta is None:
             meta = [{} for _ in texts]
+        if len(meta) != len(texts):
+            raise ValueError("meta length must match texts length")
         if summaries is None:
             summaries = [None for _ in texts]
         if len(summaries) != len(texts):
@@ -349,7 +456,10 @@ class Store:
         # file lock we refresh from disk to absorb any peer writes that
         # happened since our last load — this is the fix for the corrupt
         # 14.6 GB index we just rebuilt.
-        with self._ns_file_lock(ns, exclusive=True), self._lock:
+        with self._dimension_file_lock(), self._ns_file_lock(ns, exclusive=True), self._lock:
+            adopted_dim = self._admit_vector_dim(vectors)
+            if adopted_dim:
+                self._stamp_adopted_dim()
             self._reload_if_stale(ns)
             ids = []
             for text, m, summary in zip(texts, meta, summaries):
