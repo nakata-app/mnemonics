@@ -522,6 +522,11 @@ def main() -> None:
     exp.add_argument("ns", help="Namespace to export")
     exp.add_argument("--path", default="~/.mnemonics")
 
+    # export-md
+    xmd = sub.add_parser("export-md", help="Export a namespace as human-readable Markdown")
+    xmd.add_argument("ns", help="Namespace to export")
+    xmd.add_argument("--path", default="~/.mnemonics")
+
     # bulk-tag
     btg = sub.add_parser("bulk-tag", help="Add tags to multiple memories at once")
     btg.add_argument("ids", nargs="+", type=int, help="Memory IDs")
@@ -1505,6 +1510,11 @@ def main() -> None:
         store = Store(args.path)
         records = store.export_ns(args.ns)
         print(json.dumps(records, default=str, ensure_ascii=False))
+
+    elif args.cmd == "export-md":
+        from mnemonics.store import Store
+        store = Store(args.path)
+        print(store.export_ns_markdown(args.ns), end="")
 
     elif args.cmd == "bulk-tag":
         from mnemonics.store import Store

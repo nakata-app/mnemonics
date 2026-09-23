@@ -687,6 +687,28 @@ def test_list_memories_empty_ns(tmp_store):
     assert rows == []
 
 
+# ── export_ns_markdown ────────────────────────────────────────────────────────
+
+def test_export_markdown_happy_path(tmp_store):
+    tmp_store.add(["Hello world", "second memory"], make_vecs(2))
+    md = tmp_store.export_ns_markdown("default")
+    assert "# mnemonics: default" in md
+    assert "Hello world" in md
+    assert "second memory" in md
+    assert "tier" in md
+
+
+def test_export_markdown_empty_ns(tmp_store):
+    md = tmp_store.export_ns_markdown("ghost")
+    assert md.strip() == "# mnemonics: ghost"
+
+
+def test_export_markdown_ns_isolated(tmp_store):
+    tmp_store.add(["only default"], make_vecs(1), ns="default")
+    md = tmp_store.export_ns_markdown("other")
+    assert "only default" not in md
+
+
 # ── search_bm25 ns isolation ─────────────────────────────────────────────────
 
 def test_bm25_ns_isolation(tmp_store):

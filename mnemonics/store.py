@@ -3121,6 +3121,34 @@ class Store:
             for r in rows
         ]
 
+    def export_ns_markdown(self, ns: str) -> str:
+        """Export all memories in *ns* as human-readable Markdown.
+
+        Each memory becomes an H3 block with its id and created date,
+        followed by the text and an optional meta note.  Zero memories
+        yields a header-only document (never an empty string), so the
+        output round-trips as a valid note for editors like Obsidian.
+        """
+        rows = self._db.execute(
+            "SELECT id, text, summary, meta, tier, created FROM memories "
+            "WHERE ns=? ORDER BY id",
+            (ns,),
+        ).fetchall()
+        lines = [f"# mnemonics: {ns}", ""]
+        for r in rows:
+            mid, text, summary, meta, tier, created = r
+            lines.append(f"## [{mid}] {created} (tier {tier})")
+            lines.append("")
+            lines.append(text)
+            if summary:
+                lines.append("")
+                lines.append(f"> summary: {summary}")
+            if meta:
+                lines.append("")
+                lines.append(f"<!-- meta: {meta} -->")
+            lines.append("")
+        return "\n".join(lines).rstrip() + "\n"
+
     def bulk_tag(self, memory_ids: list[int], tags: list[str]) -> int:
         """Add one or more *tags* to multiple memories at once.
 
