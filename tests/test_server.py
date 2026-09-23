@@ -686,6 +686,7 @@ def test_mcp_tools_list(tmp_store):
         "mnemonics_cross_ns_search",
         "mnemonics_memory_timeline",
         "mnemonics_keyword_extract",
+        "mnemonics_extract_facts",
         "mnemonics_import_ns",
         "mnemonics_get_tier_distribution",
         "mnemonics_archive_by_tier",
@@ -707,6 +708,64 @@ def test_mcp_rebuild_index(populated_store):
     text = resp[0]["result"]["content"][0]["text"]
     assert "default" in text
     assert "→" in text
+
+
+class _FakeFactExtractor:
+    """Deterministic stand-in; never touches an LLM."""
+
+    def __init__(self, max_facts: int = 25):
+        self.max_facts = max_facts
+        self.stats = {"facts": 2, "dropped_bad_sources": 1}
+
+    def extract_session(self, turns: list[dict]) -> list[dict]:
+        assert turns and turns[0]["id"] and turns[0]["text"]
+        return [
+            {"text": "Atakan prefers short replies.", "source_ids": [turns[0]["id"]], "kind": "fact"},
+            {"text": "mnemonics stores provenance.", "source_ids": [turns[0]["id"]], "kind": "fact"},
+        ]
+
+
+def _mcp_extract_facts(store, args: dict) -> list[dict]:
+    return _mcp(store, {
+        "jsonrpc": "2.0", "id": 99,
+        "method": "tools/call",
+        "params": {"name": "mnemonics_extract_facts", "arguments": args},
+    })
+
+
+def test_mcp_extract_facts_ingests(tmp_store):
+    with patch("mnemonics.server._FactExtractor", _FakeFactExtractor):
+        resp = _mcp_extract_facts(tmp_store, {
+            "turns": [{"id": "t1", "speaker": "user", "text": "keep answers short"}],
+            "ns": "facts",
+        })
+    text = resp[0]["result"]["content"][0]["text"]
+    assert "Extracted and stored 2 facts" in text
+    assert "Atakan prefers short replies." in text
+    rows = tmp_store.search_text("prefers short", ns="facts")
+    assert rows, "facts must be searchable after ingest"
+    assert "prefers short" in rows[0]["text"].lower()
+
+
+def test_mcp_extract_facts_missing_turns(tmp_store):
+    resp = _mcp_extract_facts(tmp_store, {"ns": "facts"})
+    assert "error" in resp[0]
+    assert "turns" in resp[0]["error"]["message"]
+
+
+def test_mcp_extract_facts_no_facts(tmp_store):
+    class _Empty(_FakeFactExtractor):
+        def extract_session(self, turns: list[dict]) -> list[dict]:
+            return []
+
+    with patch("mnemonics.server._FactExtractor", _Empty):
+        resp = _mcp_extract_facts(tmp_store, {
+            "turns": [{"id": "t1", "speaker": "user", "text": "hi"}],
+            "ns": "facts",
+        })
+    text = resp[0]["result"]["content"][0]["text"]
+    assert "no facts extracted" in text.lower()
+    assert tmp_store.count(ns="facts") == 0
 
 
 def test_mcp_rebuild_index_missing_ns(tmp_store):

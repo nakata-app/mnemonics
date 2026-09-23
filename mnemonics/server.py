@@ -46,6 +46,7 @@ except importlib.metadata.PackageNotFoundError:
     _VERSION = "0.3.0"
 
 from mnemonics.dedup import reconcile_ingest as _reconcile_ingest
+from mnemonics.extract import FactExtractor as _FactExtractor
 from mnemonics.ingest import _get_encoder, _resolve_model_for_store
 from mnemonics.ingest import ingest as _ingest
 from mnemonics.lifecycle import canonical_ingest as _canonical_ingest
@@ -1951,6 +1952,30 @@ def _mcp_loop() -> None:
                             "limit": {"type": "integer", "default": 50},
                             "tier": {"type": "integer"},
                         },
+                    },
+                },
+                {
+                    "name": "mnemonics_extract_facts",
+                    "description": "Distill a conversation into provenance-carrying atomic facts via an LLM, then ingest them into the store (ns, default 'default'). Input: list of turns, each {'id','speaker','text'}. Optional max_facts per session. Facts with no valid source ids are dropped before ingest.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "turns": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "id": {"type": "string"},
+                                        "speaker": {"type": "string"},
+                                        "text": {"type": "string"},
+                                    },
+                                    "required": ["id", "speaker", "text"],
+                                },
+                            },
+                            "ns": {"type": "string", "default": "default"},
+                            "max_facts": {"type": "integer", "default": 25},
+                        },
+                        "required": ["turns"],
                     },
                 },
                 {
@@ -4475,6 +4500,32 @@ def _mcp_loop() -> None:
                     for k in ke_result:
                         lines_ke.append(f"  {k['word']:25s} {k['score']:.4f}")
                     ok({"content": [{"type": "text", "text": "\n".join(lines_ke)}]})
+
+            elif name == "mnemonics_extract_facts":
+                ef_turns = args.get("turns")
+                if not isinstance(ef_turns, list) or not ef_turns:
+                    err("mnemonics_extract_facts: 'turns' (non-empty list of {id,speaker,text}) is required")
+                    continue
+                ef_ns = str(args.get("ns", "default") or "default")
+                ef_max = int(args.get("max_facts", 25))
+                ef_ex = _FactExtractor(max_facts=ef_max)
+                facts = ef_ex.extract_session([dict(t) for t in ef_turns])
+                if not facts:
+                    ok({"content": [{"type": "text", "text":
+                        "(no facts extracted)"}]})
+                    continue
+                ef_ids = _ingest(
+                    texts=[f["text"] for f in facts],
+                    store=_get_store(),
+                    ns=ef_ns,
+                    return_ids=True,
+                )
+                lines_ef = [f"Extracted and stored {len(ef_ids)} facts in ns={ef_ns!r} "
+                            f"({ef_ex.stats['facts']} facts, {ef_ex.stats['dropped_bad_sources']} "
+                            f"dropped for bad provenance):"]
+                for f, fid in zip(facts, ef_ids):
+                    lines_ef.append(f"  [id={fid}] {f['text']}")
+                ok({"content": [{"type": "text", "text": "\n".join(lines_ef)}]})
 
             elif name == "mnemonics_filter_by_text_length":
                 fbtl_min = int(args.get("min_chars", 0))
