@@ -49,6 +49,10 @@ LIMIT = int(os.environ.get("BEAM_LIMIT", "1" if SMOKE else "0"))
 Q_LIMIT = int(os.environ.get("BEAM_QUESTIONS", "2" if SMOKE else "0"))
 TOP_K = int(os.environ.get("BEAM_TOP_K", "200"))
 LLM_WORKERS = max(1, int(os.environ.get("BEAM_LLM_WORKERS", "8")))
+SHARD_COUNT = max(1, int(os.environ.get("BEAM_SHARD_COUNT", "1")))
+SHARD_INDEX = int(os.environ.get("BEAM_SHARD_INDEX", "0"))
+if not 0 <= SHARD_INDEX < SHARD_COUNT:
+    raise ValueError("BEAM_SHARD_INDEX must satisfy 0 <= index < count")
 
 API_BASE = "https://openrouter.ai/api/v1"
 ANSWERER_MODEL = os.environ.get("BEAM_ANSWERER", "deepseek/deepseek-chat")
@@ -344,7 +348,7 @@ def ingest_conversation(store, conv_id, chat):
     return len(texts)
 
 
-def retrieve_memories(store, conv_id, question, top_k):
+def retrieve_memories(store, conv_id, question, top_k, query_vector=None):
     from mnemonics.retrieve import retrieve
 
     res = retrieve(
@@ -355,6 +359,7 @@ def retrieve_memories(store, conv_id, question, top_k):
         model="all-MiniLM-L6-v2",
         decay=True,
         hybrid=True,
+        query_vector=query_vector,
     )
     return res.get("results", [])
 
@@ -430,7 +435,7 @@ def evaluate_conversation(store, conv, q_limit):
     n_chunks = ingest_conversation(store, conv_id, conv["chat"])
     say(f"    ingested ns={conv_id}: {n_chunks} chunks")
 
-    prepared = []
+    probe_items = []
     for qtype, items in conv["probes"].items():
         if not isinstance(items, list):
             continue
@@ -439,10 +444,35 @@ def evaluate_conversation(store, conv, q_limit):
             rubric = item.get("rubric") or []
             if isinstance(rubric, str):
                 rubric = [rubric]
-            if not question or not rubric:
-                continue
+            if question and rubric:
+                probe_items.append((qtype, question, rubric))
 
-            hits = retrieve_memories(store, conv_id, question, TOP_K)
+    prepared = []
+    if probe_items:
+        import numpy as np
+        from mnemonics.ingest import _get_encoder, _resolve_model_for_store
+
+        resolved_model = _resolve_model_for_store("all-MiniLM-L6-v2", store)
+        encoder = _get_encoder(resolved_model)
+        questions = [question for _, question, _ in probe_items]
+        qvecs = encoder.encode(
+            questions,
+            batch_size=64,
+            normalize_embeddings=True,
+            convert_to_numpy=True,
+        )
+        single = encoder.encode(
+            [questions[0]],
+            normalize_embeddings=True,
+            convert_to_numpy=True,
+        )[0]
+        max_delta = float(np.max(np.abs(single - qvecs[0])))
+        if max_delta > 1e-5:
+            raise RuntimeError(f"batch embedding parity failed: max_delta={max_delta}")
+        say(f"    batch query parity max_delta={max_delta:.2e}")
+
+        for (qtype, question, rubric), qvec in zip(probe_items, qvecs):
+            hits = retrieve_memories(store, conv_id, question, TOP_K, query_vector=qvec)
             mem_text = "\n".join(f"- {h.get('text', '')}" for h in hits) or "(No memories available)"
             prepared.append(
                 {
@@ -561,6 +591,8 @@ def main():
     all_summary = {}
     for size in SIZES:
         convs = load_conversations(size)
+        convs = [conv for idx, conv in enumerate(convs) if idx % SHARD_COUNT == SHARD_INDEX]
+        say(f"  shard={SHARD_INDEX}/{SHARD_COUNT} selected={len(convs)}")
         if LIMIT:
             convs = convs[:LIMIT]
         say(f"\n--- {size}: {len(convs)} conversations ---")
