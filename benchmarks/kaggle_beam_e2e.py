@@ -54,10 +54,10 @@ SHARD_INDEX = int(os.environ.get("BEAM_SHARD_INDEX", "0"))
 if not 0 <= SHARD_INDEX < SHARD_COUNT:
     raise ValueError("BEAM_SHARD_INDEX must satisfy 0 <= index < count")
 
-API_BASE = "https://openrouter.ai/api/v1"
+API_BASE = os.environ.get("BEAM_API_BASE", "https://openrouter.ai/api/v1").rstrip("/")
 ANSWERER_MODEL = os.environ.get("BEAM_ANSWERER", "deepseek/deepseek-chat")
 JUDGE_MODEL = os.environ.get("BEAM_JUDGE", "deepseek/deepseek-chat")
-API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
+API_KEY = os.environ.get("BEAM_API_KEY") or os.environ.get("OPENROUTER_API_KEY", "")
 
 HF_URL = "https://huggingface.co/datasets/Mohammadta/BEAM/resolve/main/data/{size}-00000-of-00001.parquet"
 DATA_DIR = f"{WORK}/beam_data"
@@ -143,12 +143,16 @@ def say(*a):
     print(*a, flush=True)
 
 
+def _non_retryable_http(exc):
+    return isinstance(exc, urllib.error.HTTPError) and exc.code in {401, 402, 403}
+
+
 def retry(fn, *args, attempts=4, base=5, **kwargs):
     for i in range(attempts):
         try:
             return fn(*args, **kwargs)
         except Exception as exc:  # noqa: BLE001
-            if i == attempts - 1:
+            if _non_retryable_http(exc) or i == attempts - 1:
                 raise
             wait = base * (2 ** i)
             say(f"  retry {i + 1}/{attempts - 1} after {wait}s: {type(exc).__name__}: {exc}")
@@ -211,6 +215,8 @@ def llm(messages, model, temperature=0.0, max_tokens=1024):
             last_err = exc
             say(f"    empty completion, escalating -> {budget * 3}: {exc}")
         except Exception as exc:  # noqa: BLE001
+            if _non_retryable_http(exc):
+                raise
             last_err = exc
             say(f"    llm failed at budget {budget}: {type(exc).__name__}: {exc}")
     raise EmptyCompletion(f"no content after escalation: {last_err}")
@@ -572,7 +578,7 @@ def summarise(records, size):
 
 def main():
     if not API_KEY:
-        raise SystemExit("OPENROUTER_API_KEY missing — cannot run answerer/judge")
+        raise SystemExit("BEAM API key missing — cannot run answerer/judge")
 
     say(f"=== BEAM e2e === sizes={SIZES} limit={LIMIT or 'all'} q_limit={Q_LIMIT or 'all'} top_k={TOP_K}")
     say(f"answerer={ANSWERER_MODEL} judge={JUDGE_MODEL}")
