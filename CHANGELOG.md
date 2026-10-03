@@ -4,7 +4,40 @@ All notable changes to mnemonics. Format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Fixed
+
+- **Rerank limits were silently ignored when adaptmem was installed.**
+  `MNEMONICS_RERANK_MAX_LENGTH` and `MNEMONICS_RERANK_BATCH_SIZE` (added to stop
+  a T4 OOM: bge-reranker-v2-m3 on long rows allocates 5.68 GiB in one attention
+  batch) were only read on the bare sentence-transformers path. With adaptmem
+  importable, `_get_rerank_ce` returned an `AdaptMem` whose `rerank()` took
+  neither, so the protection vanished without any message. Both limits now apply
+  on every backend. **Intentional behaviour change** for anyone who had set
+  these variables *and* had adaptmem installed: they now take effect. With the
+  variables unset, ranking is unchanged (see parity below).
+- A broad `except Exception: pass` around the adaptmem import is gone. A backend
+  that cannot load or score now raises `RerankerError` (with the cause chained).
+
 ### Added
+
+- **`mnemonics.rerank`: one `Reranker` interface** (`rerank(query, documents,
+  max_length, batch_size)`) with two backends, `SentenceTransformersReranker`
+  and `AdaptMemReranker`. `MNEMONICS_RERANK_BACKEND` = `auto` (default),
+  `adaptmem` or `sentence-transformers`. `auto` uses adaptmem only when it is
+  installed *and* accepts the limits, otherwise falls back to
+  sentence-transformers and logs why (INFO if not installed, WARNING if too
+  old). An explicit `adaptmem` choice never falls back. Typed errors:
+  `RerankerError`, `RerankerUnavailable`, `RerankerIncompatible`.
+- **Rerank-stage parity tests** (`tests/test_rerank.py`): with the limit
+  variables unset, the new interface produces the same ids, `ce_score`s and
+  `score`s as the pre-interface path, on both backends, and calls the model with
+  the same arguments (no `max_length`, only `show_progress_bar`). This covers
+  the rerank stage only; the trust-gate and temporal-aware parts of the
+  LongMemEval champion still live in `benchmarks/longmemeval_eval.py`.
+- The adaptmem backend needs an adaptmem release whose `AdaptMem.rerank` accepts
+  `max_length` and `batch_size`.
+
+### Added (earlier, unreleased)
 
 - **Conflict-aware ingest (`dedup.reconcile_ingest`).** The mnemonics answer to
   Mem0's ADD/UPDATE/DELETE/NOOP, done without an LLM in the library and without
