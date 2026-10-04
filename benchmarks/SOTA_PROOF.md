@@ -4,6 +4,30 @@
 **Champion commit:** `ca53594` (env-gated deterministic HNSW)
 **Canonical record:** `benchmarks/CHAMPION.json` (single source of truth, written by `benchmarks/champion.py`)
 
+> **Correction, 2026-10-04: read before citing the numbers below.**
+>
+> 1. **The trust gate is not part of the 0.958 claim.** The run that produced it
+>    used `kaggle_champion.py`, whose flags are `--mode rerank --chunk-mode turn
+>    --temporal-aware --augment-preferences --candidate-k 50 --seed 42`, and
+>    `CHAMPION.json` records the same config. Neither contains `--trust-gate-ce`,
+>    and the gate also needs a fine-tuned checkpoint that is not in this repo.
+>    The "trust-gated top-1 override" wording and the "fired 86 vs 9 times" figure
+>    below are unverified and likely carried over from a different experiment.
+>    Do not use them in the champion claim until a run that actually enabled the
+>    gate is on file.
+> 2. **0.958 is not shown to be reproducible through the production API.**
+>    `--temporal-aware` lives only in `benchmarks/longmemeval_eval.py`. Its
+>    ordinal branch ("first/last/in order") is routed by the dataset's gold
+>    `question_type == "temporal-reasoning"`, a label that does not exist at query
+>    time, and it needs the haystack session dates, which the library does not
+>    store (`created` is ingest time, not event time). How much of 0.958 comes
+>    from that branch is not yet measured.
+>
+> To measure it, run `benchmarks/temporal_ablation_offline.py` on one candidate
+> dump: `off` vs `on_labeled` (as the champion ran) vs `on_no_label`
+> (`--temporal-no-label-routing`, label-free branch only). Until that result is
+> recorded here, treat 0.958 as a benchmark-harness number, not a library one.
+
 ## The claim
 
 On LongMemEval-S (500 questions), Mnemonics retrieves the correct evidence at

@@ -496,6 +496,79 @@ def _session_id_of(meta: str | None) -> str | None:
     return None
 
 
+def _temporal_rerank(rows: list, q: dict, *, temporal_v2: bool = False,
+                     temporal_v3: bool = False,
+                     label_routing: bool = True) -> list:
+    """Temporal-aware post-rerank of the candidate rows for one question.
+
+    Two independent mechanisms, tried in this order:
+
+    1. Relative target ("N weeks/days/months ago", plus weekday/yesterday under
+       temporal-v3). Label-free: needs only the question text and the question
+       date. Sessions whose date falls inside the target window go to the front,
+       closest to the target date first.
+    2. Ordinal/comparative ("first/earliest/order" vs "last/latest"), only when
+       no relative target was found. With ``label_routing`` (the historical
+       behaviour) it is gated on the dataset's gold ``question_type ==
+       "temporal-reasoning"``. That label does not exist at query time, so this
+       branch measures a ceiling, not a production capability.
+       ``label_routing=False`` switches the whole ordinal branch off.
+
+    Rows unchanged when the question has no dated sessions or no cue.
+    """
+    sid_to_date: dict[str, datetime] = {}
+    for sid_x, d_str in zip(
+        q.get("haystack_session_ids", []),
+        q.get("haystack_dates", []) or [],
+    ):
+        sdate = _parse_lme_date(d_str)
+        if sdate is not None:
+            sid_to_date[sid_x] = sdate
+
+    def _rdate(r):
+        return sid_to_date.get(_session_id_of(r.get("text")) or "")
+
+    target_info = _detect_relative_target(
+        q.get("question", ""), q.get("question_date"),
+        require_count=temporal_v2,
+        weekdays=temporal_v3,
+    )
+    if sid_to_date and target_info is not None:
+        target_date, tol = target_info
+
+        def _in_win(r):
+            d = _rdate(r)
+            return d is not None and abs((d - target_date).days) <= tol
+
+        in_window = [r for r in rows if _in_win(r)]
+        out_window = [r for r in rows if not _in_win(r)]
+        in_window.sort(key=lambda r: abs((_rdate(r) - target_date).days))
+        return in_window + out_window
+    if (label_routing and sid_to_date
+            and q.get("question_type") == "temporal-reasoning"):
+        direction = _detect_ordinal(q.get("question", ""), v2=temporal_v2)
+        if direction is not None:
+            if temporal_v2:
+                # Relevance-scoped (v2): the date decides only among the top-5
+                # CE-ranked candidates. v3 sorts by the EVENT date parsed from
+                # the chunk text, falling back to the session date.
+                def _odate(r):
+                    sd = _rdate(r)
+                    if temporal_v3:
+                        return _event_date_of(r.get("text"), sd)
+                    return sd
+                head, tail = rows[:5], rows[5:]
+                dated = [r for r in head if _odate(r) is not None]
+                undated = [r for r in head if _odate(r) is None]
+                dated.sort(key=_odate, reverse=(direction == "desc"))
+                return dated + undated + tail
+            dated = [r for r in rows if _rdate(r) is not None]
+            undated = [r for r in rows if _rdate(r) is None]
+            dated.sort(key=_rdate, reverse=(direction == "desc"))
+            return dated + undated
+    return rows
+
+
 def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                        candidate_k: int = 20,
                        augment_preferences: bool = False,
@@ -506,6 +579,7 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                        temporal_aware: bool = False,
                        temporal_v2: bool = False,
                        temporal_v3: bool = False,
+                       temporal_label_routing: bool = True,
                        llm_rerank_top_n: int = 0,
                        llm_rerank_margin: float = 0.0,
                        rerank_fusion: bool = False,
@@ -662,73 +736,10 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
             # original order of the remaining sessions. Targets the temporal-
             # reasoning recall failures we measured (2/4 top-10 misses).
             if temporal_aware:
-                sid_to_date: dict[str, datetime] = {}
-                for sid_x, d_str in zip(
-                    q.get("haystack_session_ids", []),
-                    q.get("haystack_dates", []) or [],
-                ):
-                    sdate = _parse_lme_date(d_str)
-                    if sdate is not None:
-                        sid_to_date[sid_x] = sdate
-
-                def _rdate(r):
-                    return sid_to_date.get(_session_id_of(r.get("text")) or "")
-
-                target_info = _detect_relative_target(
-                    q.get("question", ""), q.get("question_date"),
-                    require_count=temporal_v2,
-                    weekdays=temporal_v3,
-                )
-                if sid_to_date and target_info is not None:
-                    # "N ago": promote in-window candidates AND, within the window,
-                    # rank by closeness to the target date so the date-correct chunk
-                    # wins #1 (the CE frequently leaves the gold stuck at rank 2).
-                    target_date, tol = target_info
-
-                    def _in_win(r):
-                        d = _rdate(r)
-                        return d is not None and abs((d - target_date).days) <= tol
-
-                    in_window = [r for r in result["results"] if _in_win(r)]
-                    out_window = [r for r in result["results"] if not _in_win(r)]
-                    in_window.sort(key=lambda r: abs((_rdate(r) - target_date).days))
-                    result["results"] = in_window + out_window
-                elif sid_to_date and q.get("question_type") == "temporal-reasoning":
-                    # Ordinal/comparative ("first/earliest/order" vs "last/latest"):
-                    # sort dated candidates chronologically so the chronological
-                    # extreme lands at #1; undated keep their CE order behind.
-                    # Gated to temporal-reasoning questions: "first/last" fire on
-                    # non-temporal queries ("last name", "first purchase") ~6.5% of
-                    # the time and would corrupt currently-correct answers. The gate
-                    # uses the dataset label, so this measures the lever's ceiling;
-                    # production would route via temporal-intent detection instead.
-                    direction = _detect_ordinal(q.get("question", ""), v2=temporal_v2)
-                    if direction is not None:
-                        rows = result["results"]
-                        if temporal_v2:
-                            # Relevance-scoped (v2): the date decides only among
-                            # the top-5 CE-ranked candidates. Sorting the whole
-                            # list promoted chronologically-extreme but
-                            # irrelevant sessions over the gold answer.
-                            # v3: sort key is the EVENT date parsed from the
-                            # chunk text (first explicit cue; relative cues
-                            # resolve against the session date), falling back
-                            # to the session date.
-                            def _odate(r):
-                                sd = _rdate(r)
-                                if temporal_v3:
-                                    return _event_date_of(r.get("text"), sd)
-                                return sd
-                            head, tail = rows[:5], rows[5:]
-                            dated = [r for r in head if _odate(r) is not None]
-                            undated = [r for r in head if _odate(r) is None]
-                            dated.sort(key=_odate, reverse=(direction == "desc"))
-                            result["results"] = dated + undated + tail
-                        else:
-                            dated = [r for r in rows if _rdate(r) is not None]
-                            undated = [r for r in rows if _rdate(r) is None]
-                            dated.sort(key=_rdate, reverse=(direction == "desc"))
-                            result["results"] = dated + undated
+                result["results"] = _temporal_rerank(
+                    result["results"], q,
+                    temporal_v2=temporal_v2, temporal_v3=temporal_v3,
+                    label_routing=temporal_label_routing)
 
             # Gate-pin: when the FT-CE override was VERY confident, protect its
             # #1 from later-stage demotion. Post-mortem of the m=0.2 run found
@@ -836,6 +847,9 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
             for t, v in by_type.items()
         },
     }
+    if temporal_aware:
+        out["temporal"] = {"label_routing": temporal_label_routing,
+                           "v2": temporal_v2, "v3": temporal_v3}
     if gate_ce is not None:
         out["trust_gate"] = {"model": trust_gate_ce, "margin": trust_gate_margin,
                              "fired": gate_fired}
@@ -891,6 +905,8 @@ def main():
                     help="Post-retrieval: when the query says 'N weeks/days/months ago', push sessions inside that date window to the front of the candidate list. Cheap, opt-in, no embedding change.")
     ap.add_argument("--temporal-v2", action="store_true",
                     help="Temporal-aware refinements: (1) 'how many days ago' no longer fabricates a 1-day window (count questions need an explicit number), (2) 'from latest to earliest' phrases set the sort direction explicitly and earlier-mentioned cue wins ties, (3) ordinal chronological sort is scoped to the top-5 relevant candidates instead of the whole list.")
+    ap.add_argument("--temporal-no-label-routing", action="store_true",
+                    help="Switch OFF the ordinal branch of --temporal-aware, which is gated on the dataset's gold question_type == 'temporal-reasoning' (a label that does not exist at query time). The relative-target branch (N ago, label-free) stays on. Use for the honest champion ablation.")
     ap.add_argument("--temporal-v3", action="store_true",
                     help="Implies --temporal-v2, plus: (1) ordinal sort uses EVENT dates parsed from chunk text (explicit 'May 2023'/'in 2019', or 'N units ago'/'last month' resolved against the session date) with session-date fallback, (2) 'last Saturday'/'yesterday' queries get a day-window promotion like the proven 'N units ago' path.")
     ap.add_argument("--llm-rerank-top-n", type=int, default=0,
@@ -948,6 +964,7 @@ def main():
             temporal_aware=args.temporal_aware,
             temporal_v2=args.temporal_v2,
             temporal_v3=args.temporal_v3,
+            temporal_label_routing=not args.temporal_no_label_routing,
             llm_rerank_top_n=args.llm_rerank_top_n,
             llm_rerank_margin=args.llm_rerank_margin,
             rerank_fusion=args.rerank_fusion,
@@ -971,6 +988,7 @@ def main():
             temporal_aware=args.temporal_aware,
             temporal_v2=args.temporal_v2,
             temporal_v3=args.temporal_v3,
+            temporal_label_routing=not args.temporal_no_label_routing,
             llm_rerank_top_n=args.llm_rerank_top_n,
             llm_rerank_margin=args.llm_rerank_margin,
             rerank_fusion=args.rerank_fusion,
