@@ -453,37 +453,16 @@ def _session_text(session: list[dict]) -> str:
 
 
 def _session_turn_chunks(sid: str, session: list[dict], session_date: str | None = None) -> list[str]:
-    """Split a session into (user + assistant) turn-pair chunks, MemPalace-style.
+    """Split a session into turn-pair chunks using the production helper.
 
-    Each chunk = one user turn + the immediately following assistant turn.
-    Preserves the SID= prefix so downstream session-id extraction still works.
-    Consecutive user turns or trailing user-only turns are kept as their own chunk.
-
-    When ``session_date`` is provided (LongMemEval haystack_dates), it is
-    prepended to every chunk so temporal-reasoning queries embed near the
-    sessions whose timestamps match the question's time references.
+    ``SID=`` and the optional LongMemEval date tag remain benchmark metadata;
+    the label-free turn-pair semantics themselves live in ``mnemonics.ingest``.
     """
+    from mnemonics.ingest import turn_pair_chunks
+
     prefix = f"SID={sid}|"
     date_tag = f"[{session_date}] " if session_date else ""
-    chunks: list[str] = []
-    i = 0
-    msgs = session
-    while i < len(msgs):
-        role = msgs[i].get("role", "")
-        content = msgs[i].get("content", "")
-        if role == "user":
-            pair = f"{date_tag}[user] {content}"
-            if i + 1 < len(msgs) and msgs[i + 1].get("role") == "assistant":
-                pair += f"\n[assistant] {msgs[i + 1].get('content', '')}"
-                i += 2
-            else:
-                i += 1
-            chunks.append(prefix + pair)
-        else:
-            # assistant or system turn not preceded by user — store standalone
-            chunks.append(prefix + f"{date_tag}[{role}] {content}")
-            i += 1
-    return chunks if chunks else [prefix + date_tag + _session_text(session)]
+    return [prefix + date_tag + chunk for chunk in turn_pair_chunks(session)]
 
 
 def _session_id_of(meta: str | None) -> str | None:

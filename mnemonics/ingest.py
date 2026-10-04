@@ -133,6 +133,33 @@ def _build_preference_doc(text: str, prefs: list[str]) -> str:
     return f"{prefix}User has mentioned: " + "; ".join(prefs)
 
 
+def turn_pair_chunks(messages: list[dict[str, Any]]) -> list[str]:
+    """Group a conversation into user + immediately-following assistant turns.
+
+    Non-user messages that are not paired behind a user are preserved as
+    standalone chunks. Consecutive or trailing user messages are preserved as
+    user-only chunks. Role markers stay in the text so downstream ingestion and
+    augmentation see the same transcript surface as callers that flatten chats.
+    """
+    chunks: list[str] = []
+    i = 0
+    while i < len(messages):
+        role = messages[i].get("role", "")
+        content = messages[i].get("content", "")
+        if role == "user":
+            chunk = f"[user] {content}"
+            if i + 1 < len(messages) and messages[i + 1].get("role") == "assistant":
+                chunk += f"\n[assistant] {messages[i + 1].get('content', '')}"
+                i += 2
+            else:
+                i += 1
+            chunks.append(chunk)
+        else:
+            chunks.append(f"[{role}] {content}")
+            i += 1
+    return chunks if chunks else [""]
+
+
 def _assistant_segments(text: str) -> list[str]:
     """Return assistant-role content segments from a role-tagged transcript.
 
