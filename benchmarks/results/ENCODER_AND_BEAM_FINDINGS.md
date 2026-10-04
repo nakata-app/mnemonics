@@ -19,8 +19,10 @@ The champion pipeline is `encoder top-50 + BM25 top-50 -> RRF -> cross-encoder
 -> top_k`. The cross-encoder is fixed across any encoder choice, so the only
 thing a different encoder can change is the 50-row band handed to the CE.
 
-Measured on all 500 LongMemEval questions, champion chunking
-(`--chunk-mode turn --augment-preferences --candidate-k 50`):
+Measured on all 500 LongMemEval questions with the encoder-probe configuration
+(`--chunk-mode turn --augment-preferences --candidate-k 50`). This is close to,
+but not identical to, the forensically recovered historical champion: the 0.958
+run did **not** use `--augment-preferences`.
 
 ```
 arm           dim   vec@1   vec@5   vec@50   bm25@50  fused@1   fused@50     sec
@@ -42,9 +44,11 @@ could supply a band whose non-gold rows the CE finds easier to reject. That is
 not a property a stronger retriever is designed to control, and betting a
 training or migration effort on it is betting on luck.
 
-Where the champion's R@1 actually comes from: pre-CE `fused@1 = 0.894`, final
-`R@1 = 0.958` (CHAMPION.json). The 6.4 points are the CE's work. The encoder
-cannot touch them.
+Do not attribute the 0.894 -> 0.958 gap to the base CE alone. The recovered
+historical champion reaches 0.958 with `mn-ce-v1`, a `chat-ce-v3` trust gate
+(fired 86/500), temporal-v2, and a high-confidence gate pin. This probe still
+shows that candidate-band recall is saturated in its own configuration, but it
+does not decompose which post-retrieval stage supplies the final R@1 gain.
 
 **Decision: do not run the bge-large / Qwen3 arms, do not fine-tune an encoder,
 do not migrate off MiniLM for retrieval quality reasons.** The arms are wired in
@@ -77,7 +81,7 @@ MiniLM, hybrid retrieval, **no cross-encoder**, no answerer:
 | 1M   | 625 | 0.706 | 0.237 | 0.448 |
 
 > **Correction, same day.** These rows chunk at one whole turn-pair, inherited
-> from the LongMemEval champion protocol (`--chunk-mode turn`, which passes
+> from the LongMemEval turn-chunk benchmark family (`--chunk-mode turn`, which passes
 > `chunk_size=99999` to suppress re-splitting). **Production does not do this.**
 > `ingest()` defaults to `chunk_size=200, chunk_overlap=40` (`mnemonics/ingest.py:249`)
 > and neither `cli.py` nor `server.py` ever overrides it, so every live memory is
@@ -116,7 +120,8 @@ Strongest abilities at 1M: `knowledge_update` (hit@10 0.957),
 temporal work already in the champion config is holding up at scale.
 
 **These numbers are a floor, not a BEAM score.** No CE, no answerer. On
-LongMemEval the same CE moves 0.894 -> 0.958. The CE-reranked measurement is
+LongMemEval's historical 0.958 is not a same-CE comparison: it also includes a
+trust gate and temporal-v2. The CE-reranked BEAM measurement here is
 `benchmarks/kaggle_beam_ce.py` (GPU job).
 
 ---

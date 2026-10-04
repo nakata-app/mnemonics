@@ -1,35 +1,28 @@
-"""Honest temporal ablation from ONE candidate dump (CPU only, no GPU, no API).
+"""Honest temporal ablation from ONE post-gate/pre-temporal candidate dump.
 
-Question: how much of the champion's R@1 comes from --temporal-aware, and how
-much of that comes from the ordinal branch that is gated on the dataset's gold
-``question_type`` (a label that does not exist at query time)?
+The recorded 0.958 LongMemEval-S champion is not a plain CE+temporal run.  The
+archived Kaggle kernels (krun-det1, krun-det2, krun-confirm) show this exact
+stage order:
 
-``--temporal-aware`` is a pure post-processing of the cross-encoder's output, so
-all variants can be computed from the SAME candidate rows. That removes the
-usual confound between GPU runs (different candidate sets, ties, nondeterminism):
+    deterministic HNSW -> mn-ce-v1 rerank -> chat-ce-v3 trust gate
+    -> temporal-v2 -> high-confidence gate pin
 
-    off          rows exactly as the cross-encoder ranked them
-    on_labeled   --temporal-aware as the champion ran it (ordinal branch routed
-                 by the gold question_type)
-    on_no_label  --temporal-aware with the ordinal branch OFF; only the
-                 label-free relative-target branch ("N weeks ago") remains
+The trust gate fired on 86/500 questions.  Therefore a raw ``--dump-candidates``
+snapshot (post-CE, pre-gate) cannot reproduce the champion and MUST NOT be used
+for the temporal ablation.  Use ``--dump-temporal-candidates`` instead.  That
+snapshot is taken after the gate and before temporal-aware and records the gate
+winner/margin needed to replay the later pin exactly.
 
-Produce the dump once (GPU), with the champion config. ``--dump-candidates``
-writes the pre-temporal order whether or not --temporal-aware is passed:
+From that one shared snapshot this tool computes:
 
-    MNEMONICS_DETERMINISTIC=1 MNEMONICS_RERANK_MODEL=BAAI/bge-reranker-v2-m3 \\
-    python benchmarks/longmemeval_eval.py --n 500 --mode rerank --chunk-mode turn \\
-        --augment-preferences --candidate-k 50 --seed 42 \\
-        --dump-candidates cands.json --out run.json
+    off          trust-gated rows, no temporal stage
+    on_labeled   historical temporal-v2 behaviour, including the ordinal branch
+                 routed by gold question_type, then the historical gate pin
+    on_no_label  same pipeline but ordinal label routing disabled; relative-time
+                 handling remains label-free, then the same gate pin
 
-then:
-
-    python benchmarks/temporal_ablation_offline.py \\
-        --candidates cands.json --data longmemeval_s_cleaned.json --out ablation.json
-
-Sanity check: ``on_labeled`` R@1 must reproduce the champion's R@1 for the same
-config (CHAMPION.json: 0.958); if it does not, the dump and the champion run
-differ and no conclusion should be drawn from the ablation.
+``on_labeled`` must reproduce the full run's R@1 (historically 0.958) before any
+ablation conclusion is accepted.
 """
 from __future__ import annotations
 
@@ -52,13 +45,69 @@ COMPARISONS = (
     ("on_no_label", "off"),
     ("on_labeled", "on_no_label"),
 )
+SCHEMA = "temporal_ablation_v2"
+STAGE = "post_gate_pre_temporal"
 
 
-def apply_variant(variant: str, rows: list[dict], q: dict) -> list[dict]:
-    rows = [dict(r) for r in rows]
+def validate_candidates(cands: list[dict], expected_n: int) -> None:
+    if len(cands) != expected_n:
+        raise ValueError(
+            f"candidate count mismatch: expected {expected_n}, got {len(cands)}; "
+            "regenerate the dump with the intended --n"
+        )
+    qids = [c.get("qid") for c in cands]
+    if any(q is None for q in qids) or len(set(qids)) != len(qids):
+        raise ValueError("candidate dump must contain one unique non-null qid per row")
+    bad = [c.get("qid") for c in cands
+           if c.get("schema") != SCHEMA or c.get("stage") != STAGE]
+    if bad:
+        raise ValueError(
+            f"wrong candidate dump contract for {len(bad)} rows; expected "
+            f"schema={SCHEMA!r}, stage={STAGE!r}. Use --dump-temporal-candidates, "
+            "not --dump-candidates."
+        )
+    for c in cands:
+        rows = c.get("rows")
+        if not isinstance(rows, list):
+            raise ValueError(f"{c['qid']}: rows must be a list")
+        ids = [r.get("id") for r in rows]
+        if any(i is None for i in ids) or len(ids) != len(set(ids)):
+            raise ValueError(f"{c['qid']}: row ids must be non-null and unique")
+        info = c.get("gate_info") or {}
+        if info.get("fired") and c.get("gate_top_id") is None:
+            raise ValueError(f"{c['qid']}: fired gate is missing gate_top_id")
+        if c.get("gate_top_id") is not None and c.get("gate_top_id") not in ids:
+            raise ValueError(f"{c['qid']}: gate_top_id is not present in rows")
+
+
+def replay_gate_pin(rows: list[dict], cand: dict) -> list[dict]:
+    """Replay the historical post-temporal high-confidence gate pin."""
+    top_id = cand.get("gate_top_id")
+    pin_margin = cand.get("trust_gate_pin_margin")
+    info = cand.get("gate_info") or {}
+    margin = float(info.get("ftce_margin") or 0.0)
+    if top_id is None or pin_margin is None or margin < float(pin_margin) or not rows:
+        return rows
+    if rows[0].get("id") == top_id:
+        return rows
+    idx = next((i for i, r in enumerate(rows) if r.get("id") == top_id), None)
+    if idx is None:
+        return rows
+    return [rows[idx]] + rows[:idx] + rows[idx + 1:]
+
+
+def apply_variant(variant: str, cand: dict, q: dict) -> list[dict]:
+    rows = [dict(r) for r in cand["rows"]]
     if variant == "off":
         return rows
-    return H._temporal_rerank(rows, q, label_routing=(variant == "on_labeled"))
+    rows = H._temporal_rerank(
+        rows,
+        q,
+        temporal_v2=bool(cand.get("temporal_v2")),
+        temporal_v3=bool(cand.get("temporal_v3")),
+        label_routing=(variant == "on_labeled"),
+    )
+    return replay_gate_pin(rows, cand)
 
 
 def hits_at_k(rows: list[dict], answer_sids: set[str]) -> dict[int, bool]:
@@ -85,7 +134,7 @@ def evaluate_variants(cands: list[dict], questions: dict[str, dict]) -> dict:
         answer = set(c.get("answer_sids") or q.get("answer_session_ids") or [])
         qtype[qid] = q.get("question_type", c.get("qtype", "unknown"))
         for v in VARIANTS:
-            per_q[v][qid] = hits_at_k(apply_variant(v, c["rows"], q), answer)
+            per_q[v][qid] = hits_at_k(apply_variant(v, c, q), answer)
     return {"per_q": per_q, "qtype": qtype, "missing": missing}
 
 
@@ -144,7 +193,7 @@ def compare(per_q: dict, k: int = 1, iters: int = 10000, seed: int = 0) -> dict:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--candidates", type=Path, required=True,
-                    help="JSON written by longmemeval_eval.py --dump-candidates")
+                    help="JSON written by longmemeval_eval.py --dump-temporal-candidates")
     ap.add_argument("--data", type=Path, required=True, help="longmemeval_s_cleaned.json")
     ap.add_argument("--out", type=Path, default=Path("temporal_ablation.json"))
     ap.add_argument("--iters", type=int, default=10000)
@@ -154,15 +203,16 @@ def main() -> None:
     args = ap.parse_args()
 
     cands = json.loads(args.candidates.read_text())
-    if len(cands) != args.expected_n:
-        raise SystemExit(
-            f"candidate count mismatch: expected {args.expected_n}, got {len(cands)}; "
-            "regenerate the dump with the intended --n"
-        )
+    try:
+        validate_candidates(cands, args.expected_n)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
     questions = {q["question_id"]: q for q in json.loads(args.data.read_text())}
     res = evaluate_variants(cands, questions)
     summary = summarize(res["per_q"], res["qtype"])
     result = {
+        "candidate_schema": SCHEMA,
+        "candidate_stage": STAGE,
         "candidates": str(args.candidates),
         "n_candidates": len(cands),
         "missing_from_dataset": res["missing"],

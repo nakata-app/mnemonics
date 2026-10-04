@@ -3,13 +3,116 @@
   "R@1": 0.958,
   "R@5": 1.0,
   "R@10": 1.0,
-  "by_type": null,
-  "date": "2026-06-21T15:00:05+00:00",
-  "config": "--mode rerank --chunk-mode turn --temporal-aware --augment-preferences --candidate-k 50 --seed 42",
-  "ce_model": "BAAI/bge-reranker-v2-m3",
+  "by_type": {
+    "single-session-user": {
+      "n": 70,
+      "R@1": 0.9714,
+      "R@5": 1.0,
+      "R@10": 1.0
+    },
+    "multi-session": {
+      "n": 133,
+      "R@1": 0.985,
+      "R@5": 1.0,
+      "R@10": 1.0
+    },
+    "single-session-preference": {
+      "n": 30,
+      "R@1": 0.8,
+      "R@5": 1.0,
+      "R@10": 1.0
+    },
+    "temporal-reasoning": {
+      "n": 133,
+      "R@1": 0.9398,
+      "R@5": 1.0,
+      "R@10": 1.0
+    },
+    "knowledge-update": {
+      "n": 78,
+      "R@1": 0.9615,
+      "R@5": 1.0,
+      "R@10": 1.0
+    },
+    "single-session-assistant": {
+      "n": 56,
+      "R@1": 1.0,
+      "R@5": 1.0,
+      "R@10": 1.0
+    }
+  },
+  "date": "2026-06-21T15:00:54Z",
+  "source_commit": "ca5359417c9a4692d86e58bc36253e00b54172f8",
+  "config": "--mode rerank --chunk-mode turn --temporal-aware --temporal-v2 --candidate-k 50 --seed 42 --trust-gate-ce chat-ce-v3-20260516 --trust-gate-margin 0.2 --trust-gate-pin-margin 0.5",
+  "augment_preferences": false,
+  "ce_model": "mn-ce-v1-20260604",
+  "trust_gate": {
+    "model": "chat-ce-v3-20260516",
+    "margin": 0.2,
+    "pin_margin": 0.5,
+    "fired": 86
+  },
   "encoder": "all-MiniLM-L6-v2",
-  "dataset": "longmemeval_s_cleaned (500q)",
+  "dataset": "longmemeval_s_cleaned.json (500q)",
   "deterministic": true,
-  "source": "commit ca53594 measurement: Kaggle T4 GPU, MNEMONICS_DETERMINISTIC=1, R@1=0.958 reproduced on 3 runs / 2 kernels; R@5/R@10 stayed 1.0 across those runs. Historical notes separately mention a non-deterministic 0.976 trust-gate experiment (86x vs 9x firing); it is not part of the config above and is not used as champion evidence.",
-  "notes": "by_type breakdown was not captured to a retrievable file at champion time (the run printed to stdout and exited; eval/results/champion_run.log was truncated before the score). Aggregate numbers above are from the deterministic-fix commit measurement. Re-run benchmarks/kaggle_champion.py on a GPU to regenerate by_type."
+  "runtime": {
+    "device": "Kaggle NvidiaTeslaT4",
+    "cores": 4,
+    "historical_kernel_image": "gcr.io/kaggle-private-byod/python@sha256:57e612b484cf3df5026ee4dcc3cb176974b22b2bc0937fb1e16132a8be4cb13c"
+  },
+  "evidence": {
+    "krun-det1": "R@1=0.958, R@5=1.0, R@10=1.0, trust gate fired 86/500",
+    "krun-det2": "R@1=0.958, R@5=1.0, R@10=1.0, trust gate fired 86/500",
+    "krun-confirm": "seeds 42, 123, 7 all R@1=0.958; temporal-reasoning R@1=0.9398"
+  },
+  "source": "Recovered from archived Kaggle kernels krun-det1, krun-det2 and krun-confirm on 2026-10-04. det1/det2 both checked out ca53594 and used MNEMONICS_DETERMINISTIC=1, mn-ce-v1-20260604, chat-ce-v3-20260516 trust gate margin 0.2 / pin 0.5, temporal-v2, chunk-mode turn, candidate-k 50. The gate fired on 86/500 in both independent kernels. krun-confirm reproduced R@1=0.958 for seeds 42, 123 and 7.",
+  "notes": "This is a benchmark-harness champion, not yet a production-library claim: the historical ordinal temporal branch routes on the LongMemEval gold question_type label and requires haystack session dates.",
+  "temporal_ablation_2026_10_04": {
+    "source": "exact ca53594 replay; shared post-gate/pre-temporal 500q dump",
+    "off": {
+      "R@1": 0.956,
+      "R@5": 0.998,
+      "R@10": 1.0
+    },
+    "on_labeled_historical": {
+      "R@1": 0.958,
+      "R@5": 1.0,
+      "R@10": 1.0
+    },
+    "on_no_label": {
+      "R@1": 0.96,
+      "R@5": 1.0,
+      "R@10": 1.0
+    },
+    "paired_R@1": {
+      "on_labeled_vs_off": {
+        "delta": 0.002,
+        "ci95": [
+          -0.004,
+          0.008
+        ],
+        "helped": 2,
+        "hurt": 1
+      },
+      "on_no_label_vs_off": {
+        "delta": 0.004,
+        "ci95": [
+          0.0,
+          0.01
+        ],
+        "helped": 2,
+        "hurt": 0
+      },
+      "on_labeled_vs_on_no_label": {
+        "delta": -0.002,
+        "ci95": [
+          -0.006,
+          0.0
+        ],
+        "helped": 0,
+        "hurt": 1
+      }
+    },
+    "conclusion": "Gold-label ordinal routing is not needed for the measured gain and hurts one question. Label-free temporal-v2 scores 0.960 on the same trust-gated candidate set."
+  }
 }

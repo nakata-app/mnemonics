@@ -1,8 +1,9 @@
 """Pinned BEAM production-granularity coverage + CE benchmark for Kaggle T4.
 
 Measures the live-shaped s200 chunking path under a 4000-word budget with the
-same bge-reranker-v2-m3 CE used by the LongMemEval champion. This replaces the
-older kaggle_beam_ce.py job, which embedded a stale whole-turn probe.
+strong bge-reranker-v2-m3 CE used by a later LongMemEval experiment. It is NOT
+the recovered historical 0.958 champion reranker (mn-ce-v1 + chat-ce-v3 trust
+gate). This replaces the older kaggle_beam_ce.py stale whole-turn probe.
 """
 from __future__ import annotations
 

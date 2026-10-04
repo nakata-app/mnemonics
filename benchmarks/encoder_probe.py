@@ -14,10 +14,11 @@ This probe measures that directly and cheaply (no CE, no answering LLM):
   fused R@50       what the CE actually receives  <-- the deciding number
   fused R@1        pre-CE ordering quality
 
-Protocol matches benchmarks/CHAMPION.json where it is observable without a CE:
---chunk-mode turn --augment-preferences --candidate-k 50 --seed 42.
-temporal-aware is NOT applied: it reorders the post-retrieval top_k, it never
-adds a session to the candidate band, so it cannot move any number here.
+Protocol is a historical encoder probe, not an exact replay of CHAMPION.json:
+it uses --chunk-mode turn + preference augmentation + candidate-k 50. The
+forensically recovered 0.958 champion used turn mode and candidate-k 50 but did
+NOT use --augment-preferences. temporal-aware is not applied here because it
+reorders the post-retrieval top_k and cannot add a session to the candidate band.
 
 Usage:
   python benchmarks/encoder_probe.py --data longmemeval_s_cleaned.json -n 25

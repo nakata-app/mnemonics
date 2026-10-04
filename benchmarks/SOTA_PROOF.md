@@ -1,102 +1,145 @@
 # SOTA Proof, LongMemEval-S, LLM-free retrieval
 
 **Packaged:** 2026-06-22
-**Champion commit:** `ca53594` (env-gated deterministic HNSW)
-**Canonical record:** `benchmarks/CHAMPION.json` (single source of truth, written by `benchmarks/champion.py`)
+**Forensically corrected:** 2026-10-04
+**Champion source commit:** `ca53594` (`ca5359417c9a4692d86e58bc36253e00b54172f8`)
+**Canonical record:** `benchmarks/CHAMPION.json`
 
-> **Correction, 2026-10-04: read before citing the numbers below.**
+> **Correction, 2026-10-04: use this section instead of the older narrative.**
 >
-> 1. **The trust gate is not part of the 0.958 claim.** The run that produced it
->    used `kaggle_champion.py`, whose flags are `--mode rerank --chunk-mode turn
->    --temporal-aware --augment-preferences --candidate-k 50 --seed 42`, and
->    `CHAMPION.json` records the same config. Neither contains `--trust-gate-ce`,
->    and the gate also needs a fine-tuned checkpoint that is not in this repo.
->    The "trust-gated top-1 override" wording and the "fired 86 vs 9 times" figure
->    below are unverified and likely carried over from a different experiment.
->    Do not use them in the champion claim until a run that actually enabled the
->    gate is on file.
-> 2. **0.958 is not shown to be reproducible through the production API.**
->    `--temporal-aware` lives only in `benchmarks/longmemeval_eval.py`. Its
->    ordinal branch ("first/last/in order") is routed by the dataset's gold
->    `question_type == "temporal-reasoning"`, a label that does not exist at query
->    time, and it needs the haystack session dates, which the library does not
->    store (`created` is ingest time, not event time). How much of 0.958 comes
->    from that branch is not yet measured.
+> The original proof package described the 0.958 configuration incorrectly. The
+> archived Kaggle kernels are still available and settle the question directly.
+> `krun-det1` and `krun-det2` each checked out `ca53594` and independently
+> produced **R@1=0.958, R@5=1.0, R@10=1.0**. `krun-confirm` then produced
+> **R@1=0.958 for seeds 42, 123 and 7**.
 >
-> To measure it, run `benchmarks/temporal_ablation_offline.py` on one candidate
-> dump: `off` vs `on_labeled` (as the champion ran) vs `on_no_label`
-> (`--temporal-no-label-routing`, label-free branch only). Until that result is
-> recorded here, treat 0.958 as a benchmark-harness number, not a library one.
+> The real champion **does include the trust gate**. In both deterministic
+> kernels `chat-ce-v3-20260516` fired on **86/500** questions at margin `0.2`,
+> with pin margin `0.5`. The base reranker is the checkpoint
+> `mn-ce-v1-20260604`, not `BAAI/bge-reranker-v2-m3`. The run also uses
+> `--temporal-v2` and does **not** use `--augment-preferences`.
+>
+> The earlier correction claiming the gate was absent was based on a later
+> `kaggle_champion.py`/`CHAMPION.json` packaging drift rather than the actual
+> June run. That claim is superseded by the recovered kernel source, logs and
+> output JSONs.
 
-## The claim
+## The measured claim
 
-On LongMemEval-S (500 questions), the recorded benchmark harness retrieves the
-correct evidence at **R@1 = 0.958, R@5 = 1.0, R@10 = 1.0** with **no LLM in the
-retrieval path**: hybrid HNSW + BM25 + RRF, cross-encoder rerank, and the
-benchmark's temporal-aware post-processing. The recorded champion config does
-**not** enable the trust gate. The reader on top can be any LLM; this retrieval
-path is LLM-free and deterministic under `MNEMONICS_DETERMINISTIC=1`.
+On LongMemEval-S (500 questions), the historical benchmark harness retrieves the
+correct evidence at **R@1=0.958, R@5=1.0, R@10=1.0**. The retrieval path is
+LLM-free: MiniLM embeddings, hybrid HNSW+BM25 retrieval, `mn-ce-v1` cross-encoder
+reranking, `chat-ce-v3` trust-gated top-1 correction, temporal-v2
+post-processing, and a high-confidence gate pin. HNSW construction is made
+reproducible with `MNEMONICS_DETERMINISTIC=1`.
 
-## What is verified, and how
+This is deliberately a **benchmark-harness claim**, not yet a production-library
+claim. The historical ordinal temporal branch is routed using the dataset's gold
+`question_type == "temporal-reasoning"` and uses haystack session dates. Those
+signals are not both available through the normal production retrieval API.
+
+## Authoritative evidence
 
 | Fact | Status | Evidence |
 |---|---|---|
-| R@1 = 0.958 deterministic | measured | commit `ca53594` message: reproduced on 3 runs / 2 Kaggle kernels with `MNEMONICS_DETERMINISTIC=1` |
-| R@5 = R@10 = 1.0 | measured | same source; stayed 1.0 across all runs (graph nondeterminism only reshuffled within top-5) |
-| Determinism root cause + fix | verified | `ca53594`: hnswlib `add_items` defaults to `num_threads=-1`; multi-threaded insertion builds a thread-count-dependent graph. Local proof (4000 vecs): `num_threads=2` vs `1` differs on 6/100 top-1; `1` vs `1` is identical (0/100). Fix: `MNEMONICS_DETERMINISTIC=1` forces `set_num_threads(1)` at every index creation. |
-| Champion config | verified | `PEER_COORDINATION.md` + `benchmarks/kaggle_champion.py` |
-| vs MemPalace R@1 = 0.920 | verified (in-repo) | `PEER_COORDINATION.md` baseline table |
+| R@1=0.958, R@5=R@10=1.0 | verified | archived `krun-det1` and `krun-det2`, two independent Kaggle T4 kernels |
+| Seed stability | verified | archived `krun-confirm`: seeds 42, 123, 7 all R@1=0.958 |
+| Trust gate is part of champion | verified | det1/det2 logs + result JSON: `chat-ce-v3-20260516`, margin 0.2, fired 86/500 |
+| Gate pin | verified | archived kernel source: `--trust-gate-pin-margin 0.5` |
+| Base CE | verified | archived kernel source: `MNEMONICS_RERANK_MODEL=mn-ce-v1-20260604` |
+| Temporal policy | verified | archived kernel source: `--temporal-aware --temporal-v2` |
+| No preference augmentation | verified | archived kernel source: no `--augment-preferences` flag |
+| Source code | verified | det1/det2 log: `ca53594 fix(store): env-gated deterministic HNSW for reproducible benchmarking` |
+| by-type breakdown | verified | archived `krun-confirm/results/champ_seed42.json` |
 
-### Not verified here (stated honestly)
+Recovered seed-42 by-type R@1:
 
-- **by_type breakdown of the 0.958 run is not on disk.** The champion run printed
-  to stdout and exited; `eval/results/champion_run.log` was truncated before the
-  score line. Re-run on a GPU to regenerate it (command below).
-- **Broader "SOTA vs published systems" claim is not reproduced in this repo.**
-  A figure of ~0.76 for a competing system appears in session notes but has no
-  in-repo source. The only baseline verified in-repo is MemPalace (0.920).
-  Treat the cross-system SOTA claim as unverified until a cited comparison is added.
+| Type | n | R@1 |
+|---|---:|---:|
+| single-session-user | 70 | 0.9714 |
+| multi-session | 133 | 0.9850 |
+| single-session-preference | 30 | 0.8000 |
+| temporal-reasoning | 133 | 0.9398 |
+| knowledge-update | 78 | 0.9615 |
+| single-session-assistant | 56 | 1.0000 |
 
-## The honest number: 0.958, not 0.972
+## Exact historical configuration
 
-Earlier tags `lme-0.964` … `lme-0.972` recorded higher R@1 on Kaggle T4. Those
-runs were **non-deterministic** because the multi-threaded HNSW graph varied with
-core count and thread scheduling, allowing borderline rank-1 results to flip.
-Historical notes also mention a separate trust-gate experiment firing 86 vs 9
-times and reaching 0.976, but that gate is absent from the canonical 0.958 config
-and its exact provenance has not been re-established. It is therefore not used as
-champion evidence. After the determinism fix, the recorded reproducible champion
-number is **0.958**. The older tags are kept for history but are not the champion.
-
-## Champion configuration
-
+```text
+source:   ca5359417c9a4692d86e58bc36253e00b54172f8
+config:   --mode rerank --chunk-mode turn
+          --temporal-aware --temporal-v2
+          --candidate-k 50 --seed 42
+          --trust-gate-ce chat-ce-v3-20260516
+          --trust-gate-margin 0.2
+          --trust-gate-pin-margin 0.5
+env:      MNEMONICS_DETERMINISTIC=1
+reranker: mn-ce-v1-20260604
+encoder:  all-MiniLM-L6-v2 (384d)
+data:     longmemeval_s_cleaned.json (500q)
+device:   Kaggle NvidiaTeslaT4
 ```
-config:  --mode rerank --chunk-mode turn --temporal-aware \
-         --augment-preferences --candidate-k 50 --seed 42
-encoder: all-MiniLM-L6-v2 (384d)
-CE:      BAAI/bge-reranker-v2-m3   (env MNEMONICS_RERANK_MODEL)
-flags:   MNEMONICS_DETERMINISTIC=1 (single-threaded HNSW, reproducible)
-data:    longmemeval_s_cleaned.json (500q)
-device:  Kaggle T4 GPU
-```
+
+`--augment-preferences` is **not** part of this configuration.
+
+## Determinism evidence
+
+`ca53594` fixed the HNSW source of cross-machine drift: hnswlib insertion with
+multiple threads can build a different graph, while `MNEMONICS_DETERMINISTIC=1`
+forces single-threaded index construction. After that fix, det1 and det2 both
+produced the same 0.958 score, and `krun-confirm` reproduced it across three
+seeds.
+
+The old `0.976` observation should not be treated as the canonical champion. It
+came from a different/non-canonical experimental state. The archived
+fully-specified deterministic evidence supports **0.958**.
+
+## Temporal ablation requirement
+
+Because the champion has a trust gate before temporal processing and a
+confidence pin after it, a raw post-CE/pre-gate candidate dump cannot reproduce
+0.958. The correct one-dump ablation contract is:
+
+1. run the exact historical champion;
+2. snapshot rows **after trust gate, before temporal**;
+3. record `gate_top_id`, `ftce_margin`, pin margin and temporal-v2/v3 settings;
+4. replay three variants from that same snapshot:
+   - `off`: no temporal stage;
+   - `on_labeled`: historical temporal-v2 + gold-label ordinal routing + pin;
+   - `on_no_label`: temporal-v2 with ordinal gold-label routing disabled + pin;
+5. accept the ablation only if `on_labeled` reproduces **R@1=0.958**.
+
+`benchmarks/temporal_ablation_offline.py` enforces this contract and rejects the
+older pre-gate `--dump-candidates` format.
+
+### Measured temporal ablation, 2026-10-04
+
+The exact `ca53594` historical replay completed at **R@1=0.958, R@5=1.0,
+R@10=1.0**, with the trust gate firing **86/500** and a complete 500-row
+post-gate/pre-temporal dump. Replaying all temporal variants from that one shared
+dump produced:
+
+| variant | R@1 | R@5 | R@10 | paired delta vs off | helped / hurt |
+|---|---:|---:|---:|---:|---:|
+| temporal off | 0.956 | 0.998 | 1.000 | — | — |
+| historical labeled routing | 0.958 | 1.000 | 1.000 | +0.002, 95% CI [-0.004, 0.008] | 2 / 1 |
+| **label-free temporal-v2** | **0.960** | **1.000** | **1.000** | **+0.004, 95% CI [0.000, 0.010]** | **2 / 0** |
+
+The historical gold-label ordinal branch is therefore **not responsible for the
+measured temporal gain**. On the same candidates it hurts one question relative
+to the label-free variant and helps none: labeled minus no-label is -0.002 R@1
+(95% CI [-0.006, 0.000], helped 0, hurt 1). The productionizable conclusion is
+to keep the label-free relative-time temporal-v2 logic and disable gold-label
+ordinal routing. On this exact replay that policy scores **R@1=0.960**, two
+points above the historical 0.958 benchmark-harness configuration.
 
 ## Reproduce
 
-GPU (faithful, regenerates by_type):
+`benchmarks/kaggle_temporal_champion_exact.py` checks out `ca53594`, uses the
+recovered historical checkpoints/configuration, and adds dump-only
+instrumentation for the temporal ablation. It fails the run if the aggregate
+score or 86/500 gate count does not reproduce.
 
-```bash
-krun benchmarks/kaggle_champion.py --dataset atakanakbaba/mnemonics-lme --acc NvidiaTeslaT4
-```
-
-Local determinism check (CPU, fast, proves the graph is reproducible, not the
-full champion score, which needs the GPU CE):
-
-```bash
-MNEMONICS_DETERMINISTIC=1 python benchmarks/longmemeval_eval.py --n 100 \
-  --mode rerank --chunk-mode turn --temporal-aware --augment-preferences \
-  --candidate-k 50 --seed 42 --out /tmp/lme100.json
-```
-
-Note: the default CE (`cross-encoder/ms-marco-MiniLM-L-12-v2`) yields a lower
-score than the champion. The 0.958 figure requires `BAAI/bge-reranker-v2-m3`,
-which is impractical to run for 500q on CPU, use a GPU for the headline number.
+The old `benchmarks/kaggle_champion.py` drifted after the June measurement and
+must not be used as provenance for the historical 0.958 claim unless it is first
+brought back into alignment with the exact configuration above.

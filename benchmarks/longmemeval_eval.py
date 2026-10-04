@@ -568,6 +568,7 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                        trust_gate_margin: float = 1.0,
                        trust_gate_pin_margin: float | None = None,
                        dump_candidates: Path | None = None,
+                       dump_temporal_candidates: Path | None = None,
                        per_q_out: Path | None = None,
                        planned: bool = False) -> dict:
     """Run Mnemonics retrieval across every question and aggregate metrics.
@@ -606,6 +607,7 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
     by_type = defaultdict(lambda: {"n": 0, **{f"hit@{k}": 0 for k in ks}})
     per_q: list[dict] = []
     cand_dump: list[dict] = []
+    temporal_cand_dump: list[dict] = []
     llm_fired = 0
     gate_fired = 0
     t0 = time.time()
@@ -706,6 +708,35 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                 if gate_info["fired"]:
                     gate_fired += 1
                     gate_top_id = result["results"][0].get("id")
+
+            # Temporal ablation dump: unlike --dump-candidates (which is
+            # intentionally pre-gate for CE hard-negative mining), this snapshot
+            # is taken AFTER the trust gate and BEFORE temporal-aware.  It also
+            # records the gate top-id/margin so the later confidence pin can be
+            # replayed exactly offline.  This is the only valid one-dump input
+            # for decomposing the historical champion's temporal contribution.
+            if dump_temporal_candidates is not None:
+                temporal_cand_dump.append({
+                    "schema": "temporal_ablation_v2",
+                    "stage": "post_gate_pre_temporal",
+                    "qid": q.get("question_id"),
+                    "qtype": q.get("question_type"),
+                    "question": q.get("question"),
+                    "answer_sids": list(q.get("answer_session_ids") or []),
+                    "rows": [
+                        {
+                            "id": r.get("id"),
+                            "sid": _session_id_of(r.get("text")),
+                            "text": r.get("text"),
+                        }
+                        for r in result["results"]
+                    ],
+                    "gate_top_id": gate_top_id,
+                    "gate_info": dict(gate_info) if gate_info is not None else None,
+                    "trust_gate_pin_margin": trust_gate_pin_margin,
+                    "temporal_v2": temporal_v2,
+                    "temporal_v3": temporal_v3,
+                })
 
             # Temporal-aware post-rerank. Only fires when the query contains a
             # relative-time expression ("N weeks/days/months ago"); other queries
@@ -837,6 +868,13 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
     if dump_candidates is not None:
         dump_candidates.write_text(json.dumps(cand_dump))
         print(f"  candidate dump: {len(cand_dump)} q -> {dump_candidates}", flush=True)
+    if dump_temporal_candidates is not None:
+        dump_temporal_candidates.write_text(json.dumps(temporal_cand_dump))
+        print(
+            f"  temporal candidate dump: {len(temporal_cand_dump)} q -> "
+            f"{dump_temporal_candidates}",
+            flush=True,
+        )
     return out
 
 
@@ -906,6 +944,8 @@ def main():
                     help="If set, a fired gate override whose margin is >= this value is pinned back to #1 after temporal-aware (protects very-confident gate wins from temporal demotion). Try 0.5.")
     ap.add_argument("--dump-candidates", type=Path, default=None,
                     help="Dump each question's retrieved candidate rows (sid+text, post-CE pre-gate order) to this JSON for offline CE training-pair mining.")
+    ap.add_argument("--dump-temporal-candidates", type=Path, default=None,
+                    help="Dump post-trust-gate/pre-temporal rows plus gate-pin metadata for an exact offline temporal ablation. Do not use --dump-candidates for that purpose.")
     ap.add_argument("--out", type=Path, default=Path("/tmp/mnemonics_vs_mempalace.json"))
     ap.add_argument("--per-q-out", type=Path, default=None,
                     help="Optional path to dump per-question hit/miss records")
@@ -977,6 +1017,7 @@ def main():
             trust_gate_margin=args.trust_gate_margin,
             trust_gate_pin_margin=args.trust_gate_pin_margin,
             dump_candidates=args.dump_candidates,
+            dump_temporal_candidates=args.dump_temporal_candidates,
             per_q_out=args.per_q_out,
             planned=args.planned,
         )

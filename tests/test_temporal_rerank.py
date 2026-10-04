@@ -238,13 +238,35 @@ _ABL.loader.exec_module(A)
 
 def _dump_and_dataset():
     """Two questions: an ordinal one the label rescues, a relative one that is label-free."""
-    ordinal_rows = [{"sid": "a", "text": "SID=a|x"}, {"sid": "b", "text": "SID=b|x"},
-                    {"sid": "c", "text": "SID=c|x"}]
-    rel_rows = [{"sid": "a", "text": "SID=a|x"}, {"sid": "b", "text": "SID=b|x"}]
+    ordinal_rows = [
+        {"id": 1, "sid": "a", "text": "SID=a|x"},
+        {"id": 2, "sid": "b", "text": "SID=b|x"},
+        {"id": 3, "sid": "c", "text": "SID=c|x"},
+    ]
+    rel_rows = [
+        {"id": 1, "sid": "a", "text": "SID=a|x"},
+        {"id": 2, "sid": "b", "text": "SID=b|x"},
+    ]
+
+    def cand(qid, qtype, answer, rows):
+        return {
+            "schema": A.SCHEMA,
+            "stage": A.STAGE,
+            "qid": qid,
+            "qtype": qtype,
+            "answer_sids": answer,
+            "rows": rows,
+            "gate_top_id": None,
+            "gate_info": None,
+            "trust_gate_pin_margin": 0.5,
+            "temporal_v2": True,
+            "temporal_v3": False,
+        }
+
     cands = [
-        {"qid": "ord", "qtype": "temporal-reasoning", "answer_sids": ["b"], "rows": ordinal_rows},
-        {"qid": "rel", "qtype": "single-session-user", "answer_sids": ["b"], "rows": rel_rows},
-        {"qid": "ghost", "qtype": "x", "answer_sids": ["a"], "rows": rel_rows},
+        cand("ord", "temporal-reasoning", ["b"], ordinal_rows),
+        cand("rel", "single-session-user", ["b"], rel_rows),
+        cand("ghost", "x", ["a"], rel_rows),
     ]
     data = {
         "ord": {
@@ -265,6 +287,28 @@ def _dump_and_dataset():
     }
     return cands, data
 
+
+def test_ablation_replays_high_confidence_gate_pin_after_temporal():
+    cands, data = _dump_and_dataset()
+    c = cands[0]
+    # Gate chose row a at #1 before temporal; ordinal temporal would put b first.
+    c["gate_top_id"] = 1
+    c["gate_info"] = {"fired": True, "ftce_margin": 0.9}
+    labeled = A.apply_variant("on_labeled", c, data["ord"])
+    no_label = A.apply_variant("on_no_label", c, data["ord"])
+    assert labeled[0]["id"] == 1  # temporal move is pinned back by confident gate
+    assert no_label[0]["id"] == 1
+
+    c["gate_info"] = {"fired": True, "ftce_margin": 0.2}
+    labeled = A.apply_variant("on_labeled", c, data["ord"])
+    assert labeled[0]["id"] == 2  # below pin threshold: temporal win survives
+
+
+def test_ablation_rejects_pre_gate_training_dump_contract():
+    cands, _ = _dump_and_dataset()
+    cands[0]["stage"] = "post_ce_pre_gate"
+    with pytest.raises(ValueError, match="dump-temporal-candidates"):
+        A.validate_candidates(cands, 3)
 
 def test_ablation_separates_label_routing_from_the_label_free_branch():
     cands, data = _dump_and_dataset()
