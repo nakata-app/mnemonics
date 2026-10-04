@@ -10,6 +10,6 @@
   "encoder": "all-MiniLM-L6-v2",
   "dataset": "longmemeval_s_cleaned (500q)",
   "deterministic": true,
-  "source": "commit ca53594 measurement: Kaggle T4 GPU, MNEMONICS_DETERMINISTIC=1, R@1=0.958 reproduced on 3 runs / 2 kernels (one non-deterministic run hit 0.976 with trust-gate firing 86x vs 9x). R@5/R@10 stayed 1.0 across all runs.",
+  "source": "commit ca53594 measurement: Kaggle T4 GPU, MNEMONICS_DETERMINISTIC=1, R@1=0.958 reproduced on 3 runs / 2 kernels; R@5/R@10 stayed 1.0 across those runs. Historical notes separately mention a non-deterministic 0.976 trust-gate experiment (86x vs 9x firing); it is not part of the config above and is not used as champion evidence.",
   "notes": "by_type breakdown was not captured to a retrievable file at champion time (the run printed to stdout and exited; eval/results/champion_run.log was truncated before the score). Aggregate numbers above are from the deterministic-fix commit measurement. Re-run benchmarks/kaggle_champion.py on a GPU to regenerate by_type."
 }

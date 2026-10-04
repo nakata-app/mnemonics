@@ -30,11 +30,12 @@
 
 ## The claim
 
-On LongMemEval-S (500 questions), Mnemonics retrieves the correct evidence at
-**R@1 = 0.958, R@5 = 1.0, R@10 = 1.0**, with **no LLM in the retrieval path**, 
-hybrid HNSW + BM25 + RRF, cross-encoder rerank, trust-gated top-1 override,
-temporal-aware ordering. The reader on top can be any LLM; the retrieval that
-feeds it is fully model-free and deterministic.
+On LongMemEval-S (500 questions), the recorded benchmark harness retrieves the
+correct evidence at **R@1 = 0.958, R@5 = 1.0, R@10 = 1.0** with **no LLM in the
+retrieval path**: hybrid HNSW + BM25 + RRF, cross-encoder rerank, and the
+benchmark's temporal-aware post-processing. The recorded champion config does
+**not** enable the trust gate. The reader on top can be any LLM; this retrieval
+path is LLM-free and deterministic under `MNEMONICS_DETERMINISTIC=1`.
 
 ## What is verified, and how
 
@@ -59,11 +60,13 @@ feeds it is fully model-free and deterministic.
 ## The honest number: 0.958, not 0.972
 
 Earlier tags `lme-0.964` … `lme-0.972` recorded higher R@1 on Kaggle T4. Those
-were **non-deterministic**, the multi-threaded HNSW graph varied with core
-count and thread scheduling, so the trust-gate fired a different number of times
-(86 vs 9) and borderline rank-1 ties flipped. Same config, same data, R@1 ranged
-0.958, 0.976 run to run. After the determinism fix, the **reproducible** number is
-**0.958**. The older tags are kept for history but are not the champion.
+runs were **non-deterministic** because the multi-threaded HNSW graph varied with
+core count and thread scheduling, allowing borderline rank-1 results to flip.
+Historical notes also mention a separate trust-gate experiment firing 86 vs 9
+times and reaching 0.976, but that gate is absent from the canonical 0.958 config
+and its exact provenance has not been re-established. It is therefore not used as
+champion evidence. After the determinism fix, the recorded reproducible champion
+number is **0.958**. The older tags are kept for history but are not the champion.
 
 ## Champion configuration
 
