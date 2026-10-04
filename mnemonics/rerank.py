@@ -123,7 +123,14 @@ class AdaptMemReranker:
             from adaptmem import AdaptMem
         except ImportError as e:
             raise RerankerUnavailable("adaptmem is not installed") from e
-        accepted = inspect.signature(AdaptMem.rerank).parameters
+        try:
+            rerank_method = AdaptMem.rerank
+        except AttributeError as e:
+            raise RerankerIncompatible(
+                f"installed adaptmem {getattr(adaptmem, '__version__', '?')} has no rerank(); "
+                "upgrade adaptmem"
+            ) from e
+        accepted = inspect.signature(rerank_method).parameters
         missing = [p for p in self._REQUIRED if p not in accepted]
         if missing:
             raise RerankerIncompatible(

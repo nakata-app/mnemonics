@@ -70,6 +70,13 @@ class OldAdaptMem:
         return []
 
 
+class VeryOldAdaptMem:
+    """An adaptmem release that predates the rerank API entirely."""
+
+    def __init__(self, rerank_model="m"):
+        pass
+
+
 def _legacy_ce_rerank(ce_cls, name, query, results, top_k):
     """The pre-interface bare-CrossEncoder path of retrieve._ce_rerank, verbatim."""
     ce = ce_cls(name)
@@ -200,10 +207,23 @@ def test_auto_falls_back_with_warning_when_adaptmem_is_too_old(monkeypatch, capl
     assert "9.9" in warned[0].getMessage()
 
 
+def test_auto_falls_back_when_adaptmem_has_no_rerank_method(monkeypatch, caplog):
+    _install(monkeypatch, adaptmem=VeryOldAdaptMem)
+    with caplog.at_level(logging.WARNING, logger="mnemonics"):
+        r = make_reranker("ce")
+    assert r.backend == "sentence-transformers"
+    warned = [rec for rec in caplog.records if rec.levelno == logging.WARNING]
+    assert warned and "has no rerank()" in warned[0].getMessage()
+    assert "9.9" in warned[0].getMessage()
+
+
 def test_explicit_adaptmem_backend_never_falls_back(monkeypatch):
     _install(monkeypatch, adaptmem=OldAdaptMem)
     monkeypatch.setenv("MNEMONICS_RERANK_BACKEND", "adaptmem")
     with pytest.raises(RerankerIncompatible, match="upgrade adaptmem"):
+        make_reranker("ce")
+    _install(monkeypatch, adaptmem=VeryOldAdaptMem)
+    with pytest.raises(RerankerIncompatible, match=r"has no rerank\(\)"):
         make_reranker("ce")
     _install(monkeypatch, adaptmem=None)
     with pytest.raises(RerankerUnavailable, match="not installed"):
