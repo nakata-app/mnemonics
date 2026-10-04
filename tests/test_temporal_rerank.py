@@ -308,7 +308,8 @@ def test_ablation_cli_end_to_end(tmp_path):
     out = tmp_path / "o.json"
     run = subprocess.run(
         [sys.executable, str(Path(A.__file__)), "--candidates", str(tmp_path / "c.json"),
-         "--data", str(tmp_path / "d.json"), "--out", str(out), "--iters", "100"],
+         "--data", str(tmp_path / "d.json"), "--out", str(out), "--iters", "100",
+         "--expected-n", "3"],
         capture_output=True, text=True)
     assert run.returncode == 0, run.stderr
     res = json.loads(out.read_text())
@@ -316,3 +317,27 @@ def test_ablation_cli_end_to_end(tmp_path):
     assert res["variants"]["on_labeled"]["R@1"] == 1.0
     assert "on_labeled_vs_on_no_label" in res["paired_R@1"]
     assert "on_no_label" in run.stdout
+
+
+def test_ablation_cli_rejects_wrong_candidate_count(tmp_path):
+    import json
+    import subprocess
+    import sys
+
+    cands, data = _dump_and_dataset()
+    (tmp_path / "c.json").write_text(json.dumps(cands))
+    (tmp_path / "d.json").write_text(json.dumps(list(data.values())))
+    run = subprocess.run(
+        [
+            sys.executable,
+            str(Path(A.__file__)),
+            "--candidates",
+            str(tmp_path / "c.json"),
+            "--data",
+            str(tmp_path / "d.json"),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert run.returncode != 0
+    assert "candidate count mismatch: expected 500, got 3" in run.stderr

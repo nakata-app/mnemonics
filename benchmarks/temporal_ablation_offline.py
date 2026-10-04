@@ -18,7 +18,7 @@ Produce the dump once (GPU), with the champion config. ``--dump-candidates``
 writes the pre-temporal order whether or not --temporal-aware is passed:
 
     MNEMONICS_DETERMINISTIC=1 MNEMONICS_RERANK_MODEL=BAAI/bge-reranker-v2-m3 \\
-    python benchmarks/longmemeval_eval.py --mode rerank --chunk-mode turn \\
+    python benchmarks/longmemeval_eval.py --n 500 --mode rerank --chunk-mode turn \\
         --augment-preferences --candidate-k 50 --seed 42 \\
         --dump-candidates cands.json --out run.json
 
@@ -149,9 +149,16 @@ def main() -> None:
     ap.add_argument("--out", type=Path, default=Path("temporal_ablation.json"))
     ap.add_argument("--iters", type=int, default=10000)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--expected-n", type=int, default=500,
+                    help="expected candidate rows; champion ablation requires 500")
     args = ap.parse_args()
 
     cands = json.loads(args.candidates.read_text())
+    if len(cands) != args.expected_n:
+        raise SystemExit(
+            f"candidate count mismatch: expected {args.expected_n}, got {len(cands)}; "
+            "regenerate the dump with the intended --n"
+        )
     questions = {q["question_id"]: q for q in json.loads(args.data.read_text())}
     res = evaluate_variants(cands, questions)
     summary = summarize(res["per_q"], res["qtype"])
