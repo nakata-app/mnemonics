@@ -385,3 +385,54 @@ def test_ablation_cli_rejects_wrong_candidate_count(tmp_path):
     )
     assert run.returncode != 0
     assert "candidate count mismatch: expected 500, got 3" in run.stderr
+
+
+def test_query_only_ordinal_routing_works_without_gold_question_type():
+    rows, q = _ordinal_case()
+    q = dict(q, question="What is the order of my trips from earliest to latest?",
+             question_type="single-session-user")
+    out = H._temporal_rerank(
+        [dict(r) for r in rows], q,
+        temporal_v2=True,
+        label_routing=False,
+        query_ordinal_routing=True,
+    )
+    assert [r["id"] for r in out] == [1, 0, 2]
+
+
+def test_query_only_ordinal_router_is_narrow_about_ambiguous_first_last_words():
+    assert H._detect_query_ordinal("What is the order of the concerts I attended?") == "asc"
+    assert H._detect_query_ordinal("List them from latest to earliest") == "desc"
+    assert H._detect_query_ordinal("What was my first purchase at the store?") is None
+    assert H._detect_query_ordinal("What is my friend's last name?") is None
+
+
+def test_temporal_entity_anchor_promotes_unique_named_entity_match():
+    q = {"question": "How many days ago did I meet Emma?"}
+    rows = [
+        {"id": 0, "text": "SID=a|[user] I met Sophia at a networking event."},
+        {"id": 1, "text": "SID=b|[user] I caught up with Emma over lunch today."},
+        {"id": 2, "text": "SID=c|[user] I went to lunch downtown."},
+    ]
+    out = H._temporal_entity_anchor_rerank([dict(r) for r in rows], q)
+    assert [r["id"] for r in out] == [1, 0, 2]
+
+
+def test_temporal_entity_anchor_does_not_fire_without_temporal_fact_cue():
+    q = {"question": "Can you recommend a restaurant for Emma?"}
+    rows = [
+        {"id": 0, "text": "SID=a|[user] I like Italian food."},
+        {"id": 1, "text": "SID=b|[user] Emma likes sushi."},
+    ]
+    out = H._temporal_entity_anchor_rerank([dict(r) for r in rows], q)
+    assert [r["id"] for r in out] == [0, 1]
+
+
+def test_query_only_temporal_cli_flags_exist():
+    import subprocess
+    import sys
+    out = subprocess.run(
+        [sys.executable, str(Path(H.__file__)), "--help"], capture_output=True, text=True
+    ).stdout
+    assert "--temporal-query-ordinal" in out
+    assert "--temporal-entity-anchor" in out

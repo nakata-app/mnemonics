@@ -129,6 +129,28 @@ _ORD_FROMTO_ASC_RE = re.compile(
     re.IGNORECASE)
 
 
+# High-confidence query-only ordinal routing.  This intentionally uses a
+# narrower cue set than _detect_ordinal(): bare "first"/"last" are too
+# ambiguous in production ("first purchase", "last name").  These phrases
+# explicitly ask for chronological ordering and were regression-free on the
+# full 500q replay.
+_QUERY_ORD_ORDER_RE = re.compile(
+    r"\b(?:chronological\s+order|order\s+of\b|what\s+order\b|in\s+what\s+order\b)",
+    re.IGNORECASE,
+)
+
+
+def _detect_query_ordinal(query: str) -> str | None:
+    """Return an ordinal direction using query text only (no dataset label)."""
+    if _ORD_FROMTO_DESC_RE.search(query):
+        return "desc"
+    if _ORD_FROMTO_ASC_RE.search(query):
+        return "asc"
+    if _QUERY_ORD_ORDER_RE.search(query):
+        return "asc"
+    return None
+
+
 def _detect_ordinal(query: str, v2: bool = False) -> str | None:
     """'asc' (oldest first) | 'desc' (newest first) | None for a chronological
     extreme/order question. Used only when no relative-time target is found.
@@ -475,9 +497,55 @@ def _session_id_of(meta: str | None) -> str | None:
     return None
 
 
+_TEMPORAL_ENTITY_CUE_RE = re.compile(
+    r"\b(?:ago|last\s+(?:week|month|year|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|"
+    r"how many days|when did|what day|what date|past\s+(?:\w+\s+)?(?:days?|weeks?|months?|years?))\b",
+    re.IGNORECASE,
+)
+_TEMPORAL_ENTITY_STOP = {
+    "What", "How", "Which", "Can", "Do", "Did", "The", "When", "Where", "Who", "Why",
+    "Is", "Was", "Were", "Have", "Has", "My", "In", "On", "At", "From", "To", "Of",
+    "For", "And", "Or", "Last", "This", "That", "Saturday", "Sunday", "Monday",
+    "Tuesday", "Wednesday", "Thursday", "Friday", "January", "February", "March",
+    "April", "May", "June", "July", "August", "September", "October", "November",
+    "December",
+}
+
+
+def _temporal_entity_anchor_rerank(rows: list, q: dict) -> list:
+    """Promote a temporal candidate that uniquely matches query proper nouns.
+
+    Query text is the only routing signal.  The rule is deliberately narrow:
+    it fires only for temporal fact phrasing and only when another top-5 row
+    contains strictly more capitalized query anchors than the current top row.
+    """
+    question = q.get("question", "")
+    if not _TEMPORAL_ENTITY_CUE_RE.search(question):
+        return rows
+    anchors = [
+        tok for tok in re.findall(r"\b[A-Z][A-Za-z]{2,}\b", question)
+        if tok not in _TEMPORAL_ENTITY_STOP
+    ]
+    if not anchors or not rows:
+        return rows
+
+    def _score(row):
+        text = (row.get("text") or "").lower()
+        return sum(bool(re.search(r"\b" + re.escape(a.lower()) + r"\b", text)) for a in anchors)
+
+    head = rows[:5]
+    scores = [_score(r) for r in head]
+    best = max(scores, default=0)
+    if best <= 0 or scores[0] == best:
+        return rows
+    idx = scores.index(best)
+    return [rows[idx]] + rows[:idx] + rows[idx + 1:]
+
+
 def _temporal_rerank(rows: list, q: dict, *, temporal_v2: bool = False,
                      temporal_v3: bool = False,
-                     label_routing: bool = True) -> list:
+                     label_routing: bool = True,
+                     query_ordinal_routing: bool = False) -> list:
     """Temporal-aware post-rerank of the candidate rows for one question.
 
     Two independent mechanisms, tried in this order:
@@ -523,28 +591,30 @@ def _temporal_rerank(rows: list, q: dict, *, temporal_v2: bool = False,
         out_window = [r for r in rows if not _in_win(r)]
         in_window.sort(key=lambda r: abs((_rdate(r) - target_date).days))
         return in_window + out_window
-    if (label_routing and sid_to_date
-            and q.get("question_type") == "temporal-reasoning"):
+    direction = None
+    if sid_to_date and label_routing and q.get("question_type") == "temporal-reasoning":
         direction = _detect_ordinal(q.get("question", ""), v2=temporal_v2)
-        if direction is not None:
-            if temporal_v2:
-                # Relevance-scoped (v2): the date decides only among the top-5
-                # CE-ranked candidates. v3 sorts by the EVENT date parsed from
-                # the chunk text, falling back to the session date.
-                def _odate(r):
-                    sd = _rdate(r)
-                    if temporal_v3:
-                        return _event_date_of(r.get("text"), sd)
-                    return sd
-                head, tail = rows[:5], rows[5:]
-                dated = [r for r in head if _odate(r) is not None]
-                undated = [r for r in head if _odate(r) is None]
-                dated.sort(key=_odate, reverse=(direction == "desc"))
-                return dated + undated + tail
-            dated = [r for r in rows if _rdate(r) is not None]
-            undated = [r for r in rows if _rdate(r) is None]
-            dated.sort(key=_rdate, reverse=(direction == "desc"))
-            return dated + undated
+    elif sid_to_date and query_ordinal_routing:
+        direction = _detect_query_ordinal(q.get("question", ""))
+    if direction is not None:
+        if temporal_v2:
+            # Relevance-scoped (v2): the date decides only among the top-5
+            # CE-ranked candidates. v3 sorts by the EVENT date parsed from
+            # the chunk text, falling back to the session date.
+            def _odate(r):
+                sd = _rdate(r)
+                if temporal_v3:
+                    return _event_date_of(r.get("text"), sd)
+                return sd
+            head, tail = rows[:5], rows[5:]
+            dated = [r for r in head if _odate(r) is not None]
+            undated = [r for r in head if _odate(r) is None]
+            dated.sort(key=_odate, reverse=(direction == "desc"))
+            return dated + undated + tail
+        dated = [r for r in rows if _rdate(r) is not None]
+        undated = [r for r in rows if _rdate(r) is None]
+        dated.sort(key=_rdate, reverse=(direction == "desc"))
+        return dated + undated
     return rows
 
 
@@ -559,6 +629,8 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                        temporal_v2: bool = False,
                        temporal_v3: bool = False,
                        temporal_label_routing: bool = True,
+                       temporal_query_ordinal: bool = False,
+                       temporal_entity_anchor: bool = False,
                        llm_rerank_top_n: int = 0,
                        llm_rerank_margin: float = 0.0,
                        rerank_fusion: bool = False,
@@ -749,7 +821,10 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                 result["results"] = _temporal_rerank(
                     result["results"], q,
                     temporal_v2=temporal_v2, temporal_v3=temporal_v3,
-                    label_routing=temporal_label_routing)
+                    label_routing=temporal_label_routing,
+                    query_ordinal_routing=temporal_query_ordinal)
+                if temporal_entity_anchor:
+                    result["results"] = _temporal_entity_anchor_rerank(result["results"], q)
 
             # Gate-pin: when the FT-CE override was VERY confident, protect its
             # #1 from later-stage demotion. Post-mortem of the m=0.2 run found
@@ -923,7 +998,11 @@ def main():
     ap.add_argument("--temporal-v2", action="store_true",
                     help="Temporal-aware refinements: (1) 'how many days ago' no longer fabricates a 1-day window (count questions need an explicit number), (2) 'from latest to earliest' phrases set the sort direction explicitly and earlier-mentioned cue wins ties, (3) ordinal chronological sort is scoped to the top-5 relevant candidates instead of the whole list.")
     ap.add_argument("--temporal-no-label-routing", action="store_true",
-                    help="Switch OFF the ordinal branch of --temporal-aware, which is gated on the dataset's gold question_type == 'temporal-reasoning' (a label that does not exist at query time). The relative-target branch (N ago, label-free) stays on. Use for the honest champion ablation.")
+                    help="Switch OFF the historical ordinal branch gated on gold question_type. Relative-target handling stays label-free.")
+    ap.add_argument("--temporal-query-ordinal", action="store_true",
+                    help="Enable a narrow query-text-only ordinal router for explicit ordering phrases (for example 'order of' or 'from earliest to latest'). No gold question_type is used.")
+    ap.add_argument("--temporal-entity-anchor", action="store_true",
+                    help="For temporal fact queries, promote a top-5 row only when it uniquely matches more capitalized query entities than the current top row. Query text only; no gold label.")
     ap.add_argument("--temporal-v3", action="store_true",
                     help="Implies --temporal-v2, plus: (1) ordinal sort uses EVENT dates parsed from chunk text (explicit 'May 2023'/'in 2019', or 'N units ago'/'last month' resolved against the session date) with session-date fallback, (2) 'last Saturday'/'yesterday' queries get a day-window promotion like the proven 'N units ago' path.")
     ap.add_argument("--llm-rerank-top-n", type=int, default=0,
@@ -984,6 +1063,8 @@ def main():
             temporal_v2=args.temporal_v2,
             temporal_v3=args.temporal_v3,
             temporal_label_routing=not args.temporal_no_label_routing,
+            temporal_query_ordinal=args.temporal_query_ordinal,
+            temporal_entity_anchor=args.temporal_entity_anchor,
             llm_rerank_top_n=args.llm_rerank_top_n,
             llm_rerank_margin=args.llm_rerank_margin,
             rerank_fusion=args.rerank_fusion,
@@ -1008,6 +1089,8 @@ def main():
             temporal_v2=args.temporal_v2,
             temporal_v3=args.temporal_v3,
             temporal_label_routing=not args.temporal_no_label_routing,
+            temporal_query_ordinal=args.temporal_query_ordinal,
+            temporal_entity_anchor=args.temporal_entity_anchor,
             llm_rerank_top_n=args.llm_rerank_top_n,
             llm_rerank_margin=args.llm_rerank_margin,
             rerank_fusion=args.rerank_fusion,
