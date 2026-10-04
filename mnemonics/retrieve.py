@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from mnemonics.ingest import _get_encoder, _resolve_model_for_store
+from mnemonics.rerank import Reranker, env_int, make_reranker
 from mnemonics.store import Store
 
 # Question-signal extractors. Lifted from longmemeval analysis: quoted phrases
@@ -49,74 +50,42 @@ def _signal_boost(text: str, quoted: list[str], names: list[str]) -> float:
     n_hit = sum(1 for n in names if n in t) / max(len(names), 1) if names else 0.0
     return 1.0 + 0.60 * q_hit + 0.25 * n_hit
 
-# Lazy-cached CrossEncoder for rerank. Loaded once per process and reused.
-# Tries AdaptMem.rerank first (Atakan's local repo has it); falls back to a
-# bare sentence_transformers.CrossEncoder. The fallback keeps Kaggle/Colab
-# runs working where the PyPI adaptmem release lacks the rerank method.
-_rerank_ce: Any = None
+# Lazy-cached reranker. Loaded once per process and reused. Backend selection
+# (adaptmem vs bare sentence-transformers) and the max_length / batch_size
+# limits live in mnemonics.rerank so every backend behaves the same.
+_rerank_ce: Reranker | None = None
 _rerank_model_name: str | None = None
 
 
-def _get_rerank_ce(model: str | None = None) -> Any:
-    """Return a cached CrossEncoder instance (via AdaptMem if available, else bare ST)."""
+def _get_rerank_ce(model: str | None = None) -> Reranker:
+    """Return the cached Reranker for ``model`` (env MNEMONICS_RERANK_MODEL by default)."""
     global _rerank_ce, _rerank_model_name
     name = model or os.environ.get(
         "MNEMONICS_RERANK_MODEL", "BAAI/bge-reranker-v2-m3"
     )
     if _rerank_ce is not None and _rerank_model_name == name:
         return _rerank_ce
-    # Prefer AdaptMem if it exposes rerank (lets future AdaptMem versions
-    # inject FT'd CE heads). Otherwise use sentence-transformers directly.
-    try:
-        from adaptmem import AdaptMem
-        am = AdaptMem(rerank_model=name)
-        if hasattr(am, "rerank"):
-            _rerank_ce = am
-            _rerank_model_name = name
-            return _rerank_ce
-    except Exception:
-        pass
-    try:
-        from sentence_transformers import CrossEncoder
-    except ImportError as e:
-        raise RuntimeError(
-            "rerank=True requires either 'adaptmem' (with rerank support) or "
-            "'sentence-transformers'. Install with `pip install sentence-transformers`."
-        ) from e
-    # max_length: bge-reranker-v2-m3 advertises 8192, so a band of long rows
-    # becomes a 50 x 8192 attention batch and OOMs a 16GB GPU (measured on a
-    # T4: 5.68 GiB single allocation). Left unset the model config wins, which
-    # keeps existing results byte-identical; MNEMONICS_RERANK_MAX_LENGTH caps
-    # it for corpora with long rows.
-    max_len = os.environ.get("MNEMONICS_RERANK_MAX_LENGTH")
-    kwargs: dict[str, Any] = {}
-    if max_len:
-        kwargs["max_length"] = int(max_len)
-    _rerank_ce = CrossEncoder(name, **kwargs)
+    _rerank_ce = make_reranker(name)
     _rerank_model_name = name
     return _rerank_ce
 
 
 def _ce_rerank(query: str, results: list[dict[str, Any]], top_k: int) -> list[dict[str, Any]]:
-    """Cross-encoder rerank: attach ce_score, replace score, return top_k sorted desc."""
+    """Cross-encoder rerank: attach ce_score, replace score, return top_k sorted desc.
+
+    MNEMONICS_RERANK_MAX_LENGTH / MNEMONICS_RERANK_BATCH_SIZE bound the
+    cross-encoder's memory (bge-reranker-v2-m3 advertises 8192 tokens, so a band
+    of long rows is a 50 x 8192 attention batch: 5.68 GiB measured on a T4).
+    Unset leaves the model defaults, so champion numbers stay reproducible.
+    """
     if not results:
         return []
-    ce = _get_rerank_ce()
-    texts = [r["text"] for r in results]
-    if hasattr(ce, "rerank"):
-        # AdaptMem-style: returns [(idx, score), ...] already sorted desc
-        ranked = ce.rerank(query, texts)
-    else:
-        # Bare CrossEncoder: score pairs, sort ourselves
-        pairs = [(query, t) for t in texts]
-        # Default batch_size is 32; one batch of long rows is what blows up.
-        # Unset means unchanged behaviour, so champion numbers stay reproducible.
-        bs = os.environ.get("MNEMONICS_RERANK_BATCH_SIZE")
-        predict_kwargs: dict[str, Any] = {"show_progress_bar": False}
-        if bs:
-            predict_kwargs["batch_size"] = int(bs)
-        scores = ce.predict(pairs, **predict_kwargs)
-        ranked = sorted(enumerate(scores), key=lambda x: -float(x[1]))
+    ranked = _get_rerank_ce().rerank(
+        query,
+        [r["text"] for r in results],
+        max_length=env_int("MNEMONICS_RERANK_MAX_LENGTH"),
+        batch_size=env_int("MNEMONICS_RERANK_BATCH_SIZE"),
+    )
     out: list[dict[str, Any]] = []
     for idx, ce_score in ranked:
         item = dict(results[idx])

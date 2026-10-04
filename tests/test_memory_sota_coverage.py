@@ -162,9 +162,10 @@ def test_query_plan_uncovered_edges(monkeypatch):
 
 def test_retrieve_knobs_query_vector_and_full_band(monkeypatch):
     class CE:
-        def predict(self, pairs, **kwargs):
-            assert kwargs["batch_size"] == 2
-            return [0.2, 0.8]
+        def rerank(self, query, documents, max_length=None, batch_size=None):
+            assert batch_size == 2
+            assert max_length is None
+            return [(1, 0.8), (0, 0.2)]
     monkeypatch.setattr(retrieve_mod, "_rerank_ce", CE())
     monkeypatch.setattr(retrieve_mod, "_rerank_model_name", "ce")
     monkeypatch.setenv("MNEMONICS_RERANK_MODEL", "ce")
@@ -214,12 +215,15 @@ def test_rerank_max_length_is_forwarded(monkeypatch):
         def __init__(self, name, **kwargs):
             seen["name"] = name
             seen["kwargs"] = kwargs
+        def predict(self, pairs, **kwargs):
+            return [0.1] * len(pairs)
     monkeypatch.setattr(retrieve_mod, "_rerank_ce", None)
     monkeypatch.setattr(retrieve_mod, "_rerank_model_name", None)
+    monkeypatch.setenv("MNEMONICS_RERANK_BACKEND", "sentence-transformers")
     monkeypatch.setenv("MNEMONICS_RERANK_MODEL", "ce")
     monkeypatch.setenv("MNEMONICS_RERANK_MAX_LENGTH", "256")
     monkeypatch.setitem(sys.modules, "sentence_transformers", SimpleNamespace(CrossEncoder=FakeCrossEncoder))
-    retrieve_mod._get_rerank_ce()
+    retrieve_mod._ce_rerank("q", [{"id": 1, "text": "a"}], top_k=1)
     assert seen == {"name": "ce", "kwargs": {"max_length": 256}}
 
 

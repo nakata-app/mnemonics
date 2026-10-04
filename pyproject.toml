@@ -79,6 +79,7 @@ ignore_missing_imports = true
 files = [
     "mnemonics/store.py",
     "mnemonics/retrieve.py",
+    "mnemonics/rerank.py",
     "mnemonics/ingest.py",
     "mnemonics/server.py",
     "mnemonics/backup.py",

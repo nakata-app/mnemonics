@@ -163,16 +163,16 @@ class _StubAM:
         self._scores = scores_for_text
         self.last_query: str | None = None
         self.last_texts: list[str] | None = None
+        self.last_limits: tuple[int | None, int | None] | None = None
 
-    def rerank(self, query, candidates, top_k=None):
+    def rerank(self, query, candidates, max_length=None, batch_size=None):
         self.last_query = query
         self.last_texts = list(candidates)
+        self.last_limits = (max_length, batch_size)
         ranked = sorted(
             enumerate(self._scores.get(t, 0.0) for t in candidates),
             key=lambda x: -float(x[1]),
         )
-        if top_k is not None:
-            ranked = ranked[:top_k]
         return [(i, float(s)) for i, s in ranked]
 
 
@@ -190,6 +190,7 @@ def test_rerank_reorders_and_attaches_ce_score(populated_store, mock_enc, monkey
     monkeypatch.setattr("mnemonics.retrieve._get_rerank_ce", lambda model=None: stub)
 
     result = retrieve("q", store, top_k=3, rerank=True)
+    assert stub.last_limits == (None, None)  # env unset -> model defaults
     # CE pushes photosynthesis to position 0 regardless of vector order.
     assert result["results"][0]["text"] == "Photosynthesis converts sunlight into chemical energy in plants."
     assert result["results"][0]["ce_score"] == 0.95
@@ -365,46 +366,45 @@ def test_get_rerank_ce_cache_hit(monkeypatch):
 # ── _get_rerank_ce adaptmem and import-error paths ────────────────────────────
 
 def test_get_rerank_ce_adaptmem_with_rerank(monkeypatch):
-    """adaptmem available + has rerank → return AdaptMem instance."""
+    """adaptmem installed and accepting the limits -> adaptmem backend."""
     import sys
-    from unittest.mock import MagicMock
+    from types import SimpleNamespace
 
     from mnemonics import retrieve as _ret
 
-    mock_am = MagicMock()
-    mock_am.rerank = lambda q, t: []
-    mock_adaptmem_mod = MagicMock()
-    mock_adaptmem_mod.AdaptMem.return_value = mock_am
+    class _AM:
+        def __init__(self, rerank_model):
+            self.rerank_model = rerank_model
 
-    monkeypatch.setitem(sys.modules, "adaptmem", mock_adaptmem_mod)
-    _ret._rerank_ce = None
-    _ret._rerank_model_name = None
+        def rerank(self, query, candidates, top_k=None, *, max_length=None, batch_size=None):
+            return []
+
+    monkeypatch.setitem(sys.modules, "adaptmem", SimpleNamespace(AdaptMem=_AM))
+    monkeypatch.delenv("MNEMONICS_RERANK_BACKEND", raising=False)
+    monkeypatch.setattr(_ret, "_rerank_ce", None)
+    monkeypatch.setattr(_ret, "_rerank_model_name", None)
 
     result = _ret._get_rerank_ce("dummy-model")
-    assert result is mock_am
-    _ret._rerank_ce = None
-    _ret._rerank_model_name = None
+    assert result.backend == "adaptmem"
+    assert result.name == "dummy-model"
 
 
 def test_get_rerank_ce_missing_sentence_transformers(monkeypatch):
-    """If sentence_transformers is missing and adaptmem fails → RuntimeError."""
+    """No adaptmem and no sentence_transformers -> a typed, visible error."""
     import sys
 
     from mnemonics import retrieve as _ret
+    from mnemonics.rerank import RerankerUnavailable
 
-    # Make adaptmem import fail
     monkeypatch.setitem(sys.modules, "adaptmem", None)
-    # Make sentence_transformers import fail
     monkeypatch.setitem(sys.modules, "sentence_transformers", None)
-    _ret._rerank_ce = None
-    _ret._rerank_model_name = None
+    monkeypatch.delenv("MNEMONICS_RERANK_BACKEND", raising=False)
+    monkeypatch.setattr(_ret, "_rerank_ce", None)
+    monkeypatch.setattr(_ret, "_rerank_model_name", None)
 
     import pytest
-    with pytest.raises(RuntimeError, match="sentence-transformers"):
-        _ret._get_rerank_ce("no-model")
-
-    _ret._rerank_ce = None
-    _ret._rerank_model_name = None
+    with pytest.raises(RerankerUnavailable, match="sentence-transformers"):
+        _ret._get_rerank_ce("no-model").rerank("q", ["doc"])
 
 
 def test_retrieve_min_tier_filter(tmp_path, mock_enc):
