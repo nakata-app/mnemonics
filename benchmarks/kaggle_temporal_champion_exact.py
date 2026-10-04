@@ -103,6 +103,7 @@ DATA = resolve("longmemeval_s_cleaned.json", False)
 GATE = resolve("chat-ce-v3-20260516", True)
 RERANK = resolve("mn-ce-v1-20260604", True)
 DUMP = RESULTS / "temporal_post_gate_pre_temporal.json"
+RAW = RESULTS / "raw_pre_gate.json"
 OUT = RESULTS / "historical_champion.json"
 PERQ = RESULTS / "historical_champion_perq.json"
 
@@ -131,6 +132,7 @@ print(f"RERANK_CHECKPOINT={Path(RERANK).name}", flush=True)
 print(f"GATE_CHECKPOINT={Path(GATE).name}", flush=True)
 run = subprocess.run(
     [sys.executable, "-u", "benchmarks/longmemeval_eval.py", "--n", "500", *common,
+     "--dump-candidates", str(RAW),
      "--out", str(OUT), "--per-q-out", str(PERQ)],
     cwd=REPO,
     env=env,
@@ -144,6 +146,7 @@ summary = {
     "source_sha": PINNED_SHA,
     "instrumentation_only": True,
     "n_dump": len(dump),
+    "n_raw_dump": len(json.loads(RAW.read_text())),
     "R@1": result["R@1"],
     "R@5": result["R@5"],
     "R@10": result["R@10"],
@@ -157,6 +160,9 @@ summary = {
 print("HISTORICAL_CHAMPION=" + json.dumps(summary, sort_keys=True), flush=True)
 if len(dump) != 500:
     raise RuntimeError(f"dump incomplete: {len(dump)}/500")
+raw_dump = json.loads(RAW.read_text())
+if len(raw_dump) != 500:
+    raise RuntimeError(f"raw dump incomplete: {len(raw_dump)}/500")
 if result["R@1"] != 0.958 or result["R@5"] != 1.0 or result["R@10"] != 1.0:
     raise RuntimeError(f"historical champion mismatch: {result}")
 if (result.get("trust_gate") or {}).get("fired") != 86:
