@@ -33,5 +33,16 @@
     "answer_sids_occurrences": 1,
     "note": "answer_session_ids/answer_sids occur at the benchmark metric anchor after the injected query/session-only policy block; they are not used by policy routing."
   },
-  "claim": "Exact per-question artifact rescored on the official 470 answerable-question retrieval denominator is 470/470 at R@1, R@5, and R@10."
+  "claim": "Exact per-question artifact rescored on the official 470 answerable-question retrieval denominator is 470/470 at R@1, R@5, and R@10.",
+  "source_commit": "ca5359417c9a4692d86e58bc36253e00b54172f8",
+  "dataset_resolver_name": "longmemeval_s_cleaned.json",
+  "summary_artifact": {
+    "source_sha": "ca5359417c9a4692d86e58bc36253e00b54172f8",
+    "R@1": 1.0,
+    "R@5": 1.0,
+    "R@10": 1.0,
+    "policy": "R1000 full stack; no gold labels",
+    "trust_gate_margin": 3.0,
+    "trust_gate_fired": 15
+  }
 }
