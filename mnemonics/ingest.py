@@ -37,6 +37,8 @@ _PREF_PATTERNS = [
         r"i(?:'ve been| have been) using ([^\.!?]{5,100})",
         # Produced/harvested possessions: "I've harvested cherry tomatoes..."
         r"i(?:'ve| have) (?:even )?(?:grown|harvested) ([^\.!?]{5,100})",
+        # Explicit user-owned objects: "my new portable power bank and charging pad".
+        r"(?:my|our) (new [^,\.!?]{5,60})",
         r"i usually ([^,\.!?]{5,60})",
         r"i(?:'ve been| have been) (?:trying|attempting) to ([^,\.!?]{5,80})",
         r"i(?:'ve been| have been) (?:considering|thinking about) ([^,\.!?]{5,80})",

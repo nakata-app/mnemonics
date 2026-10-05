@@ -160,6 +160,9 @@ def test_extract_preferences_rich_preferences_and_user_owned_facts():
     assert any("basil and mint" in p for p in out)
     assert any("cherry tomatoes" in p for p in out)
 
+    owned = extract_preferences("I keep my new portable power bank and wireless charging pad in a pouch.")
+    assert any("portable power bank" in p for p in owned)
+
 
 def test_extract_preferences_dedup():
     from mnemonics.ingest import extract_preferences

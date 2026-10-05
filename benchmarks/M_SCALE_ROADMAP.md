@@ -36,6 +36,13 @@ and index size.
 4. **Timestamp-only routing.** For the 20 query-only temporal-target routes,
    nearest session timestamps place only 10/20 gold sessions inside top 50.
    Event time and session time are not interchangeable.
+5. **Preference-only retrieval as a replacement.** A dedicated extracted-memory
+   lane is complementary, not sufficient by itself. On the 30 M preference
+   questions it has R@50=0.733 after adding explicit user-owned objects, while
+   existing semantic top-10 UNION preference top-50 has 30/30 gold coverage.
+6. **Generic CE over the preference union.** mn-ce-v1 drops preference R@1 from
+   0.500 to 0.467; chat-ce-v3 is worse. Candidate generation and personalized
+   memory usefulness are distinct ranking problems.
 
 ## Architecture to test
 
