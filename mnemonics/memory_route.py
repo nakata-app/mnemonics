@@ -52,6 +52,11 @@ _CHRONOLOGY_RE = re.compile(
     r"\b(order|sequence|earliest|latest|most recent|first|second|third|before|after)\b",
     re.IGNORECASE,
 )
+_AGGREGATE_RE = re.compile(
+    r"\b(?:in total|total (?:number|cost|weight|amount)|compared to|"
+    r"minimum amount|maximum amount|most money|how many different)\b",
+    re.IGNORECASE,
+)
 _PREFERENCE_RE = re.compile(
     r"\b(recommend(?:ation|ations|ed|ing)?|suggest(?:ion|ions|ed|ing)?|advice|tips?|"
     r"what should i|should i|do you think|good idea|would i like|would i prefer|"
@@ -142,6 +147,8 @@ def route_memory_query(query: str, *, reference_time: datetime | None = None) ->
         lanes.append("temporal-duration")
     if _CHRONOLOGY_RE.search(text):
         lanes.append("chronology")
+    if _AGGREGATE_RE.search(text):
+        lanes.append("aggregate")
     if _PREFERENCE_RE.search(text):
         lanes.append("preference")
     if _PERSONAL_STATE_RE.search(text):

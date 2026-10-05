@@ -52,3 +52,13 @@ def test_duration_event_query_strips_count_wrapper():
 def test_duration_event_query_leaves_complex_duration_question_intact():
     q = "How long had I been using the rug when I rearranged the room?"
     assert duration_event_query(q) == q.rstrip("?")
+
+
+def test_routes_high_confidence_aggregate_queries():
+    assert route_memory_query("What is the total cost of my headphones and iPad?").lanes[0] == "aggregate"
+    assert "aggregate" in route_memory_query("How much earlier do I wake up on Fridays compared to weekdays?").lanes
+    assert "aggregate" in route_memory_query("How many different museums did I visit?").lanes
+
+
+def test_plain_how_many_is_not_forced_into_aggregate_lane():
+    assert "aggregate" not in route_memory_query("How many sports have I played competitively?").lanes
