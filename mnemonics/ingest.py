@@ -29,6 +29,14 @@ _PREF_PATTERNS = [
         r"i(?:'ve been| have been) (?:worried|concerned) about ([^,\.!?]{5,80})",
         r"i(?:'m| am) (?:worried|concerned) about ([^,\.!?]{5,80})",
         r"i prefer ([^,\.!?]{5,60})",
+        # Durable positive preferences with richer comma-delimited detail:
+        # "I like hotels with unique features, such as a rooftop pool..."
+        r"i (?:also )?like ([^\.!?]{5,120})",
+        # Ongoing user-owned facts useful for later recommendations:
+        # "I've been using basil and mint in my cooking lately."
+        r"i(?:'ve been| have been) using ([^\.!?]{5,100})",
+        # Produced/harvested possessions: "I've harvested cherry tomatoes..."
+        r"i(?:'ve| have) (?:even )?(?:grown|harvested) ([^\.!?]{5,100})",
         r"i usually ([^,\.!?]{5,60})",
         r"i(?:'ve been| have been) (?:trying|attempting) to ([^,\.!?]{5,80})",
         r"i(?:'ve been| have been) (?:considering|thinking about) ([^,\.!?]{5,80})",

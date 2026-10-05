@@ -147,6 +147,20 @@ def test_extract_preferences_basic_patterns():
     assert any("debate" in p.lower() or "high school" in p.lower() for p in out)
 
 
+def test_extract_preferences_rich_preferences_and_user_owned_facts():
+    from mnemonics.ingest import extract_preferences
+
+    text = (
+        "I also like hotels with unique features, such as a rooftop pool or a hot tub "
+        "on the balcony. I've been using basil and mint in my cooking lately. "
+        "I've even harvested some cherry tomatoes from my garden."
+    )
+    out = extract_preferences(text)
+    assert any("hotels with unique features" in p and "hot tub" in p for p in out)
+    assert any("basil and mint" in p for p in out)
+    assert any("cherry tomatoes" in p for p in out)
+
+
 def test_extract_preferences_dedup():
     from mnemonics.ingest import extract_preferences
     text = "I prefer tea over coffee. I prefer tea over coffee. I prefer tea over coffee."
