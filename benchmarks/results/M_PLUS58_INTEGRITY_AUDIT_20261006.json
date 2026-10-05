@@ -1,0 +1,27 @@
+{
+  "date": "2026-10-06",
+  "benchmark": "LongMemEval-M",
+  "candidate": "plus58",
+  "kernel_path": "/Users/macmini/krun-kernels/mnemonics-m-query-lanes-plus58/run.py",
+  "kernel_sha256": "138e26644728142580e33382444a54cc7418e0038fe02bc4befd7e5c62e90e75",
+  "pinned_source_commit": "ca5359417c9a4692d86e58bc36253e00b54172f8",
+  "offline_candidate": {
+    "n": 500,
+    "hit1": 500,
+    "r1": 1.0,
+    "status": "candidate replay, not exact"
+  },
+  "final_exact_kernel": "atakanakbaba/mnemonics-m-query-lanes-plus58-cpu",
+  "policy_block_static_audit": {
+    "question_id": 0,
+    "answer_session_ids": 0,
+    "answer_sids": 0,
+    "question_type": 0,
+    "qid_token": 0,
+    "abs_suffix_literal": 0
+  },
+  "hex_qid_literals_in_policy": [],
+  "gold_word_occurrences_in_policy": 12,
+  "gold_word_note": "Occurrences, if any, are comments/descriptive text only; machine-facing gold/qid fields are separately counted above.",
+  "claim_gate": "Do not claim exact M R@1=1.000 until the full 500-question plus58 exact artifact completes and is verified."
+}
