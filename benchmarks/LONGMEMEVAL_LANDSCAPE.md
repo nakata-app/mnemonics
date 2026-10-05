@@ -10,7 +10,8 @@ unless `metric`, `n_scored`, and protocol match.
 
 | Benchmark | Metric | n | Result | Evidence | Claim status |
 |---|---:|---:|---:|---|---|
-| LongMemEval-S | session retrieval R@1 / R@5 / R@10 | 500 | 1.000 / 1.000 / 1.000 | `r1000-exact-v2-final-artifacts` | verified exact |
+| LongMemEval-S cleaned | session retrieval R@1 / R@5 / R@10 | 500 | 1.000 / 1.000 / 1.000 | `r1000-exact-v2-final-artifacts` | verified exact on cleaned 500; all 30 abs rows have non-empty retrieval targets in this artifact |
+| LongMemEval-S official answerable subset | session retrieval R@1 / R@5 / R@10 | 470 | **1.000 / 1.000 / 1.000** | same exact per-q artifact with `_abs` rows excluded | apples-to-apples official retrieval denominator |
 | LongMemEval-M | session retrieval R@1 / R@5 / R@10 | 500 | .884 / .952 / .964 | `m-query-lanes-small` exact artifacts | verified exact |
 | LongMemEval-M | candidate/offline R@1 | 500 | 1.000 (500/500) | plus58 replay chain | offline candidate only; not exact |
 | LongMemEval-V2 Small | official QA accuracy | 451 | pending | frozen core `8aa584d`; adapter `21db999` | no score yet |
@@ -27,15 +28,19 @@ These are useful context, not a single official leaderboard. Protocols differ.
 
 | System | R@1 | R@5 | R@10 | n scored | Retrieval protocol / caveat |
 |---|---:|---:|---:|---:|---|
-| Mnemonics | **1.000** | **1.000** | **1.000** | 500 | exact internal artifact; includes full 500 evaluation rows |
+| Mnemonics (official answerable subset) | **1.000** | **1.000** | **1.000** | **470** | exact per-q artifact; excludes 30 `_abs` rows, matching official retrieval denominator |
+| Mnemonics (cleaned full set) | 1.000 | 1.000 | 1.000 | 500 | cleaned artifact supplies non-empty `answer_sids` for all 30 abstention rows |
 | cogito-ergo runP-v35 | .964 | — | — | 470 | selective qwen-turbo LLM filter; 30 abstention rows excluded; 453/470 |
 | QMG v1.2 | .906 | .986 | .994 | 500 reported | cleaned LongMemEval-S retrieval report; gte-large/session pooling |
 | TopoDB hybrid | .894 | .987 | .996 | 470 graded | 500-question run, 30 abstention rows excluded; MiniLM + BM25 RRF |
 
-Important: the original LongMemEval retrieval convention commonly excludes the
-30 information-unavailable (`*_abs`) rows because they have no gold evidence
-session. A 470-row retrieval result and a 500-row internal result are not
-strictly apples-to-apples until the exact scoring convention is reconciled.
+Important: the protocol mismatch is now reconciled. The cleaned S dataset used by
+our full-500 exact artifact supplies non-empty retrieval targets for all 30
+abstention rows, unlike the official retrieval convention that does not score
+those rows. The official retrieval convention excludes those rows. Re-scoring
+the same exact per-question artifact on only the 470 answerable rows gives
+**470/470 at R@1, R@5, and R@10**. This is the denominator to use for direct
+comparison with 470-row public retrieval reports such as cogito-ergo and TopoDB.
 
 Public source references checked 2026-10-06:
 - Hermes Labs `fidelis/WRITEUP-LONGMEMEVAL-20260423.md` (cogito-ergo runP-v35)
@@ -80,8 +85,10 @@ fixed-reader score if preserving the untouched-evaluation claim.
 ## Claim discipline
 
 Safe now:
-- "Mnemonics has a verified exact 1.000 session-retrieval R@1 on its full
-  500-row LongMemEval-S artifact."
+- "Mnemonics has verified exact LongMemEval-S session-retrieval R@1=1.000 on
+  the official 470 answerable-question retrieval denominator (470/470)."
+- "On the cleaned 500-row artifact, where all 30 abstention rows have non-empty
+  retrieval targets, the same run is also 500/500."
 - "Mnemonics' best verified exact LongMemEval-M R@1 is .884; a frozen plus58
   policy covers 500/500 in offline candidate replay and is under exact validation."
 - "The V2 retrieval core was frozen before the first V2 score and the adapter is
@@ -89,7 +96,9 @@ Safe now:
 
 Not safe yet:
 - "LongMemEval-M exact 1.000" before plus58 completion.
-- "World #1 / SOTA on LongMemEval-S" before the 470-vs-500 protocol audit.
+- "World #1 / SOTA on LongMemEval-S" until remaining public reports are audited
+  for matching session-level Recall@1 semantics and reproducibility; the 470-vs-500
+  denominator mismatch itself is now resolved.
 - "V2 beats AgentRunbook-C" before an official Qwen3.5-9B reader + GPT-5.2
   judge run is complete.
 - Any V2 leaderboard-equivalent claim from the context-export kernel alone.
