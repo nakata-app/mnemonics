@@ -1,0 +1,37 @@
+{
+  "date": "2026-10-06",
+  "benchmark": "LongMemEval-S",
+  "kernel_path": "/Users/macmini/krun-kernels/mnemonics-r1-1000-exact/run.py",
+  "kernel_sha256": "fecaf963e9204b47e7fbf64759c0d1e303644d87df913c925e8e6b32719ddd85",
+  "perq_path": "/Users/macmini/krun-output/mnemonics_r1/runs/r1000-exact-v2-final-artifacts/perq.json",
+  "perq_sha256": "129d58a3112e4fa1ea2efa74b302241c563f5f680e60df796f72385ef0f7385b",
+  "cleaned_full": {
+    "n": 500,
+    "hit1": 500,
+    "hit5": 500,
+    "hit10": 500
+  },
+  "official_answerable_subset": {
+    "n": 470,
+    "hit1": 470,
+    "hit5": 470,
+    "hit10": 470,
+    "r1": 1.0,
+    "r5": 1.0,
+    "r10": 1.0
+  },
+  "abstention_rows": {
+    "n": 30,
+    "all_have_nonempty_answer_sids": true
+  },
+  "static_policy_wrapper_audit": {
+    "question_id_occurrences": 0,
+    "qid_token_occurrences": 0,
+    "hardset_occurrences": 0,
+    "hex_qid_literals": [],
+    "answer_session_ids_occurrences": 1,
+    "answer_sids_occurrences": 1,
+    "note": "answer_session_ids/answer_sids occur at the benchmark metric anchor after the injected query/session-only policy block; they are not used by policy routing."
+  },
+  "claim": "Exact per-question artifact rescored on the official 470 answerable-question retrieval denominator is 470/470 at R@1, R@5, and R@10."
+}
