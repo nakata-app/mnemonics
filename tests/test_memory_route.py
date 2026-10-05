@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from mnemonics.memory_route import route_memory_query
+from mnemonics.memory_route import duration_event_query, route_memory_query
 
 
 def test_routes_explicit_relative_event_to_time_target():
@@ -40,3 +40,15 @@ def test_personal_state_routes_before_semantic():
 
 def test_plain_query_falls_back_to_semantic():
     assert route_memory_query("Explain vector databases").lanes == ("semantic",)
+
+
+def test_duration_event_query_strips_count_wrapper():
+    assert duration_event_query(
+        "How many weeks ago did I attend the friends and family sale at Nordstrom?"
+    ) == "I attend the friends and family sale at Nordstrom"
+    assert duration_event_query("How many months have passed since I moved house?") == "I moved house"
+
+
+def test_duration_event_query_leaves_complex_duration_question_intact():
+    q = "How long had I been using the rug when I rearranged the room?"
+    assert duration_event_query(q) == q.rstrip("?")

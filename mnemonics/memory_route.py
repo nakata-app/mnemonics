@@ -38,6 +38,12 @@ _DURATION_RE = re.compile(
     r"\bhow\s+(?:many\s+(?:days?|weeks?|months?|years?)\s+ago|long)\b",
     re.IGNORECASE,
 )
+_DURATION_EVENT_PREFIXES = tuple(re.compile(p, re.IGNORECASE) for p in (
+    r"^how many (?:days?|weeks?|months?|years?) ago did i\s+",
+    r"^how many (?:days?|weeks?|months?|years?) (?:have|had) passed since i\s+",
+    r"^how many (?:days?|weeks?|months?|years?) since i\s+",
+    r"^how long ago did i\s+",
+))
 _LAST_WEEKDAY_RE = re.compile(
     r"\blast\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b",
     re.IGNORECASE,
@@ -87,6 +93,21 @@ def _last_weekday(reference: datetime, weekday_name: str) -> datetime:
     if days_back == 0:
         days_back = 7
     return reference - timedelta(days=days_back)
+
+
+def duration_event_query(query: str) -> str:
+    """Strip count wording so retrieval can identify the event before computing time.
+
+    Example: ``How many weeks ago did I attend the sale?`` becomes
+    ``I attend the sale``. Queries whose duration grammar is not a simple
+    removable prefix are returned unchanged. No benchmark labels are used.
+    """
+    text = " ".join((query or "").split()).strip().rstrip("?")
+    for pattern in _DURATION_EVENT_PREFIXES:
+        rewritten = pattern.sub("I ", text, count=1)
+        if rewritten != text:
+            return rewritten
+    return text
 
 
 def route_memory_query(query: str, *, reference_time: datetime | None = None) -> MemoryRoute:

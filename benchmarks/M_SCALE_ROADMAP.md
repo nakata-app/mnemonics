@@ -43,6 +43,21 @@ and index size.
 6. **Generic CE over the preference union.** mn-ce-v1 drops preference R@1 from
    0.500 to 0.467; chat-ce-v3 is worse. Candidate generation and personalized
    memory usefulness are distinct ranking problems.
+7. **Global user-turn-max CE.** Re-scoring every top-10 session by its best
+   user-authored turn is not globally safe: M moves only 425/500 -> 426/500 and
+   harms 9/56 single-session-assistant questions. It is useful only behind a
+   query lane.
+
+## Proven query-lane gains
+
+- **Temporal-duration event-first:** on all 45 query-only duration routes, strip
+  removable count wording (e.g. "How many weeks ago did I attend X?" ->
+  "I attend X"), then choose the top-10 session with the strongest matching
+  user turn. Result: 35/45 -> 42/45, **+7 fixes / 0 harms**.
+- **Preference candidate union:** semantic top-10 UNION extracted-preference
+  top-50 contains the gold session on **30/30** M preference questions after
+  indexing explicit user-owned objects. Final personalized selection remains
+  unsolved; generic CE selectors regress R@1.
 
 ## Architecture to test
 
