@@ -57,6 +57,10 @@ _AGGREGATE_RE = re.compile(
     r"minimum amount|maximum amount|most money|how many different)\b",
     re.IGNORECASE,
 )
+_CURRENT_STATE_RE = re.compile(
+    r"\b(?:current|currently|how often)\b",
+    re.IGNORECASE,
+)
 _PREFERENCE_RE = re.compile(
     r"\b(recommend(?:ation|ations|ed|ing)?|suggest(?:ion|ions|ed|ing)?|advice|tips?|"
     r"what should i|should i|do you think|good idea|would i like|would i prefer|"
@@ -149,6 +153,8 @@ def route_memory_query(query: str, *, reference_time: datetime | None = None) ->
         lanes.append("chronology")
     if _AGGREGATE_RE.search(text):
         lanes.append("aggregate")
+    if _CURRENT_STATE_RE.search(text):
+        lanes.append("current-state")
     if _PREFERENCE_RE.search(text):
         lanes.append("preference")
     if _PERSONAL_STATE_RE.search(text):

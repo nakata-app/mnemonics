@@ -59,9 +59,11 @@ and index size.
   amount, ``most money``, ``how many different``) selects 47/500 M questions;
   45 are multi-session. Re-ranking only this lane by strongest user turn moves
   34/47 -> 41/47, **+7 fixes / 0 harms**.
-- The duration and aggregate fixes are disjoint in the current replay, so their
-  offline combined ceiling is 425/500 -> 439/500 (R@1 0.850 -> 0.878) before
-  an exact end-to-end Kaggle confirmation.
+- The duration and aggregate fixes are disjoint in the current replay. A third
+  query-only **current-state/frequency** lane (``current/currently/how often``)
+  selects 30 M questions and moves 23/30 -> 25/30, **+2 / 0 harms**. Together
+  these three safe offline lanes move 425/500 -> 441/500 (R@1 0.850 -> 0.882)
+  before an exact end-to-end Kaggle confirmation.
 - **Preference candidate union:** semantic top-10 UNION extracted-preference
   top-50 contains the gold session on **30/30** M preference questions after
   indexing explicit user-owned objects. Final personalized selection remains

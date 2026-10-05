@@ -62,3 +62,9 @@ def test_routes_high_confidence_aggregate_queries():
 
 def test_plain_how_many_is_not_forced_into_aggregate_lane():
     assert "aggregate" not in route_memory_query("How many sports have I played competitively?").lanes
+
+
+def test_routes_current_state_and_frequency_queries():
+    assert "current-state" in route_memory_query("What is my current volleyball record?").lanes
+    assert "current-state" in route_memory_query("How often do I attend yoga classes?").lanes
+    assert "current-state" in route_memory_query("What am I currently working on?").lanes
