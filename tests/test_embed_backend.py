@@ -9,8 +9,9 @@ import mnemonics.ingest as ingest_mod
 
 
 class FakeSentenceTransformer:
-    def __init__(self, model_name: str):
+    def __init__(self, model_name: str, device: str | None = None):
         self.model_name = model_name
+        self.device = device
 
 
 def test_sentence_transformers_backend_can_be_pinned(monkeypatch):
@@ -24,6 +25,20 @@ def test_sentence_transformers_backend_can_be_pinned(monkeypatch):
     encoder = ingest_mod._build_encoder("all-MiniLM-L6-v2")
     assert isinstance(encoder, FakeSentenceTransformer)
     assert encoder.model_name == "all-MiniLM-L6-v2"
+    assert encoder.device is None
+
+
+def test_mnemonics_device_pins_torch_device(monkeypatch):
+    monkeypatch.setenv("MNEMONICS_EMBED_BACKEND", "sentence-transformers")
+    monkeypatch.setenv("MNEMONICS_DEVICE", "cpu")
+    monkeypatch.setitem(
+        sys.modules,
+        "sentence_transformers",
+        SimpleNamespace(SentenceTransformer=FakeSentenceTransformer),
+    )
+
+    encoder = ingest_mod._build_encoder("all-MiniLM-L6-v2")
+    assert encoder.device == "cpu"
 
 
 def test_invalid_embed_backend_is_rejected(monkeypatch):
