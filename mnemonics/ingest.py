@@ -529,6 +529,15 @@ class _FastEmbedEncoder:
         return np.asarray(vecs, dtype="float32")
 
 
+def _torch_device_kwargs() -> dict[str, str]:
+    # MNEMONICS_DEVICE pins the torch device. On Apple Silicon the default is
+    # MPS, which copies bge-large into a private ~2.1GB allocation per process;
+    # on "cpu" the safetensors stay mmap'd and shared (measured 2394MB -> 322MB
+    # footprint). Unset keeps sentence-transformers' auto-pick (cuda on Colab).
+    device = os.environ.get("MNEMONICS_DEVICE")
+    return {"device": device} if device else {}
+
+
 def _build_encoder(resolved: str) -> Any:
     # Fine-tuned AdaptMem checkpoint: prefer the exported ONNX graph (torch-free,
     # ~110MB RSS). Fall back to torch if the export is missing.
@@ -538,7 +547,7 @@ def _build_encoder(resolved: str) -> Any:
             return _OnnxEmbeddingEncoder(resolved)
         from sentence_transformers import SentenceTransformer
 
-        return SentenceTransformer(resolved)
+        return SentenceTransformer(resolved, **_torch_device_kwargs())
     # Stock model (MNEMONICS_ENCODER_MODEL or default): prefer FastEmbed
     # for the low-RSS ONNX path. Benchmarks that must reproduce the historical
     # sentence-transformers champion can pin the old backend explicitly.
@@ -546,7 +555,7 @@ def _build_encoder(resolved: str) -> Any:
     if backend == "sentence-transformers":
         from sentence_transformers import SentenceTransformer
 
-        return SentenceTransformer(resolved)
+        return SentenceTransformer(resolved, **_torch_device_kwargs())
     if backend not in ("", "fastembed", "auto"):
         raise ValueError(
             "MNEMONICS_EMBED_BACKEND must be fastembed, auto, or sentence-transformers"
@@ -563,7 +572,7 @@ def _build_encoder(resolved: str) -> Any:
         )
         from sentence_transformers import SentenceTransformer
 
-        return SentenceTransformer(resolved)
+        return SentenceTransformer(resolved, **_torch_device_kwargs())
 
 
 def _get_encoder(model: str = _encoder_name) -> Any:
