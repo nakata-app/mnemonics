@@ -117,7 +117,7 @@ first-class track, not a follow-up.
 | date | policy | R@1 | R@5 | R@10 | note |
 |---|---|---|---|---|---|
 | 2026-10-06 | plus58 (memorized) | 0.992 | 0.994 | 0.994 | invalid for claims, memorized lanes |
-| 2026-10-07 | clean2 (colab_clean2.py sha 8089ea1e) | pending | | | waiting for Colab T4 |
+| 2026-10-08 | **clean2 = first original baseline** (Kaggle CPU, 10 shards, off-the-shelf ms-marco CE, no gate, anonymized SIDs) | **0.848** | **0.928** | **0.948** | by type R@1: ku 0.962, multi 0.835, ss-assistant 0.982, preference 0.233, ss-user 0.886, temporal 0.857. /Volumes/WD-Backup/datasets/longmemeval/results/clean2_m_kaggle_cpu/MERGED_summary.json |
 | 2026-10-07 | clean baseline (Colab T4, colab_clean.py sha 3ce50d91), CONTAMINATED: LME-trained CEs + answer_ SID leak | 0.934 | 0.960 | 0.966 | by type R@1: ss-assistant 1.000, ss-user 0.914, multi 0.955, ku 0.987, temporal 0.940, preference 0.600. Results: /Volumes/WD-Backup/datasets/longmemeval/results/clean_m_colab_20261007/ |
 
 ## Dev ledger (LoCoMo, not an exam; may be looked at per question)
