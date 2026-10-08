@@ -78,7 +78,8 @@ def chat(key: str, model: str, prompt: str, max_tokens: int, timeout: float) -> 
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--perq", type=Path, required=True)
-    ap.add_argument("--locomo", type=Path, required=True)
+    ap.add_argument("--locomo", type=Path, help="LoCoMo json (dev)")
+    ap.add_argument("--sessions", type=Path, help="per-question {qid: {sid: [date, text]}} from extract_m_candidates.py")
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--model", default="glm-5.3")
     ap.add_argument("--top-n", type=int, default=5)
@@ -92,7 +93,8 @@ def main() -> None:
     rows = json.load(open(args.perq))
     if args.sample:
         rows = random.Random(args.seed).sample(rows, args.sample)
-    sess = locomo_sessions(args.locomo)
+    per_q = json.load(open(args.sessions)) if args.sessions else None
+    sess = locomo_sessions(args.locomo) if args.locomo else {}
     key = load_key()
     args.out.mkdir(parents=True, exist_ok=True)
     log = (args.out / "calls.jsonl").open("a")
@@ -101,6 +103,8 @@ def main() -> None:
     hard_err = 0
     lat, toks = [], 0
     for r in rows:
+        if per_q is not None:
+            sess = {k: tuple(v) for k, v in per_q[r["qid"]].items()}
         cands = [s for s in r["retrieved_top10_sids"][: args.top_n] if s in sess]
         gold = set(r["answer_sids"])
         base1 += int(bool(cands) and cands[0] in gold)
