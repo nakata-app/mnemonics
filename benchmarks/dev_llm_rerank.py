@@ -15,6 +15,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import random
 import re
@@ -49,7 +50,11 @@ def locomo_sessions(path: Path) -> dict[str, tuple[str, str]]:
             m = re.fullmatch(r"session_(\d+)", k)
             if m and c[k]:
                 text = "\n".join(f'{t["speaker"]}: {t["text"]}' for t in c[k])
-                out[f'{conv["sample_id"]}_s{m.group(1)}'] = (c[f"session_{m.group(1)}_date_time"], text)
+                sid = f'{conv["sample_id"]}_s{m.group(1)}'
+                val = (c[f"session_{m.group(1)}_date_time"], text)
+                out[sid] = val
+                # clean2 runs anonymize session ids as "s" + sha1(id)[:12]; index both forms
+                out["s" + hashlib.sha1(sid.encode()).hexdigest()[:12]] = val
     return out
 
 
@@ -93,6 +98,7 @@ def main() -> None:
     log = (args.out / "calls.jsonl").open("a")
 
     base1 = new1 = fails = 0
+    hard_err = 0
     lat, toks = [], 0
     for r in rows:
         cands = [s for s in r["retrieved_top10_sids"][: args.top_n] if s in sess]
@@ -102,6 +108,14 @@ def main() -> None:
         raw, dt, usage = chat(key, args.model, PROMPT.format(question=r["question"], blocks=blocks, last=len(cands) - 1),
                               args.max_tokens, args.timeout)
         lat.append(dt)
+        err = str(usage.get("error", ""))
+        hard_err = hard_err + 1 if ("429" in err or "403" in err or "401" in err) else 0
+        if hard_err >= 3:
+            print("STOP: provider quota/auth errors 3x in a row:", err, flush=True)
+            base1 -= int(bool(cands) and cands[0] in gold)  # drop the aborted question from both counts
+            lat.pop()
+            rows = rows[: rows.index(r)]
+            break
         toks += int(usage.get("total_tokens", 0) or 0)
         m = re.fullmatch(r"\D*(\d+)\D*", raw or "")
         pick = int(m.group(1)) if m and int(m.group(1)) < len(cands) else 0
