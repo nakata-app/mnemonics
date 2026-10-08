@@ -58,6 +58,33 @@ def locomo_sessions(path: Path) -> dict[str, tuple[str, str]]:
     return out
 
 
+_WORD = re.compile(r"[a-z0-9]+")
+_STOP = set("a an the and or of to in on at for with is are was were be been i you my me we our it this that what which who when where how did do does have has had".split())
+
+
+def snippet(question: str, texts: list[str], budget: int) -> list[str]:
+    """Query-relevant excerpt per session: score each turn by idf-weighted overlap with the question
+    (idf over all turns of the candidates), keep the best turns up to `budget` chars, in original order."""
+    import math
+    q = {w for w in _WORD.findall(question.lower()) if w not in _STOP}
+    turns = [[t for t in text.split("\n") if t.strip()] for text in texts]
+    docs = [set(_WORD.findall(t.lower())) for ts in turns for t in ts]
+    n = max(len(docs), 1)
+    idf = {w: math.log(1 + n / (1 + sum(w in d for d in docs))) for w in q}
+    out = []
+    for ts in turns:
+        scored = sorted(range(len(ts)), key=lambda i: -sum(idf[w] for w in q if w in set(_WORD.findall(ts[i].lower()))))
+        keep, used = set(), 0
+        for i in scored:
+            if used + len(ts[i]) > budget and keep:
+                continue
+            keep.add(i); used += min(len(ts[i]), budget)
+            if used >= budget:
+                break
+        out.append("\n".join((ts[i] if len(ts[i]) <= budget else ts[i][:budget]) for i in sorted(keep)))
+    return out
+
+
 def chat(key: str, model: str, prompt: str, max_tokens: int, timeout: float) -> tuple[str | None, float, dict]:
     # glm-5.3 is a reasoning model: it thinks in a separate field before writing content. A small
     # max_tokens is spent on reasoning and content comes back empty (finish_reason=length).
@@ -84,6 +111,7 @@ def main() -> None:
     ap.add_argument("--model", default="glm-5.3")
     ap.add_argument("--top-n", type=int, default=5)
     ap.add_argument("--max-chars", type=int, default=3000, help="per-session text cap")
+    ap.add_argument("--snippets", action="store_true", help="show query-relevant turns instead of the session head")
     ap.add_argument("--max-tokens", type=int, default=4096, help="must cover the model's reasoning")
     ap.add_argument("--timeout", type=float, default=20.0, help="latency budget per question; on timeout keep base order")
     ap.add_argument("--sample", type=int, default=0, help="random sample size (0 = all)")
@@ -108,7 +136,9 @@ def main() -> None:
         cands = [s for s in r["retrieved_top10_sids"][: args.top_n] if s in sess]
         gold = set(r["answer_sids"])
         base1 += int(bool(cands) and cands[0] in gold)
-        blocks = "\n\n".join(f"[{i}] date: {sess[s][0]}\n{sess[s][1][: args.max_chars]}" for i, s in enumerate(cands))
+        bodies = (snippet(r["question"], [sess[s][1] for s in cands], args.max_chars) if args.snippets
+                  else [sess[s][1][: args.max_chars] for s in cands])
+        blocks = "\n\n".join(f"[{i}] date: {sess[s][0]}\n{b}" for i, (s, b) in enumerate(zip(cands, bodies)))
         raw, dt, usage = chat(key, args.model, PROMPT.format(question=r["question"], blocks=blocks, last=len(cands) - 1),
                               args.max_tokens, args.timeout)
         lat.append(dt)
