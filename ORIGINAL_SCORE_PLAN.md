@@ -125,6 +125,7 @@ first-class track, not a follow-up.
 
 | date | policy | R@1 | R@5 | R@10 | note |
 |---|---|---|---|---|---|
+| 2026-10-08 | bge-v2-m3 CE + evren top-5 rerank (same 200 q, seed 11) | 0.820 (base 0.710) | n/a | n/a | Paired with ms-marco+evren on the same 200: 0.820 vs 0.845, top-5 ceiling 0.910 vs 0.925. bge's gain does not survive the LLM rerank. DECISION: keep ms-marco CE + evren rerank. 44 questions time out in both runs; this is the next lever. |
 | 2026-10-08 | clean2 + **bge-reranker-v2-m3** CE (off-the-shelf, free) | 0.764 | 0.923 | 0.950 | +2.6 R@1 over ms-marco on all 1536; latency on the Mac not measured yet (568M params). /Volumes/WD-Backup/datasets/longmemeval/results/locomo_bge_colab_20261008/ |
 | 2026-10-08 | clean2 + **evren glm-5.3 top-5 rerank** (200 random q, seed 11, 20 s timeout, base fallback) | 0.845 (base 0.705 on same 200) | n/a | n/a | 29 fixed / 1 broken; 52/200 timed out (26%) and kept base order, so the gain is a lower bound; top-5 ceiling 0.925; 504k tokens. /Volumes/WD-Backup/datasets/longmemeval/results/locomo_clean2_evren_rr200/ |
 | 2026-10-08 | **clean2 dev baseline** (colab_locomo_clean2.py, off-the-shelf ms-marco CE, no gate) | 0.738 | 0.917 | 0.943 | Beats the LME-trained-CE dev run (0.690): independent evidence that mn-ce-v1 overfit LongMemEval. By category R@1: cat1 0.614, cat2 0.760, cat3 0.391, cat4 0.810. Results: /Volumes/WD-Backup/datasets/longmemeval/results/locomo_clean2_colab_20261008/ |
