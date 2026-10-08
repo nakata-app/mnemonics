@@ -6,6 +6,28 @@ This file separates benchmark generations, evaluation protocols, denominators,
 and internal evidence levels. Do not compare rows as if they were identical
 unless `metric`, `n_scored`, and protocol match.
 
+## CLAIMS WITHDRAWN (2026-10-08)
+
+The S 1.000 / 470-of-470 figures and every M figure below are **withdrawn**. A base pipeline audit
+(verified) found three problems:
+
+- Gold session ids start with `answer_`, and that text reached the encoder and the CE.
+- Both cross-encoders (mn-ce-v1, chat-ce-v3) were fine-tuned with gold labels on 100 of the 500
+  evaluated questions.
+- Several thresholds were chosen to flip single questions.
+
+Uncontaminated "clean2" results: anonymized session ids, off-the-shelf ms-marco-MiniLM-L-12-v2 CE,
+no trust gate, memorized lanes removed.
+
+| Benchmark | R@1 | R@5 | R@10 |
+|---|---:|---:|---:|
+| LongMemEval-S (500) | 0.942 | 0.988 | 0.994 |
+| LongMemEval-M (500) | 0.848 | 0.928 | 0.948 |
+| LoCoMo dev (1536, never tuned on) | 0.738 | 0.917 | 0.943 |
+
+These still include 22 lanes discovered on S/M, so they are not held-out numbers either.
+See `ORIGINAL_SCORE_PLAN.md`.
+
 ## Mnemonics verified state
 
 | Benchmark | Metric | n | Result | Evidence | Claim status |
