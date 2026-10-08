@@ -20,6 +20,16 @@ URL = "https://evren-llmapi.ssyz.org.tr/v1/rerank"
 
 
 def rerank(key: str, model: str, query: str, docs: list[str], timeout: float):
+    # 429 = provider rate limit: back off and retry (5 tries, 2-32 s) instead of silently keeping base order.
+    for attempt in range(5):
+        scores, dt, usage = _rerank_once(key, model, query, docs, timeout)
+        if scores is not None or "429" not in str(usage.get("error", "")):
+            return scores, dt, usage
+        time.sleep(2 ** (attempt + 1))
+    return scores, dt, usage
+
+
+def _rerank_once(key: str, model: str, query: str, docs: list[str], timeout: float):
     body = json.dumps({"model": model, "query": query, "documents": docs}).encode()
     req = urllib.request.Request(URL, data=body, method="POST",
                                  headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
