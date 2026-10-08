@@ -11,3 +11,6 @@ build/
 .coverage
 htmlcov/
 benchmarks/results_*.json
+
+# svelka/nakata runtime audit logs (session data, not source)
+.svelka/
