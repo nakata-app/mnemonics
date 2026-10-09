@@ -117,6 +117,7 @@ first-class track, not a follow-up.
 | date | policy | R@1 | R@5 | R@10 | note |
 |---|---|---|---|---|---|
 | 2026-10-06 | plus58 (memorized) | 0.992 | 0.994 | 0.994 | invalid for claims, memorized lanes |
+| 2026-10-09 | **ORIG-V2 M**: no lanes, no temporal flags, no gate, off-the-shelf CE, anonymized SIDs; generic choices only | 0.800 | 0.924 | 0.952 | By type R@1: ku 0.936, multi 0.782, ss-assistant 0.982, preference 0.167, ss-user 0.814, temporal 0.797. Same generic setup with the 22 tailored lanes (clean2) scored 0.848, so on M the lanes add +4.8 R@1 and nothing to R@5/R@10. /Volumes/WD-Backup/datasets/longmemeval/results/origv2_colab_20261009/m/ |
 | 2026-10-09 | **ORIG-V2 S**: no lanes, no temporal flags, no gate, off-the-shelf CE, anonymized SIDs; generic choices only (turn chunks, candidate_k 50, top_k 50) | 0.952 | 0.986 | 0.994 | Colab T4. turn chunks and candidate_k 50 were likely picked earlier from S experience: generic, not question-specific. /Volumes/WD-Backup/datasets/longmemeval/results/origv2_colab_20261009/s/ |
 | 2026-10-08 | **FULLY ORIGINAL** S: library defaults only (no lanes, no temporal flags, no gate, off-the-shelf CE, anonymized SIDs) | 0.768 | 0.790 | 0.790 | R@5=R@10 because the default top_k is 10 chunks (about 5 sessions), so R@10 is under-measured; R@1 is valid. |
 | 2026-10-08 | **FULLY ORIGINAL** M: same | 0.618 | 0.668 | 0.668 | Same caveat. By type R@1: ss-user 0.243, preference 0.300, ku 0.641, multi 0.692, temporal 0.699, ss-assistant 0.857. /Volumes/WD-Backup/datasets/longmemeval/results/orig_colab_20261008/ |
