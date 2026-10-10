@@ -155,3 +155,7 @@ Reader openai/gpt-oss-20b, judge z-ai/glm-5.3 (NOT the official Qwen3.5-9B / GPT
 - enterprise: crashed at 164/451 (judge returned empty content, harness raised ValueError), partial accuracy 0.2073
 - first attempt hung 7.5 h on one judge call (harness default timeout 43200 s); rerun used --timeout-seconds 120 --evaluator-timeout-seconds 120
 Next: rerun both domains on evren after quota reset, reader deepseek-v4-flash, judge glm-5.3, --evaluator-max-completion-tokens 16384.
+
+## Dev: Qwen3-Reranker-0.6B on LoCoMo, Kaggle CPU (2026-10-10) - INCOMPLETE
+Killed by Kaggle 12 h limit after 41/200 questions (~1000 s per question on CPU). Last printed running R@1 at q=40:
+base 0.732, whole-session 0.659, chunk-max 0.780. n=41 is too small for a decision; direction matches the M diagnosis (whole-session rerank hurts, chunk-max helps). Replaced by qwen3-reranker-8b chunk mode via evren /v1/rerank after quota reset.
