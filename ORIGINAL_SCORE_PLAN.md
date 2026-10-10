@@ -138,3 +138,13 @@ first-class track, not a follow-up.
 | 2026-10-08 | clean2 + **evren glm-5.3 top-5 rerank** (200 random q, seed 11, 20 s timeout, base fallback) | 0.845 (base 0.705 on same 200) | n/a | n/a | 29 fixed / 1 broken; 52/200 timed out (26%) and kept base order, so the gain is a lower bound; top-5 ceiling 0.925; 504k tokens. /Volumes/WD-Backup/datasets/longmemeval/results/locomo_clean2_evren_rr200/ |
 | 2026-10-08 | **clean2 dev baseline** (colab_locomo_clean2.py, off-the-shelf ms-marco CE, no gate) | 0.738 | 0.917 | 0.943 | Beats the LME-trained-CE dev run (0.690): independent evidence that mn-ce-v1 overfit LongMemEval. By category R@1: cat1 0.614, cat2 0.760, cat3 0.391, cat4 0.810. Results: /Volumes/WD-Backup/datasets/longmemeval/results/locomo_clean2_colab_20261008/ |
 | 2026-10-07 | clean baseline (colab_locomo.py) | 0.690 | 0.907 | 0.938 | 1536 q, own-conversation haystack (19-35 sessions). By LoCoMo category R@1: cat1 0.585, cat2 0.707, cat3 0.424, cat4 0.748. Results: /Volumes/WD-Backup/datasets/longmemeval/results/locomo_dev_colab_20261007/ |
+
+## Dev: embedder recall, LoCoMo (2026-10-10, Kaggle CPU, benchmarks/dev_embed_recall_locomo.py)
+Pure dense retrieval, 2-turn chunks, session = best chunk, 1536 q (cat 5 excluded), 272 sessions.
+| model | pool | R@1 | R@5 | R@10 | R@30 |
+|---|---|---|---|---|---|
+| MiniLM-L6 | own conv | 0.4336 | 0.7461 | 0.8724 | 0.9974 |
+| MiniLM-L6 | all 10 convs | 0.4076 | 0.7246 | 0.8496 | 0.9714 |
+| Qwen3-Embedding-0.6B | own conv | 0.6237 | 0.8704 | 0.9427 | 0.9980 |
+| Qwen3-Embedding-0.6B | all 10 convs | 0.6159 | 0.8620 | 0.9355 | 0.9941 |
+Caveat: dense only (no BM25/RRF/CE), LoCoMo not M. Next: swap MiniLM for Qwen3-Embedding in the orig-v2 pipeline and widen rerank pool to 30, validate on LoCoMo, then one logged M exam.
