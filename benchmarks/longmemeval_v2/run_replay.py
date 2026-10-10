@@ -16,6 +16,7 @@ def main() -> None:
     p.add_argument("--contexts", required=True)
     p.add_argument("--reader", default="qwen3.8-flash-next")
     p.add_argument("--judge", default="glm-5.3")
+    p.add_argument("--provider", choices=["evren", "nim"], default="evren")
     args, rest = p.parse_known_args()
 
     by_q: dict[str, list[dict]] = {}
@@ -44,10 +45,14 @@ def main() -> None:
 
     cfg = Path(os.environ.get("TMPDIR", "/tmp")) / "replay_memory_config.json"
     cfg.write_text(json.dumps({"memory_type": "replay", "memory_params": {}}))
-    os.environ["EVREN_V2_KEY"] = json.loads((Path.home() / ".svelka/keys.json").read_text())["providers"]["evren"][0]
+    if args.provider == "evren":
+        os.environ["EVREN_V2_KEY"] = json.loads((Path.home() / ".svelka/keys.json").read_text())["providers"]["evren"][0]
+        base, key_env = EVREN, "EVREN_V2_KEY"
+    else:
+        base, key_env = "https://integrate.api.nvidia.com/v1", "NVIDIA_API_KEY"
     sys.argv = [str(Path(args.v2_repo) / "evaluation" / "harness.py"), "--memory-config-path", str(cfg),
-                "--model", args.reader, "--base-url", EVREN, "--api-key-env", "EVREN_V2_KEY",
-                "--evaluator-model", args.judge, "--evaluator-base-url", EVREN, "--evaluator-api-key-env", "EVREN_V2_KEY",
+                "--model", args.reader, "--base-url", base, "--api-key-env", key_env,
+                "--evaluator-model", args.judge, "--evaluator-base-url", base, "--evaluator-api-key-env", key_env,
                 *rest]
     from evaluation.harness import main as upstream_main
     upstream_main()
