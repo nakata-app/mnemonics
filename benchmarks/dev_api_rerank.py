@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import random
+import re
 import time
 import urllib.request
 from pathlib import Path
@@ -53,6 +54,9 @@ def main() -> None:
     ap.add_argument("--top-n", type=int, default=10)
     ap.add_argument("--max-chars", type=int, default=6000)
     ap.add_argument("--snippets", action="store_true")
+    ap.add_argument("--chunks", action="store_true", help="score each turn chunk; session score = best chunk")
+    ap.add_argument("--chunk-chars", type=int, default=3000)
+    ap.add_argument("--batch", type=int, default=64)
     ap.add_argument("--timeout", type=float, default=20.0)
     ap.add_argument("--sample", type=int, default=0)
     ap.add_argument("--seed", type=int, default=7)
@@ -80,7 +84,31 @@ def main() -> None:
                      zip(cands, snippet(r["question"], [sess[s][1] for s in cands], args.max_chars))]
         else:
             texts = [t[: args.max_chars] for t in texts]
-        scores, dt, usage = rerank(key, args.model, r["question"], texts, args.timeout) if cands else (None, 0.0, {})
+        if args.chunks and cands:
+            owner, docs = [], []
+            for ci, s in enumerate(cands):
+                body = sess[s][1]
+                parts = [x for x in re.split(r"\n(?=\[user\]|[A-Z][\w .'-]{0,40}: )", body) if x.strip()] or [body]
+                cur = ""
+                for part in parts + [None]:
+                    if part is None or (cur and len(cur) + len(part) > args.chunk_chars):
+                        owner.append(ci); docs.append(f"date: {sess[s][0]}\n" + cur[: args.chunk_chars])
+                        cur = ""
+                    if part is not None:
+                        cur = (cur + "\n" + part) if cur else part
+            best, dt, usage, scores = [float("-inf")] * len(cands), 0.0, {}, []
+            for b0 in range(0, len(docs), args.batch):
+                sc, d1, usage = rerank(key, args.model, r["question"], docs[b0:b0 + args.batch], args.timeout)
+                dt += d1
+                if sc is None:
+                    scores = None
+                    break
+                for o, v in zip(owner[b0:b0 + args.batch], sc):
+                    best[o] = max(best[o], v)
+            if scores is not None:
+                scores = best
+        else:
+            scores, dt, usage = rerank(key, args.model, r["question"], texts, args.timeout) if cands else (None, 0.0, {})
         lat.append(dt)
         order = cands if scores is None else [c for _, c in sorted(zip(scores, cands), key=lambda x: -x[0])]
         if scores is None:
@@ -96,7 +124,7 @@ def main() -> None:
 
     n = len(rows)
     lat.sort()
-    summary = {"n": n, "model": args.model, "top_n": args.top_n, "max_chars": args.max_chars, "snippets": args.snippets,
+    summary = {"n": n, "model": args.model, "top_n": args.top_n, "max_chars": args.max_chars, "snippets": args.snippets, "chunks": args.chunks,
                "base": [round(x / n, 4) for x in hits["base"]], "reranked": [round(x / n, 4) for x in hits["new"]],
                "failed": fails, "latency_p50_s": round(lat[n // 2], 2), "latency_p90_s": round(lat[int(n * 0.9) - 1], 2)}
     (args.out / "summary.json").write_text(json.dumps(summary, indent=2))
