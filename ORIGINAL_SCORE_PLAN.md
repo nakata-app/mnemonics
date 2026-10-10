@@ -148,3 +148,10 @@ Pure dense retrieval, 2-turn chunks, session = best chunk, 1536 q (cat 5 exclude
 | Qwen3-Embedding-0.6B | own conv | 0.6237 | 0.8704 | 0.9427 | 0.9980 |
 | Qwen3-Embedding-0.6B | all 10 convs | 0.6159 | 0.8620 | 0.9355 | 0.9941 |
 Caveat: dense only (no BM25/RRF/CE), LoCoMo not M. Next: swap MiniLM for Qwen3-Embedding in the orig-v2 pipeline and widen rerank pool to 30, validate on LoCoMo, then one logged M exam.
+
+## V2 scoring, NIM, informational only (2026-10-10)
+Reader openai/gpt-oss-20b, judge z-ai/glm-5.3 (NOT the official Qwen3.5-9B / GPT-5.2 setup). Reader was picked only because it answered while evren quota was out; no reader comparison was done, so these numbers say nothing about memory quality.
+- web: 451/451 scored, accuracy 0.2129
+- enterprise: crashed at 164/451 (judge returned empty content, harness raised ValueError), partial accuracy 0.2073
+- first attempt hung 7.5 h on one judge call (harness default timeout 43200 s); rerun used --timeout-seconds 120 --evaluator-timeout-seconds 120
+Next: rerun both domains on evren after quota reset, reader deepseek-v4-flash, judge glm-5.3, --evaluator-max-completion-tokens 16384.
