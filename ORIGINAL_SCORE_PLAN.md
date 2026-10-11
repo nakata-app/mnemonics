@@ -173,3 +173,4 @@ R@10 cannot change (rerank inside top-10). Cost ~17.4M tokens > 15M evren daily 
 remaining questions only and the abort is logged here. V2 evren rerun deferred behind this exam.
 - 2026-10-11 03:18 part 0 STRICT_ABORT after 71 questions: HTTP 429 survived 5 retries (62 s). A probe right after succeeded, so it was a rate limit, not the daily quota. Fix (no effect on scores): 8 retries up to 256 s, and resume skips qids already in calls.jsonl. Exam score is computed from calls.jsonl over all 500 when both parts finish.
 - 2026-10-11 03:30 part 0 complete (250 q, 8.5M tokens): 250 base [0.812, 0.916, 0.948] reranked [0.872, 0.944, 0.948]. Part 1 (250 q) after next evren reset.
+- 2026-10-11 03:49 part 1 STRICT_ABORT on its first question (0 scored): evren code daily_token_limit_exceeded, 11k of 15M left (shared across sessions), resets 2026-10-12T00:00Z. Part 1 auto-resumes 2026-10-12 03:05 TR; V2 evren rerun after it.
