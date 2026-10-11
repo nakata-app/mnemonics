@@ -174,3 +174,12 @@ remaining questions only and the abort is logged here. V2 evren rerun deferred b
 - 2026-10-11 03:18 part 0 STRICT_ABORT after 71 questions: HTTP 429 survived 5 retries (62 s). A probe right after succeeded, so it was a rate limit, not the daily quota. Fix (no effect on scores): 8 retries up to 256 s, and resume skips qids already in calls.jsonl. Exam score is computed from calls.jsonl over all 500 when both parts finish.
 - 2026-10-11 03:30 part 0 complete (250 q, 8.5M tokens): 250 base [0.812, 0.916, 0.948] reranked [0.872, 0.944, 0.948]. Part 1 (250 q) after next evren reset.
 - 2026-10-11 03:49 part 1 STRICT_ABORT on its first question (0 scored): evren code daily_token_limit_exceeded, 11k of 15M left (shared across sessions), resets 2026-10-12T00:00Z. Part 1 auto-resumes 2026-10-12 03:05 TR; V2 evren rerun after it.
+
+## Dev: orig-v2 pipeline, MiniLM vs Qwen3-Embedding-0.6B, LoCoMo own-conv (2026-10-11, Kaggle CPU) - Qwen arm INCOMPLETE
+MiniLM arm, 400 q (seed 11, 4 shards): R@1/5/10 0.720 / 0.9175 / 0.960.
+Qwen arm killed by 12 h limit after 80 q (20/25/20/15 per shard, ~2000 s/q on CPU). Same first-80 questions, read from the progress lines:
+MiniLM 56/74/76 hits vs Qwen 56/72/75 -> R@1 0.700 vs 0.700, R@5 0.925 vs 0.900, R@10 0.950 vs 0.9375.
+Inside the full hybrid pipeline (BM25 + RRF + CE) the stronger embedder gave no gain on these 80 q, unlike the dense-only test
+(R@10 0.85 -> 0.94). Reading: BM25 + CE already cover what the dense side misses; remaining R@10 misses are a ranking problem
+(gold is in the 50-chunk candidate band but the final order puts it below 10 sessions), not a candidate-recall problem.
+Next: 8B chunk rerank over a wider session pool (top-30 instead of top-10) so R@10 can move; needs perq with top-30 sids.
