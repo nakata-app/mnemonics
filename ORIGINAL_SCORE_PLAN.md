@@ -159,3 +159,15 @@ Next: rerun both domains on evren after quota reset, reader deepseek-v4-flash, j
 ## Dev: Qwen3-Reranker-0.6B on LoCoMo, Kaggle CPU (2026-10-10) - INCOMPLETE
 Killed by Kaggle 12 h limit after 41/200 questions (~1000 s per question on CPU). Last printed running R@1 at q=40:
 base 0.732, whole-session 0.659, chunk-max 0.780. n=41 is too small for a decision; direction matches the M diagnosis (whole-session rerank hurts, chunk-max helps). Replaced by qwen3-reranker-8b chunk mode via evren /v1/rerank after quota reset.
+
+## Dev: qwen3-reranker-8b chunk-max on LoCoMo, evren /v1/rerank (2026-10-11 03:05)
+200 q (seed 11), top-10 of the LoCoMo orig-v2-style perq, chunk 3000 chars, session = best chunk.
+base R@1/5/10 0.705 / 0.925 / 0.945 -> reranked 0.840 / 0.935 / 0.945. failed 0, latency p50 0.85 s, p90 1.22 s.
+Evren usage shows routed_model qwen/qwen3-vl-reranker-8b. ~5.7k tokens per question.
+
+## EXAM 4 (pre-registered 2026-10-11, before any M call): orig-v2 M top-10 + qwen3-reranker-8b chunk-max
+Frozen: dev_api_rerank.py --perq m_perq.json (orig-v2 M, base 0.800/0.924/0.952) --sessions origv2_m_top10_sessions.json
+--chunks --chunk-chars 3000 --batch 64 --top-n 10 --timeout 60 --strict, model qwen3-reranker-8b. No M per-question inspection.
+R@10 cannot change (rerank inside top-10). Cost ~17.4M tokens > 15M evren daily limit, so it runs as --parts 2 (part 0 on 2026-10-11, part 1 after the next reset).
+--strict aborts on any failed call so quota errors can never silently fall back to base order; an aborted part is resumed on the
+remaining questions only and the abort is logged here. V2 evren rerun deferred behind this exam.

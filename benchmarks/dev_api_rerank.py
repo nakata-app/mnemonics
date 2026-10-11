@@ -60,11 +60,15 @@ def main() -> None:
     ap.add_argument("--timeout", type=float, default=20.0)
     ap.add_argument("--sample", type=int, default=0)
     ap.add_argument("--seed", type=int, default=7)
+    ap.add_argument("--part", type=int, default=0)
+    ap.add_argument("--parts", type=int, default=1)
+    ap.add_argument("--strict", action="store_true", help="abort on the first failed call instead of keeping base order")
     args = ap.parse_args()
 
     rows = json.load(open(args.perq))
     if args.sample:
         rows = random.Random(args.seed).sample(rows, args.sample)
+    rows = rows[args.part::args.parts]
     per_q = json.load(open(args.sessions)) if args.sessions else None
     sess = locomo_sessions(args.locomo) if args.locomo else {}
     key = json.loads(KEYSTORE.read_text())["providers"]["evren"][0]
@@ -113,6 +117,8 @@ def main() -> None:
         order = cands if scores is None else [c for _, c in sorted(zip(scores, cands), key=lambda x: -x[0])]
         if scores is None:
             fails += 1
+            if args.strict:
+                raise SystemExit(f"STRICT_ABORT qid={r['qid']} {usage}")
         new = order + [s for s in top if s not in order]
         gold = set(r["answer_sids"])
         for i, k in enumerate((1, 5, 10)):
