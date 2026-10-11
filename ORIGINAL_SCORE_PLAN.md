@@ -196,3 +196,16 @@ Distinct sessions in the 50-chunk result: median 31 (18-43). Gold within top-k s
 With 9x more distractor sessions the pool still holds gold at k=20 for 199/200, so on LoCoMo the R@10 misses are ranking misses.
 Not yet shown for M (~500 sessions, long assistant-heavy sessions). Merged perq: rerank_inputs/locomo_poolall_perq.json.
 Next: qwen3-reranker-8b chunk-max over top-30 of this pool (dev, ~3.4M evren tokens), after exam 4 part 1 on the next reset.
+
+## M pool dump for a wider-rerank exam (started 2026-10-11, Kaggle CPU, 10 shards of 50 q)
+Same orig-v2 M runner (pinned SHA, same splits), one change: perq also records retrieved_all_sids (every session in the 50-chunk result).
+Retrieval is deterministic, so R@1/5/10 must reproduce 0.800 / 0.924 / 0.952; any drift voids the dump.
+No M per-question inspection and no M gold-in-pool statistics are computed before the exam; pool depth 30 is fixed from LoCoMo.
+Session texts are pulled afterwards with extract_m_candidates.py --sids-key retrieved_all_sids --top-n 30.
+Runner: benchmarks/kaggle_origv2pool_m_shard0.py (shards 1-9 differ only in the split id list). Kaggle allows 5 CPU sessions, so shards 5-9 start when 0-4 finish.
+
+## EXAM 5 (pre-registered 2026-10-11, conditional, before any M pool call)
+Policy: orig-v2 M + qwen3-reranker-8b chunk-max over the top-30 sessions of retrieved_all_sids (R@10 can move).
+Frozen: dev_api_rerank.py --sids-key retrieved_all_sids --top-n 30 --chunks --chunk-chars 3000 --batch 64 --timeout 60 --strict.
+Runs only if the LoCoMo all-conv dev run with these exact settings (200 q, seed 11) gives R@10 above its base 0.965 and R@1 not
+below the top-10 rerank level seen on LoCoMo (0.840). If the dev run fails that bar, exam 5 is cancelled and the cancellation logged here.

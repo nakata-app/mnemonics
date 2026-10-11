@@ -47,12 +47,13 @@ def main() -> None:
     ap.add_argument("--perq-glob", required=True)
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--top-n", type=int, default=5)
+    ap.add_argument("--sids-key", default="retrieved_top10_sids")
     args = ap.parse_args()
 
     want: dict[str, set[str]] = {}
     for f in sorted(glob.glob(args.perq_glob)):
         for r in json.load(open(f)):
-            want[r["qid"]] = set(r["retrieved_top10_sids"][: args.top_n]) | set(r["answer_sids"])
+            want[r["qid"]] = set(r[args.sids_key][: args.top_n]) | set(r["answer_sids"])
 
     out: dict[str, dict[str, list[str]]] = {}
     for q in iter_questions(args.data):
