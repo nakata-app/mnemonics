@@ -183,3 +183,9 @@ Inside the full hybrid pipeline (BM25 + RRF + CE) the stronger embedder gave no 
 (R@10 0.85 -> 0.94). Reading: BM25 + CE already cover what the dense side misses; remaining R@10 misses are a ranking problem
 (gold is in the 50-chunk candidate band but the final order puts it below 10 sessions), not a candidate-recall problem.
 Next: 8B chunk rerank over a wider session pool (top-30 instead of top-10) so R@10 can move; needs perq with top-30 sids.
+
+## Dev: pool depth, orig-v2 MiniLM, LoCoMo own-conv 400 q (2026-10-11 04:57)
+Base reproduced exactly (0.720 / 0.9175 / 0.960). Distinct sessions in the 50-chunk result: median 20 (13-27).
+Gold within top-k sessions: k=20 0.9925, k=30 0.995, whole pool 0.995.
+Caveat: own-conv haystack is only 19-32 sessions, so top-20 covers most of it; this does not transfer to M (~500 sessions).
+Next dev step: same check on LoCoMo with all 10 conversations as haystack (272 sessions) before any wider-pool exam.
