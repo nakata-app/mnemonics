@@ -189,3 +189,10 @@ Base reproduced exactly (0.720 / 0.9175 / 0.960). Distinct sessions in the 50-ch
 Gold within top-k sessions: k=20 0.9925, k=30 0.995, whole pool 0.995.
 Caveat: own-conv haystack is only 19-32 sessions, so top-20 covers most of it; this does not transfer to M (~500 sessions).
 Next dev step: same check on LoCoMo with all 10 conversations as haystack (272 sessions) before any wider-pool exam.
+
+## Dev: pool depth, orig-v2 MiniLM, LoCoMo all-10-conv haystack 200 q (2026-10-11 06:06)
+Haystack = all 272 LoCoMo sessions per question (seed 11, 4 Kaggle CPU shards). R@1/5/10 0.705 / 0.935 / 0.965.
+Distinct sessions in the 50-chunk result: median 31 (18-43). Gold within top-k sessions: k=20 0.995, k=30 0.995, whole pool 0.995.
+With 9x more distractor sessions the pool still holds gold at k=20 for 199/200, so on LoCoMo the R@10 misses are ranking misses.
+Not yet shown for M (~500 sessions, long assistant-heavy sessions). Merged perq: rerank_inputs/locomo_poolall_perq.json.
+Next: qwen3-reranker-8b chunk-max over top-30 of this pool (dev, ~3.4M evren tokens), after exam 4 part 1 on the next reset.
