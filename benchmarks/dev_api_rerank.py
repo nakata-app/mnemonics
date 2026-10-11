@@ -21,8 +21,8 @@ URL = "https://evren-llmapi.ssyz.org.tr/v1/rerank"
 
 
 def rerank(key: str, model: str, query: str, docs: list[str], timeout: float):
-    # 429 = provider rate limit: back off and retry (5 tries, 2-32 s) instead of silently keeping base order.
-    for attempt in range(5):
+    # 429 = provider rate limit: back off and retry (8 tries, 2-256 s) instead of silently keeping base order.
+    for attempt in range(8):
         scores, dt, usage = _rerank_once(key, model, query, docs, timeout)
         if scores is not None or "429" not in str(usage.get("error", "")):
             return scores, dt, usage
@@ -69,6 +69,8 @@ def main() -> None:
     if args.sample:
         rows = random.Random(args.seed).sample(rows, args.sample)
     rows = rows[args.part::args.parts]
+    done = {json.loads(l)["qid"] for l in open(args.out / "calls.jsonl")} if (args.out / "calls.jsonl").exists() else set()
+    rows = [r for r in rows if r["qid"] not in done]
     per_q = json.load(open(args.sessions)) if args.sessions else None
     sess = locomo_sessions(args.locomo) if args.locomo else {}
     key = json.loads(KEYSTORE.read_text())["providers"]["evren"][0]

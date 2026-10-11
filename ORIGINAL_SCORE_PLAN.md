@@ -171,3 +171,4 @@ Frozen: dev_api_rerank.py --perq m_perq.json (orig-v2 M, base 0.800/0.924/0.952)
 R@10 cannot change (rerank inside top-10). Cost ~17.4M tokens > 15M evren daily limit, so it runs as --parts 2 (part 0 on 2026-10-11, part 1 after the next reset).
 --strict aborts on any failed call so quota errors can never silently fall back to base order; an aborted part is resumed on the
 remaining questions only and the abort is logged here. V2 evren rerun deferred behind this exam.
+- 2026-10-11 03:18 part 0 STRICT_ABORT after 71 questions: HTTP 429 survived 5 retries (62 s). A probe right after succeeded, so it was a rate limit, not the daily quota. Fix (no effect on scores): 8 retries up to 256 s, and resume skips qids already in calls.jsonl. Exam score is computed from calls.jsonl over all 500 when both parts finish.
