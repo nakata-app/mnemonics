@@ -60,6 +60,7 @@ def main() -> None:
     ap.add_argument("--timeout", type=float, default=20.0)
     ap.add_argument("--sample", type=int, default=0)
     ap.add_argument("--seed", type=int, default=7)
+    ap.add_argument("--sids-key", default="retrieved_top10_sids")
     ap.add_argument("--part", type=int, default=0)
     ap.add_argument("--parts", type=int, default=1)
     ap.add_argument("--strict", action="store_true", help="abort on the first failed call instead of keeping base order")
@@ -82,7 +83,7 @@ def main() -> None:
     for r in rows:
         if per_q is not None:
             sess = {k: tuple(v) for k, v in per_q[r["qid"]].items()}
-        top = r["retrieved_top10_sids"]
+        top = r[args.sids_key]
         cands = [s for s in top[: args.top_n] if s in sess]
         texts = [f"date: {sess[s][0]}\n{sess[s][1]}" for s in cands]
         if args.snippets:
