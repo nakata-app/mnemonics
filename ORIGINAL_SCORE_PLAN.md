@@ -87,6 +87,18 @@ a synthetic first-person set was the stated prerequisite.
   which is an external/possibly-paid call needing Atakan's approval. Next real test: implement the lane in
   the pipeline and run one logged M exam on Kaggle; dev success does not transfer until measured on M.
 
+### EXAM 6 (pre-registered 2026-10-12, before any M preference-lane result): preference post-hoc rerank
+
+Policy (benchmarks/pref_lane_rerank.py, FROZEN, developed only on synthetic dev, never on M): over the M
+top-30 pool dump (m_poolall_perq retrieved_all_sids + m_poolall_top30 session texts), apply a preference
+lane. ROUTER is label-free -- a question is a preference question from its OWN wording, never from the
+question_type label; non-matching questions keep base order untouched (so other types cannot regress).
+EXTRACTOR + GATE: sessions whose user turns contain a first-person preference statement (general
+grammatical markers, no topic words) are ordered first by that statement's similarity to the question.
+On dev this moved R@1 0.0 -> 0.909 with zero regression. Run ONCE on M, log overall + by type as is, no
+M per-question inspection, no pattern tuning against M. Measures only the RANKING portion (rerank within
+the top-30 pool), not recall. If it does not help M, that is logged and justifies an LLM extractor (B).
+
 ## Phase 2: general capabilities
 
 Each one is accepted only if it improves dev and harms nothing on dev.
