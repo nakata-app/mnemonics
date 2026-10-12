@@ -305,3 +305,25 @@ information, most relevant first; those go to the front, the rest keep base orde
 Provider: Ollama cloud (deepseek-v4-pro / deepseek-v4.1-flash, reasoning_effort none), independent of the evren
 budget. Other providers checked 2026-10-12: DeepSeek direct 402 insufficient balance, Gemini 429 quota, NIM
 12-60 s per trivial call (fails the 20 s bar). M question dates: rerank_inputs/m_qdates.json (500/500).
+
+Dev results, LoCoMo all-conv poolall 200 q, base = qwen8b top-30 rerank order (exam-5 dev gate), judge over top-10:
+| config | R@1 | R@5 | R@10 | p90 s |
+|---|---|---|---|---|
+| base (qwen8b) | 0.860 | 0.980 | 0.990 | |
+| judge pro, 3 windows, no reasoning, front-5 | 0.870 | 0.980 | 0.990 | 1.3 |
+| (replay) front-5 vs front-3 on first 77 q | front-5 lost R@5 (0.987->0.974), front-3 kept it -> front-k 3 | | | |
+| judge pro, 6 windows, no reasoning, front-3 | 0.875 | 0.975 | 0.990 | 1.1 |
+| judge kimi-k3, 3 windows, no reasoning, front-3 | 0.885 | 0.975 | 0.990 | 1.5 |
+| judge pro, 3 windows, reasoning medium, front-3 | **0.885** | 0.980 | 0.990 | 9.0 |
+| + final duel (top-2 picks, 8000 chars/session, pro reasoning medium; llm_judge_duel.py) | **0.900** | 0.980 | 0.990 | |
+Miss analysis of the reasoning judge (dev, per question allowed): of 23 R@1 misses, 11 had gold at the judge's
+second pick, 6 gold not picked, 2 gold outside top-10; earlier window check: ~3/10 misses have answer words
+nowhere in the gold session (abstractive answer or label noise). The duel targets the second-pick cases.
+
+### EXAM 7 (pre-registered 2026-10-12, before any M judge call): judge + duel over exam-4 top-10
+Frozen: base = exam-4 order (qwen3-reranker-8b chunk-max top-10, 0.854/0.944/0.952; merged part0+part1 calls).
+Stage 1: llm_judge_rerank.py --provider ollama --model deepseek-v4-pro:cloud --reasoning medium --max-tokens 8192
+--timeout 120 --top-n 10 --windows-per-session 3 --window-chars 600 --front-k 3 --qdates m_qdates.json, window CE
+scores from the Kaggle CE kernels (same windows() and ms-marco-MiniLM-L-12-v2; cache m_ce_cache_w600.json).
+Stage 2: llm_judge_duel.py --duel-k 2 --duel-chars 8000, same model and reasoning. R@10 cannot move (ceiling 0.952).
+Run once on all 500, log overall + by type (base / judge / duel) as is; no M per-question inspection.
