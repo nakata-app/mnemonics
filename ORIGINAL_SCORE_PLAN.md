@@ -116,6 +116,7 @@ first-class track, not a follow-up.
 
 | date | policy | R@1 | R@5 | R@10 | note |
 |---|---|---|---|---|---|
+| 2026-10-12 | **EXAM 4 COMPLETE**: orig-v2 M + qwen3-reranker-8b chunk-max top-10 (chunk-chars 3000, max-chars 6000), evren /v1/rerank, --strict, pre-registered | **0.854** | **0.944** | **0.952** | 500/500, base 0.800/0.924/0.952. R@10 unchanged (rerank inside top-10). By type R@1 base->rerank: preference 0.167->0.533, ku 0.936->0.974, temporal 0.797->0.842, multi 0.782->0.820, ss-assistant 0.982->1.000, ss-user 0.814->0.829. Chunk-max over 3000-char turn chunks fixes the earlier "no gain on M" result (that used whole-session/3000-char-truncated prompts). EXAM4_FINAL.json in results/exam4_m_qwen8b_chunks/. |
 | 2026-10-06 | plus58 (memorized) | 0.992 | 0.994 | 0.994 | invalid for claims, memorized lanes |
 | 2026-10-09 | **ORIG-V2 M**: no lanes, no temporal flags, no gate, off-the-shelf CE, anonymized SIDs; generic choices only | 0.800 | 0.924 | 0.952 | By type R@1: ku 0.936, multi 0.782, ss-assistant 0.982, preference 0.167, ss-user 0.814, temporal 0.797. Same generic setup with the 22 tailored lanes (clean2) scored 0.848, so on M the lanes add +4.8 R@1 and nothing to R@5/R@10. /Volumes/WD-Backup/datasets/longmemeval/results/origv2_colab_20261009/m/ |
 | 2026-10-09 | **ORIG-V2 S**: no lanes, no temporal flags, no gate, off-the-shelf CE, anonymized SIDs; generic choices only (turn chunks, candidate_k 50, top_k 50) | 0.952 | 0.986 | 0.994 | Colab T4. turn chunks and candidate_k 50 were likely picked earlier from S experience: generic, not question-specific. /Volumes/WD-Backup/datasets/longmemeval/results/origv2_colab_20261009/s/ |
@@ -173,7 +174,8 @@ R@10 cannot change (rerank inside top-10). Cost ~17.4M tokens > 15M evren daily 
 remaining questions only and the abort is logged here. V2 evren rerun deferred behind this exam.
 - 2026-10-11 03:18 part 0 STRICT_ABORT after 71 questions: HTTP 429 survived 5 retries (62 s). A probe right after succeeded, so it was a rate limit, not the daily quota. Fix (no effect on scores): 8 retries up to 256 s, and resume skips qids already in calls.jsonl. Exam score is computed from calls.jsonl over all 500 when both parts finish.
 - 2026-10-11 03:30 part 0 complete (250 q, 8.5M tokens): 250 base [0.812, 0.916, 0.948] reranked [0.872, 0.944, 0.948]. Part 1 (250 q) after next evren reset.
-- 2026-10-11 03:49 part 1 STRICT_ABORT on its first question (0 scored): evren code daily_token_limit_exceeded, 11k of 15M left (shared across sessions), resets 2026-10-12T00:00Z. Part 1 auto-resumes 2026-10-12 03:05 TR; V2 evren rerun after it.
+- 2026-10-11 03:49 part 1 STRICT_ABORT after 141/250 scored: evren code daily_token_limit_exceeded (shared across sessions), resets 2026-10-12T00:00Z. The "auto-resume 03:05 TR" note was aspirational: nothing (cron/launchd) was actually scheduled, so the run sat idle ~2 days.
+- 2026-10-12 resumed manually from the Mac (HTTP-only, --strict resume skips the 391 already in calls.jsonl, did the remaining 109). No 429/quota error. **EXAM 4 COMPLETE, 500/500: base 0.800/0.924/0.952 -> reranked 0.854/0.944/0.952** (logged in the exam ledger above). Score computed over the union of part0+part1 calls.jsonl, base order from m_perq retrieved_top10_sids. V2 evren rerun still deferred.
 
 ## Dev: orig-v2 pipeline, MiniLM vs Qwen3-Embedding-0.6B, LoCoMo own-conv (2026-10-11, Kaggle CPU) - Qwen arm INCOMPLETE
 MiniLM arm, 400 q (seed 11, 4 shards): R@1/5/10 0.720 / 0.9175 / 0.960.
