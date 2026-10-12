@@ -211,3 +211,9 @@ Policy: orig-v2 M + qwen3-reranker-8b chunk-max over the top-30 sessions of retr
 Frozen: dev_api_rerank.py --sids-key retrieved_all_sids --top-n 30 --chunks --chunk-chars 3000 --batch 64 --timeout 60 --strict.
 Runs only if the LoCoMo all-conv dev run with these exact settings (200 q, seed 11) gives R@10 above its base 0.965 and R@1 not
 below the top-10 rerank level seen on LoCoMo (0.840). If the dev run fails that bar, exam 5 is cancelled and the cancellation logged here.
+- 2026-10-12 DEV GATE PASSED -> **EXAM 5 GREENLIT**. LoCoMo all-conv poolall, top-30 chunk-max rerank, 200 q, evren, 0 failed, p90 1.31 s:
+  base 0.705/0.935/**0.965** -> reranked **0.860/0.980/0.990**. Both bars clear (R@10 0.990 > 0.965; R@1 0.860 >= 0.840).
+  First evidence that a top-30 pool breaks the R@10 ceiling that top-10 rerank cannot (R@10 moved +0.025). results/exam5_dev_locomo_poolall_top30/.
+- BLOCKER: exam 5 needs the M top-30 pool dump (perq with retrieved_all_sids). That dump is 4/10 Kaggle shards done
+  (s0,s1,s3,s4 in results/origv2pool_m/); s2 + s5-s9 are missing. Completing it needs Atakan's Kaggle session;
+  M evals are never run on the 8 GB Mac. Once all 10 shards land and reproduce base 0.800/0.924/0.952, merge the perq and run the frozen exam 5 command.
