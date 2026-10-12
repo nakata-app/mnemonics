@@ -68,6 +68,24 @@ def chat(provider: str, model: str, prompt: str, max_tokens: int, timeout: float
     return None, time.time() - t0, {"error": err}
 
 
+class JsonlSessions:
+    """Per-question session texts from extract_m_candidates_jsonl.py, read one question at a time by offset."""
+
+    def __init__(self, path: Path):
+        self.f = open(path, "rb")
+        self.off = {}
+        pos = 0
+        for line in self.f:
+            m = re.match(rb'\{"qid": "([^"]+)"', line)
+            if m:
+                self.off[m.group(1).decode()] = pos
+            pos += len(line)
+
+    def __getitem__(self, qid: str) -> dict:
+        self.f.seek(self.off[qid])
+        return json.loads(self.f.readline())["sessions"]
+
+
 def windows(text: str, width: int) -> list[str]:
     """Split a session into messages, and long messages into overlapping windows that keep the speaker tag,
     so evidence deep inside a long reply can still be selected."""
@@ -93,6 +111,7 @@ def main() -> None:
     ap.add_argument("--sids-key", default="retrieved_all_sids", help="perq base order when --base-calls is absent")
     ap.add_argument("--locomo", type=Path)
     ap.add_argument("--sessions", type=Path)
+    ap.add_argument("--sessions-jsonl", type=Path, help="per-question JSONL from extract_m_candidates_jsonl.py")
     ap.add_argument("--qdates", type=Path, help="optional {qid: question_date}")
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--provider", default="deepseek")
@@ -121,7 +140,8 @@ def main() -> None:
     qids = [q for q in perq if q in base]
     if args.limit:
         qids = qids[: args.limit]
-    per_q = json.load(open(args.sessions)) if args.sessions else None
+    per_q = (JsonlSessions(args.sessions_jsonl) if args.sessions_jsonl
+             else json.load(open(args.sessions)) if args.sessions else None)
     loco = locomo_sessions(args.locomo) if args.locomo else {}
     qdates = json.load(open(args.qdates)) if args.qdates else {}
     ce = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-12-v2", device="cpu")

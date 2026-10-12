@@ -16,7 +16,7 @@ from pathlib import Path
 from sentence_transformers import CrossEncoder
 
 from dev_llm_rerank import locomo_sessions
-from llm_judge_rerank import chat, windows
+from llm_judge_rerank import JsonlSessions, chat, windows
 
 PROMPT = """You are the retrieval judge of a personal memory assistant.
 {today}Question: {question}
@@ -36,6 +36,7 @@ def main() -> None:
     ap.add_argument("--perq", type=Path, required=True)
     ap.add_argument("--locomo", type=Path)
     ap.add_argument("--sessions", type=Path)
+    ap.add_argument("--sessions-jsonl", type=Path)
     ap.add_argument("--qdates", type=Path)
     ap.add_argument("--ce-cache", type=Path)
     ap.add_argument("--out", type=Path, required=True)
@@ -51,7 +52,8 @@ def main() -> None:
 
     perq = {r["qid"]: r for r in json.load(open(args.perq))}
     judge = [json.loads(l) for l in open(args.judge_calls) if l.strip()]
-    per_q = json.load(open(args.sessions)) if args.sessions else None
+    per_q = (JsonlSessions(args.sessions_jsonl) if args.sessions_jsonl
+             else json.load(open(args.sessions)) if args.sessions else None)
     loco = locomo_sessions(args.locomo) if args.locomo else {}
     qdates = json.load(open(args.qdates)) if args.qdates else {}
     cache = json.load(open(args.ce_cache)) if args.ce_cache and args.ce_cache.exists() else {}
