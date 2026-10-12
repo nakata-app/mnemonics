@@ -227,3 +227,22 @@ below the top-10 rerank level seen on LoCoMo (0.840). If the dev run fails that 
   (merges 10 shards, aborts unless base reproduces 0.800/0.924/0.952, writes rerank_inputs/m_poolall_perq.json).
   Then the frozen exam 5 command: dev_api_rerank.py --perq m_poolall_perq.json --sessions <M top-30 session texts>
   --sids-key retrieved_all_sids --top-n 30 --chunks --chunk-chars 3000 --batch 64 --timeout 60 --strict.
+- 2026-10-12 UNBLOCKED autonomously (Kaggle API token worked, no manual session needed): 9/10 pool shards had already
+  completed on Kaggle days earlier and were only un-downloaded; pulled them. Shard 9 had never run -> pushed cpu9,
+  it completed (~2 h CPU) and was pulled. merge_m_pool_shards.py merged all 10, base reproduced EXACTLY 0.800/0.924/0.952
+  (dump valid) -> rerank_inputs/m_poolall_perq.json. Top-30 session texts: extract_m_candidates.py --sids-key
+  retrieved_all_sids --top-n 30 -> rerank_inputs/m_poolall_top30_sessions.json (500/500, 14139 sessions, 0 unresolved).
+- 2026-10-12 EXAM 5 STARTED, results/exam5_m_qwen8b_top30/. RUNNING, quota-chunked: no --parts, single --out, --strict;
+  it runs until the shared evren daily limit 429s, aborts clean, and the next run (same --out) skips qids already in
+  calls.jsonl and continues. Day 1: STRICT_ABORT at 18/500 (today's 15M shared quota was already spent by exam4 resume +
+  the dev gate + other sessions). Progress is gated by free daily quota, not compute.
+  TOKEN-COST CAVEAT: per-question token counts cannot be read from calls.jsonl -- in chunks mode dev_api_rerank logs only
+  the LAST batch's usage per question (the `usage` var is overwritten each batch), so any multi-batch question is undercounted.
+  Do not project total cost from these logs. Earlier "~51M tokens" was a bad 3x extrapolation from that undercount; retracted.
+  DECISION (Atakan, 2026-10-12): resume MANUALLY each day after the 00:00Z reset, no launchd auto-resume job.
+  RESUME COMMAND (from benchmarks/, after quota reset): python3 dev_api_rerank.py
+  --perq /Volumes/WD-Backup/datasets/longmemeval/rerank_inputs/m_poolall_perq.json
+  --sessions /Volumes/WD-Backup/datasets/longmemeval/rerank_inputs/m_poolall_top30_sessions.json
+  --out /Volumes/WD-Backup/datasets/longmemeval/results/exam5_m_qwen8b_top30
+  --model qwen3-reranker-8b --sids-key retrieved_all_sids --top-n 30 --chunks --chunk-chars 3000 --batch 64 --timeout 60 --strict
+  When calls.jsonl reaches 500, score it the same way exam 4 was scored (union, base from retrieved_top10_sids vs answer_sids).
