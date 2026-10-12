@@ -216,4 +216,14 @@ below the top-10 rerank level seen on LoCoMo (0.840). If the dev run fails that 
   First evidence that a top-30 pool breaks the R@10 ceiling that top-10 rerank cannot (R@10 moved +0.025). results/exam5_dev_locomo_poolall_top30/.
 - BLOCKER: exam 5 needs the M top-30 pool dump (perq with retrieved_all_sids). That dump is 4/10 Kaggle shards done
   (s0,s1,s3,s4 in results/origv2pool_m/); s2 + s5-s9 are missing. Completing it needs Atakan's Kaggle session;
-  M evals are never run on the 8 GB Mac. Once all 10 shards land and reproduce base 0.800/0.924/0.952, merge the perq and run the frozen exam 5 command.
+  M evals are never run on the 8 GB Mac (encoder RSS 5.24 GB + 8-34 GB index writes trip the watchdog). The original
+  orig-v2 M perq saved only retrieved_top10_sids, so the deeper pool cannot be reconstructed offline; retrieval must re-run.
+- 2026-10-12 PREP (no Kaggle, no Mac eval): the 6 missing shard runners are generated and verified -
+  benchmarks/kaggle_origv2pool_m_shard{2,5,6,7,8,9}.py. Split convention (confirmed against the 4 done shards):
+  shard k = sorted(all 500 M qids)[k::10], 50 qids each, 10-shard union = 500 with no overlap. Each is shard0's
+  runner with only the split list, filename and shard number changed; same pinned SHA ca53594, same orig-v2 policy.
+  To finish: run these 6 on Kaggle (5 CPU sessions at a time), download each kernel's results_origv2pool_m/perq.json
+  to results/origv2pool_m/s<k>/results_origv2pool_m/perq.json, then `python3 benchmarks/merge_m_pool_shards.py`
+  (merges 10 shards, aborts unless base reproduces 0.800/0.924/0.952, writes rerank_inputs/m_poolall_perq.json).
+  Then the frozen exam 5 command: dev_api_rerank.py --perq m_poolall_perq.json --sessions <M top-30 session texts>
+  --sids-key retrieved_all_sids --top-n 30 --chunks --chunk-chars 3000 --batch 64 --timeout 60 --strict.
