@@ -65,6 +65,28 @@ The low number is reported as is and becomes the baseline. Nothing is rerun unti
   - abstract-to-concrete paraphrase
   - typos
 
+### Synthetic preference dev set (2026-10-12) -- built, preference lane proven on dev
+
+Why preference first: it is M's worst recall/ranking hole (exam-4 reranked single-session-preference
+R@1 0.533, R@10 0.733). LoCoMo is third-person so it cannot exercise first-person preference lanes;
+a synthetic first-person set was the stated prerequisite.
+
+- benchmarks/synth_pref_gen.py -- deterministic (seed 11), no LLM. Each question: a GOLD first-person
+  preference whose wording is disjoint from the question, buried mid-session in filler, plus topic-echo
+  decoys that reuse the question's surface words but state no user preference (news, other people,
+  logistics). 55 q, 60 sessions each. This reproduces M's symptom: the real preference statement is
+  out-ranked by sessions that merely mention the topic.
+- benchmarks/synth_recall_probe.py -- dense MiniLM, session = best 2-turn chunk; local CPU, memory-safe.
+- Measured: base R@1 0.000 / R@5 0.545 / R@10 1.000, median gold rank 5 (base R@1 0.0 ~ M's preference
+  base ~0.17-0.23: the set is faithful). Preference lane (extract first-person preference statements by
+  GENERAL grammatical markers -- no topic words; rank preference questions by a dedicated preference-record
+  lane, gating preference-bearing sessions above the rest): R@1 0.909 / R@5 1.000 / R@10 1.000, median
+  rank 1. Zero regression, so it clears the Phase-2 acceptance rule on dev.
+- HONEST CAVEAT: dev/synthetic proof-of-mechanism ONLY, not an M result. The regex extractor is brittle
+  (real M preferences have arbitrary phrasing); the production extractor should be an LLM (augment_prefs),
+  which is an external/possibly-paid call needing Atakan's approval. Next real test: implement the lane in
+  the pipeline and run one logged M exam on Kaggle; dev success does not transfer until measured on M.
+
 ## Phase 2: general capabilities
 
 Each one is accepted only if it improves dev and harms nothing on dev.
