@@ -44,6 +44,7 @@ def main() -> None:
     ap.add_argument("--model", default="deepseek-v4-pro:cloud")
     ap.add_argument("--reasoning", default="medium")
     ap.add_argument("--max-tokens", type=int, default=8192)
+    ap.add_argument("--strict", action="store_true", help="abort on a failed call instead of keeping base order")
     ap.add_argument("--timeout", type=float, default=120.0)
     ap.add_argument("--duel-k", type=int, default=2)
     ap.add_argument("--duel-chars", type=int, default=8000)
@@ -93,6 +94,8 @@ def main() -> None:
                                   PROMPT.format(today=today, question=r["question"], n=len(duel),
                                                 blocks="\n\n".join(blocks)),
                                   args.max_tokens, args.timeout, args.reasoning)
+            if raw is None and args.strict:
+                raise SystemExit(f"STRICT_ABORT qid={qid} {usage}")
             mm = re.search(r"\d+", raw or "")
             if mm and int(mm.group(0)) < len(duel):
                 w = duel[int(mm.group(0))]

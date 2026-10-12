@@ -121,6 +121,7 @@ def main() -> None:
     ap.add_argument("--window-chars", type=int, default=600)
     ap.add_argument("--max-tokens", type=int, default=64)
     ap.add_argument("--reasoning", default="none", help="reasoning_effort; '' to omit")
+    ap.add_argument("--strict", action="store_true", help="abort on a failed call instead of keeping base order")
     ap.add_argument("--timeout", type=float, default=20.0)
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--ce-cache", type=Path, help="json cache of window CE scores, keyed qid -> sid -> scores")
@@ -184,6 +185,8 @@ def main() -> None:
                               PROMPT.format(today=today, question=r["question"], n=len(cands),
                                             blocks="\n\n".join(blocks)),
                               args.max_tokens, args.timeout, args.reasoning)
+        if raw is None and args.strict:
+            raise SystemExit(f"STRICT_ABORT qid={qid} {usage}")
         picks = []
         if raw:
             m = re.search(r"\[[\d,\s]*\]", raw)

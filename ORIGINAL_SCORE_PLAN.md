@@ -327,3 +327,9 @@ Stage 1: llm_judge_rerank.py --provider ollama --model deepseek-v4-pro:cloud --r
 scores from the Kaggle CE kernels (same windows() and ms-marco-MiniLM-L-12-v2; cache m_ce_cache_w600.json).
 Stage 2: llm_judge_duel.py --duel-k 2 --duel-chars 8000, same model and reasoning. R@10 cannot move (ceiling 0.952).
 Run once on all 500, log overall + by type (base / judge / duel) as is; no M per-question inspection.
+- 2026-10-12 21:20Z, before any M judge call, two execution notes (no policy change): (1) window CE scores come
+  from the Kaggle GPU kernel mnemonics-m-deep-ce-gpu (same windows(), same ms-marco-MiniLM-L-12-v2, top-75 union
+  candidates, covers every exam-4 top-10 session) instead of the slower CPU kernels; GPU vs CPU float noise only.
+  Session texts from m_deep_top75_sessions.jsonl (same "[role] content" text). (2) --strict: a failed LLM call
+  aborts without writing a row and the run resumes later, so a provider limit can never silently keep base order.
+  Ollama Pro 5-hour limit was hit at ~20:00Z by the dev runs (same account as Atakan's svelka); EXAM 7 waits for it.
