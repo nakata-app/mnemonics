@@ -289,3 +289,19 @@ below the top-10 rerank level seen on LoCoMo (0.840). If the dev run fails that 
   --out /Volumes/WD-Backup/datasets/longmemeval/results/exam5_m_qwen8b_top30
   --model qwen3-reranker-8b --sids-key retrieved_all_sids --top-n 30 --chunks --chunk-chars 3000 --batch 64 --timeout 60 --strict
   When calls.jsonl reaches 500, score it the same way exam 4 was scored (union, base from retrieved_top10_sids vs answer_sids).
+- 2026-10-12 18:40Z EXAM 5 SUSPENDED at 18/500 (not cancelled, not scored; resumable with the same command).
+  Cause, measured from session lengths (not from the undercounting usage log): qwen8b over full top-30 text is
+  ~43M tokens (median 87k/q) = ~3 days of the shared 15M/day evren budget, which was exhausted today
+  (evren body: daily_token_limit_exceeded, 203 tokens left, resets 2026-10-13T00:00Z). Atakan's directive
+  (2026-10-12): single goal M R@1 = 1.0, decide autonomously. Budget goes to the LLM listwise judge instead:
+  same candidate ceiling (gold in top-30) at ~7.8M tokens, and it targets R@1 directly.
+
+## LLM listwise judge (2026-10-12, dev first)
+benchmarks/llm_judge_rerank.py. For each of the top-N candidates (base order = a previous rerank's `order`, or
+the pool order), split the session into messages and long messages into ~600-char windows, score windows
+against the question with a local ms-marco-MiniLM-L-12-v2 CE, show the best 3 windows per session with the
+session date (plus the question date when known). The LLM returns the session numbers holding the needed
+information, most relevant first; those go to the front, the rest keep base order. No question_type, no gold.
+Provider: Ollama cloud (deepseek-v4-pro / deepseek-v4.1-flash, reasoning_effort none), independent of the evren
+budget. Other providers checked 2026-10-12: DeepSeek direct 402 insufficient balance, Gemini 429 quota, NIM
+12-60 s per trivial call (fails the 20 s bar). M question dates: rerank_inputs/m_qdates.json (500/500).
