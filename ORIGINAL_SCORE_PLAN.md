@@ -98,6 +98,15 @@ grammatical markers, no topic words) are ordered first by that statement's simil
 On dev this moved R@1 0.0 -> 0.909 with zero regression. Run ONCE on M, log overall + by type as is, no
 M per-question inspection, no pattern tuning against M. Measures only the RANKING portion (rerank within
 the top-30 pool), not recall. If it does not help M, that is logged and justifies an LLM extractor (B).
+- 2026-10-12 RESULT: **FAILED on M (regressed slightly), logged as is, not retried.** Overall R@1
+  0.800 -> 0.788, R@5/R@10 unchanged. single-session-preference UNCHANGED 0.167/0.533/0.733. Router fired
+  on only 6/500, all non-preference false positives (2 multi, 3 ss-user, 1 temporal) which it mildly hurt.
+  Aggregate diagnosis (mechanism only, no answer/per-question peeking): the label-free ROUTER matched
+  **0/30** preference questions -- real M preference questions are worded nothing like the synthetic ones,
+  so the lane never fired where intended; and the EXTRACTOR covers only 19/30 (a catchable first-person
+  statement in the top-30). Both failures are the dev-tuned regex not transferring to M phrasing. The
+  patterns are NOT tuned to M (that would be memorization). CONCLUSION: the regex approach (A) is dead;
+  robustness to arbitrary phrasing needs an LLM router+extractor (B). results/exam6_pref_lane.json.
 
 ## Phase 2: general capabilities
 
