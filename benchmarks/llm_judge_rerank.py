@@ -104,6 +104,9 @@ def main() -> None:
     ap.add_argument("--reasoning", default="none", help="reasoning_effort; '' to omit")
     ap.add_argument("--timeout", type=float, default=20.0)
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--ce-cache", type=Path, help="json cache of window CE scores, keyed qid -> sid -> scores")
+    ap.add_argument("--ce-only", action="store_true", help="only fill --ce-cache, no LLM calls")
+    ap.add_argument("--front-k", type=int, default=3, help="judge picks moved to the front (dev: >3 hurts R@5)")
     args = ap.parse_args()
 
     perq = {r["qid"]: r for r in json.load(open(args.perq))}
@@ -122,6 +125,9 @@ def main() -> None:
     loco = locomo_sessions(args.locomo) if args.locomo else {}
     qdates = json.load(open(args.qdates)) if args.qdates else {}
     ce = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-12-v2", device="cpu")
+    cache = json.load(open(args.ce_cache)) if args.ce_cache and args.ce_cache.exists() else {}
+    cache_dirty = False
+    processed = 0
 
     args.out.mkdir(parents=True, exist_ok=True)
     done = set()
@@ -138,9 +144,21 @@ def main() -> None:
         blocks = []
         for i, s in enumerate(cands):
             ch = windows(sess[s][1], args.window_chars)
-            sc = ce.predict([(r["question"], c) for c in ch], batch_size=64, show_progress_bar=False) if ch else []
+            key = f"{s}|{args.window_chars}"
+            sc = cache.get(qid, {}).get(key)
+            if sc is None or len(sc) != len(ch):
+                sc = [float(x) for x in ce.predict([(r["question"], c) for c in ch], batch_size=64,
+                                                     show_progress_bar=False)] if ch else []
+                cache.setdefault(qid, {})[key] = sc
+                cache_dirty = True
             keep = sorted(sorted(range(len(ch)), key=lambda j: -sc[j])[: args.windows_per_session])
             blocks.append(f"[{i}] date: {sess[s][0]}\n" + "\n...\n".join(ch[j] for j in keep))
+        if args.ce_only:
+            processed += 1
+            if cache_dirty and processed % 20 == 0:
+                args.ce_cache.write_text(json.dumps(cache))
+                cache_dirty = False
+            continue
         today = f"Today's date: {qdates[qid]}\n" if qid in qdates else ""
         raw, dt, usage = chat(args.provider, args.model,
                               PROMPT.format(today=today, question=r["question"], n=len(cands),
@@ -151,12 +169,21 @@ def main() -> None:
             m = re.search(r"\[[\d,\s]*\]", raw)
             if m:
                 picks = [int(x) for x in re.findall(r"\d+", m.group(0)) if int(x) < len(cands)]
-        picks = list(dict.fromkeys(picks))
+        picks = list(dict.fromkeys(picks))[: args.front_k]
         order = [cands[i] for i in picks] + [s for s in base[qid] if s not in {cands[i] for i in picks}]
         log.write(json.dumps({"qid": qid, "qtype": r["qtype"], "base": base[qid][:30], "order": order[:30],
                               "gold": sorted(r["answer_sids"]), "raw": raw, "latency_s": round(dt, 2),
                               "usage": usage}) + "\n")
         log.flush()
+        processed += 1
+        if cache_dirty and args.ce_cache and processed % 20 == 0:
+            args.ce_cache.write_text(json.dumps(cache))
+            cache_dirty = False
+    if cache_dirty and args.ce_cache:
+        args.ce_cache.write_text(json.dumps(cache))
+    if args.ce_only:
+        print(f"ce cache filled for {processed} questions -> {args.ce_cache}")
+        return
 
     rows = [json.loads(l) for l in open(args.out / "calls.jsonl") if l.strip()]
     ks = (1, 5, 10)
