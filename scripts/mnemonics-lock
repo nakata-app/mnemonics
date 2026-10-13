@@ -1,0 +1,197 @@
+#!/usr/bin/env bash
+# mnemonics-lock: mnemonics deposu (~/Projects/mnemonics) icin peer lock registry.
+# Nakata CLI deposundaki svelka-lock ile ayni mekanizma, ayri kayit. Cok sayida
+# ajan/session ayni checkout'ta calisiyor; uncommitted degisiklikler birbirini
+# ezmesin diye dosya bazli lock tutar.
+# Kayit: ~/.mnemonics-locks/peer-locks.json (atomic temp+rename).
+# Stale tespit: lock sahibinin PID'i olmusse lock devralinabilir.
+# Mutasyonlar fcntl.flock ile serileştirilir (macOS uyumlu).
+#
+# Kullanim:
+#   mnemonics-lock list
+#   mnemonics-lock check <path>
+#   mnemonics-lock acquire <path>        # baska canli peer tutuyorsa cikar
+#   mnemonics-lock release <path> [token]
+#   mnemonics-lock force-release <path>
+#
+# Kimligini belirtmek icin: MNEMONICS_PEER="<name>" env'i. Varsayilan: user-pid.
+set -uo pipefail
+
+exec python3 - "$@" <<'PYEOF'
+import fcntl, json, os, sys, time
+
+REGISTRY = os.environ.get("MNEMONICS_LOCK_REGISTRY", os.path.expanduser("~/.mnemonics-locks/peer-locks.json"))
+FLOCK_FILE = os.environ.get("MNEMONICS_LOCK_FLOCK", os.path.expanduser("~/.mnemonics-locks/peer-locks.flock"))
+HOLDER = os.environ.get("MNEMONICS_PEER", f"{os.getlogin()}-{os.uname().nodename}-{os.getpid()}")
+# Liveness pid'i. Agent/long-lived session kendi pid'ini verir ki lock session
+# boyunca 'yasiyor' kalsin; verilmezse helper'in kendi pid'i kullanilir (dogar
+# olur), yani tek atimlik lock. Stale kontrol bu pid uzerinden yapilir.
+HOLDER_PID = os.environ.get("MNEMONICS_PEER_PID", str(os.getpid()))
+
+TOKEN = f"{os.getpid():x}{int(time.time()*1000)%0xFFFF:04x}"
+
+def canon(p):
+    return os.path.realpath(os.path.expanduser(p))
+
+def read_registry():
+    try:
+        with open(REGISTRY) as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def write_registry(d):
+    tmp = f"{REGISTRY}.tmp.{os.getpid()}"
+    with open(tmp, "w") as f:
+        json.dump(d, f, indent=2)
+    os.replace(tmp, REGISTRY)
+
+def pid_alive(pid):
+    # Yetki hatasi veya bozuk PID, sahibin oldugunu kanitlamaz.
+    # Yalniz ESRCH (ProcessLookupError) kilidin devralinmasina izin verir.
+    try:
+        pid = int(pid)
+    except (TypeError, ValueError, OverflowError):
+        return False
+    # PID 1 is launchd on macOS, never a valid user-agent ownership fence.
+    if pid <= 1:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except (OSError, OverflowError):
+        return True
+
+def mutate(fn):
+    os.makedirs(os.path.dirname(FLOCK_FILE), exist_ok=True)
+    with open(FLOCK_FILE, "a+") as lk:
+        fcntl.flock(lk, fcntl.LOCK_EX)
+        try:
+            fn(read_registry(), write_registry)
+        finally:
+            fcntl.flock(lk, fcntl.LOCK_UN)
+
+def prune_registry(d):
+    """Olu PID'li lock kayitlarini registry'den sil (hayalet tutmamak icin)."""
+    locks = d.get("locks", {})
+    dead = [p for p, e in locks.items() if not pid_alive(e.get("pid"))]
+    if dead:
+        for p in dead:
+            e = locks.pop(p, None)
+            if e:
+                print(f"[mnemonics-lock] PRUNED stale {p} (pid {e.get('pid')})")
+
+def cmd_list():
+    def do(d, write):
+        prune_registry(d)
+        write(d)
+        locks = d.get("locks", {})
+        print(f"[mnemonics-lock] kayit: {REGISTRY}")
+        if not locks:
+            print("(bos)")
+            return
+        for p, e in sorted(locks.items()):
+            alive = "yasiyor" if pid_alive(e.get("pid")) else "OLMUS(stale)"
+            print(f"{p}  holder={e.get('holder')} pid={e.get('pid')} [{alive}] token={e.get('token')}")
+    mutate(do)
+
+def cmd_prune():
+    def do(d, write):
+        prune_registry(d)
+        write(d)
+    mutate(do)
+
+def cmd_check(path):
+    p = canon(path)
+    def do(d, write):
+        prune_registry(d)
+        write(d)
+        e = d.get("locks", {}).get(p)
+        if not e:
+            print("FREE")
+            return
+        alive = "yasiyor" if pid_alive(e.get("pid")) else "STALE"
+        print(f"HELD by {e.get('holder')} (pid {e.get('pid')}, {alive})")
+    mutate(do)
+
+def cmd_acquire(path):
+    p = canon(path)
+    try:
+        holder_pid = int(HOLDER_PID)
+    except (TypeError, ValueError, OverflowError):
+        sys.exit("[mnemonics-lock] invalid MNEMONICS_PEER_PID")
+    if holder_pid <= 1:
+        sys.exit("[mnemonics-lock] invalid MNEMONICS_PEER_PID: must be > 1")
+    def do(d, write):
+        e = d.get("locks", {}).get(p)
+        if e and pid_alive(e.get("pid")) and e.get("holder"):
+            same_pid = False
+            try:
+                same_pid = int(e.get("pid")) == holder_pid
+            except (TypeError, ValueError, OverflowError):
+                pass
+            if e.get("holder") == HOLDER and same_pid:
+                print(f"[mnemonics-lock] ALREADY HELD {p} (token {e.get('token')})")
+                return
+            sys.exit(f"[mnemonics-lock] TUTUK: {p} -> {e.get('holder')} (pid {e.get('pid')}). Once release/force-release.")
+        if e:
+            print(f"[mnemonics-lock] stale lock {e.get('holder')} devralindi (pid {e.get('pid')} olmus).")
+        d.setdefault("locks", {})[p] = {
+            "holder": HOLDER, "pid": holder_pid, "token": TOKEN,
+            "claimedAt": time.time(),
+        }
+        write(d)
+        print(f"[mnemonics-lock] LOCKED {p} (token {TOKEN})")
+    mutate(do)
+
+def cmd_release(path, want=""):
+    p = canon(path)
+    def do(d, write):
+        e = d.get("locks", {}).get(p)
+        if not e:
+            sys.exit(f"[mnemonics-lock] lock yok: {p}")
+        if want:
+            if e.get("token") != want:
+                sys.exit(f"[mnemonics-lock] token eslesmedi: {p}")
+        else:
+            try:
+                same_pid = int(e.get("pid")) == int(HOLDER_PID)
+            except (TypeError, ValueError, OverflowError):
+                same_pid = False
+            if e.get("holder") != HOLDER or not same_pid:
+                sys.exit(f"[mnemonics-lock] release refused: {p} belongs to {e.get('holder')} pid {e.get('pid')}")
+        del d["locks"][p]
+        write(d)
+        print(f"[mnemonics-lock] RELEASED {p}")
+    mutate(do)
+
+def cmd_force_release(path):
+    p = canon(path)
+    def do(d, write):
+        d.get("locks", {}).pop(p, None)
+        write(d)
+        print(f"[mnemonics-lock] FORCE-RELEASED {p}")
+    mutate(do)
+
+def main():
+    args = sys.argv[1:]
+    cmd = args[0] if args else "list"
+    if cmd == "list":
+        cmd_list()
+    elif cmd == "check" and len(args) >= 2:
+        cmd_check(args[1])
+    elif cmd == "acquire" and len(args) >= 2:
+        cmd_acquire(args[1])
+    elif cmd == "release" and len(args) >= 2:
+        cmd_release(args[1], args[2] if len(args) > 2 else "")
+    elif cmd == "force-release" and len(args) >= 2:
+        cmd_force_release(args[1])
+    elif cmd == "prune":
+        cmd_prune()
+    else:
+        sys.exit("kullanim: mnemonics-lock (list|check <path>|acquire <path>|release <path> [token]|force-release <path>)")
+
+main()
+PYEOF
