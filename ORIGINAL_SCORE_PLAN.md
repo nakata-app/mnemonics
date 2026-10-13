@@ -362,3 +362,18 @@ first 20 q. Session score = max over its docs (score_rerank_docs.py). Run once, 
 repeat-check |diff| as is. Kernel atakanakbaba/mnemonics-m-qrr4b, dataset atakanakbaba/mnemonics-m-rerank-docs.
 - 2026-10-13 run v1 died with CUDA OOM before writing any score (full-vocab logits for every position). Execution fix, no
   scores seen: logits_to_keep=1 (only the last position, which is all the yes/no score uses) and BATCH 8. Re-pushed as v2.
+
+### Dev: deterministic judge (2026-10-13, LoCoMo all-conv 200 q)
+Base = deterministic Qwen3-Reranker-4B order (0.785/0.960/0.975). Judge prompts dumped by llm_judge_rerank.py
+--dump-prompts (top-10, 3 CE windows, front-3), answered by kaggle_qwen_generate.py: Qwen/Qwen3-14B @ 40c06982,
+NF4, greedy, thinking off, 1108 s, repeat check 0/10 mismatches; replayed with --replay-raw --strict.
+Result 0.815/0.960/0.975 (+3.0 R@1, no R@5/R@10 change, 0 failed). Cloud judge on the stronger cloud-8B base was
++2.5 (0.860->0.885), so the deterministic judge gives a comparable gain. Remaining gap is the rerank stage.
+
+### EXAM 9 (pre-registered 2026-10-13, before any M call): deterministic judge over the EXAM 8 order
+Base = EXAM 8 order (exam8_m_scored/calls.jsonl: deterministic Qwen3-Reranker-4B over the deep top-75,
+0.854/0.958/0.976). Prompts: llm_judge_rerank.py --dump-prompts, --top-n 10 --windows-per-session 3
+--window-chars 600, question dates (m_qdates.json), GPU deep CE cache, sessions m_deep_top75_sessions.jsonl.
+Generation: kaggle_qwen_generate.py, Qwen/Qwen3-14B @ 40c069824f4251a91eefaf281ebe4c544efd3e18, NF4, greedy,
+thinking off, MAX_NEW 48, repeat check. Replay: --replay-raw --strict --front-k 3. Fully deterministic. Run once,
+log overall + by type as is; no M per-question inspection.
