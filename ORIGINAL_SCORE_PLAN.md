@@ -351,3 +351,11 @@ on LongMemEval S/M questions; final independent proof on LongMemEval-V2 (never s
 5. Preference is the open problem: judge and regex lanes both failed on M (0.500-0.533 R@1). Needs a capability
    developed on synthetic first-person preference data, not on M.
 Each step: dev first, then one pre-registered M exam, logged as is.
+
+### EXAM 8 (pre-registered 2026-10-13, before any M call): deterministic open-weights rerank over the deep top-75
+Candidates: m_deep_perq `cands` (exam-4 qwen top-10 first, then the deep pool), top-75 (aggregate recall 0.996).
+Docs: make_rerank_docs.py, 3 CE-selected 600-char windows per session with the session date (GPU deep CE cache).
+Scoring: kaggle_qwen_rerank_docs.py, Qwen/Qwen3-Reranker-4B @ 22e683669bc0f0bd69640a1354a6d0aebcfeede5, fp16,
+generic instruction (no LongMemEval wording), BATCH 16, MAX_LEN 2048, deterministic flags, repeat check on the
+first 20 q. Session score = max over its docs (score_rerank_docs.py). Run once, log overall + by type + the
+repeat-check |diff| as is. Kernel atakanakbaba/mnemonics-m-qrr4b, dataset atakanakbaba/mnemonics-m-rerank-docs.
