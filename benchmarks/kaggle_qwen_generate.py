@@ -15,13 +15,14 @@ from pathlib import Path
 
 subprocess.run([sys.executable, "-m", "pip", "install", "-q", "bitsandbytes"], check=True)
 os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
 MODEL = os.environ.get("GEN_MODEL", "Qwen/Qwen3-14B")
 REVISION = os.environ.get("GEN_REVISION", "40c069824f4251a91eefaf281ebe4c544efd3e18")
 PROMPTS = os.environ.get("GEN_PROMPTS", "prompts.jsonl")
-MAX_NEW, REPEAT_CHECK = 48, 10
+MAX_NEW, REPEAT_CHECK, PREFILL_CHUNK = 48, 10, 1024
 
 torch.manual_seed(0)
 torch.use_deterministic_algorithms(True, warn_only=True)
@@ -31,7 +32,7 @@ OUT = Path("/kaggle/working")
 
 tok = AutoTokenizer.from_pretrained(MODEL, revision=REVISION)
 model = AutoModelForCausalLM.from_pretrained(
-    MODEL, revision=REVISION, device_map="cuda:0",
+    MODEL, revision=REVISION, device_map="cuda:0", attn_implementation="sdpa",
     quantization_config=BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4",
                                            bnb_4bit_compute_dtype=torch.float16)).eval()
 
@@ -45,7 +46,10 @@ def generate(prompt):
     text = tok.apply_chat_template([{"role": "user", "content": prompt}], tokenize=False,
                                    add_generation_prompt=True, enable_thinking=False)
     ids = tok(text, return_tensors="pt").input_ids.to("cuda:0")
-    out = model(input_ids=ids, use_cache=True, logits_to_keep=1)
+    out = None
+    for c0 in range(0, ids.shape[1], PREFILL_CHUNK):
+        out = model(input_ids=ids[:, c0:c0 + PREFILL_CHUNK], past_key_values=out.past_key_values if out else None,
+                    use_cache=True, logits_to_keep=1)
     toks = []
     for _ in range(MAX_NEW):
         nxt = out.logits[:, -1, :].argmax(-1, keepdim=True)

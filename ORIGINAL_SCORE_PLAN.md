@@ -381,3 +381,7 @@ log overall + by type as is; no M per-question inspection.
   prompt position: 1.94 GiB at ~3.2k tokens; M prompts are longer than LoCoMo's). Execution fix, no scores seen (4 partial
   outputs not read): greedy is now a hand loop with logits_to_keep=1 and the KV cache, same argmax policy. Equivalence
   is checked by rerunning the LoCoMo dev prompts and comparing raw outputs with the generate() run. Re-run as v2.
+- 2026-10-14 v2 also died with CUDA OOM, at prompt 4 (14.9k chars; only prompts up to ~11.6k chars fit). Not logits this
+  time: full-prompt prefill attention (~1.3 GB fp16 scores per layer at ~3.7k tokens) on top of ~10 GB weights. Execution
+  fix, no scores seen: prefill in 1024-token chunks through the KV cache, attn_implementation sdpa, expandable_segments.
+  Same greedy argmax policy; equivalence re-checked on the LoCoMo dev prompts with this exact code. Re-run as v3.
