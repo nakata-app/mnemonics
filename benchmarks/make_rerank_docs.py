@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 from sentence_transformers import CrossEncoder
@@ -27,6 +28,8 @@ def main() -> None:
     ap.add_argument("--top-n", type=int, default=30)
     ap.add_argument("--windows", type=int, default=3)
     ap.add_argument("--window-chars", type=int, default=600)
+    ap.add_argument("--full-chunks", type=int, default=0,
+                    help="instead of CE windows, every turn chunk up to N chars (dev_api_rerank.py chunking)")
     ap.add_argument("--out", type=Path, required=True)
     args = ap.parse_args()
 
@@ -42,6 +45,16 @@ def main() -> None:
             sess = per_q[qid] if per_q is not None else loco
             docs = []
             for s in [x for x in r[args.sids_key][: args.top_n] if x in sess]:
+                if args.full_chunks:
+                    parts = [x for x in re.split(r"\n(?=\[user\]|[A-Z][\w .'-]{0,40}: )", sess[s][1]) if x.strip()] or [sess[s][1]]
+                    cur = ""
+                    for part in parts + [None]:
+                        if part is None or (cur and len(cur) + len(part) > args.full_chunks):
+                            docs.append({"sid": s, "text": f"date: {sess[s][0]}\n" + cur[: args.full_chunks]})
+                            cur = ""
+                        if part is not None:
+                            cur = (cur + "\n" + part) if cur else part
+                    continue
                 ch = windows(sess[s][1], args.window_chars)
                 sc = cache.get(qid, {}).get(f"{s}|{args.window_chars}")
                 if sc is None or len(sc) != len(ch):
