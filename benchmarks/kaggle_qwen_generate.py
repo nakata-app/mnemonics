@@ -36,13 +36,26 @@ model = AutoModelForCausalLM.from_pretrained(
                                            bnb_4bit_compute_dtype=torch.float16)).eval()
 
 
+eos = model.generation_config.eos_token_id
+EOS = set(eos if isinstance(eos, list) else [eos])
+
+
 @torch.no_grad()
 def generate(prompt):
     text = tok.apply_chat_template([{"role": "user", "content": prompt}], tokenize=False,
                                    add_generation_prompt=True, enable_thinking=False)
-    ids = tok(text, return_tensors="pt").to("cuda:0")
-    out = model.generate(**ids, max_new_tokens=MAX_NEW, do_sample=False, temperature=None, top_p=None, top_k=None)
-    return tok.decode(out[0, ids["input_ids"].shape[1]:], skip_special_tokens=True).strip()
+    ids = tok(text, return_tensors="pt").input_ids.to("cuda:0")
+    out = model(input_ids=ids, use_cache=True, logits_to_keep=1)
+    toks = []
+    for _ in range(MAX_NEW):
+        nxt = out.logits[:, -1, :].argmax(-1, keepdim=True)
+        if nxt.item() in EOS:
+            break
+        toks.append(nxt.item())
+        out = model(input_ids=nxt, past_key_values=out.past_key_values, use_cache=True, logits_to_keep=1)
+    del out
+    torch.cuda.empty_cache()
+    return tok.decode(toks, skip_special_tokens=True).strip()
 
 
 rows = [json.loads(l) for l in open(IN) if l.strip()]
