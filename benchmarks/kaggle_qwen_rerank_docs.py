@@ -29,7 +29,14 @@ IN = Path(sorted(glob.glob(f"/kaggle/input/**/{DOCS_NAME}", recursive=True), key
 OUT = Path("/kaggle/working")
 
 tok = AutoTokenizer.from_pretrained(MODEL, revision=REVISION, padding_side="left")
-model = AutoModelForCausalLM.from_pretrained(MODEL, revision=REVISION, torch_dtype=torch.float16).cuda().eval()
+if os.environ.get("RR_QUANT") == "int8":
+    import subprocess, sys
+    subprocess.run([sys.executable, "-m", "pip", "install", "-q", "bitsandbytes"], check=True)
+    from transformers import BitsAndBytesConfig
+    model = AutoModelForCausalLM.from_pretrained(MODEL, revision=REVISION, device_map="cuda:0", torch_dtype=torch.float16,
+                                                 quantization_config=BitsAndBytesConfig(load_in_8bit=True)).eval()
+else:
+    model = AutoModelForCausalLM.from_pretrained(MODEL, revision=REVISION, torch_dtype=torch.float16).cuda().eval()
 yes, no = tok.convert_tokens_to_ids("yes"), tok.convert_tokens_to_ids("no")
 prefix = tok.encode('<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and the '
                     'Instruct provided. Note that the answer can only be "yes" or "no".<|im_end|>\n<|im_start|>user\n',
@@ -56,7 +63,7 @@ def score(question, texts):
 
 
 rows = [json.loads(l) for l in open(IN) if l.strip()]
-print("model", MODEL, REVISION, "| questions", len(rows), "| docs", sum(len(r["docs"]) for r in rows), flush=True)
+print("model", MODEL, REVISION, os.environ.get("RR_QUANT", "fp16"), "| questions", len(rows), "| docs", sum(len(r["docs"]) for r in rows), flush=True)
 t0, maxdiff, nan = time.time(), 0.0, 0
 with open(OUT / "scores.jsonl", "w") as f:
     for qi, r in enumerate(rows):
