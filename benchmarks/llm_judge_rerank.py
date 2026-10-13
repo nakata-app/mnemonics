@@ -126,6 +126,8 @@ def main() -> None:
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--ce-cache", type=Path, help="json cache of window CE scores, keyed qid -> sid -> scores")
     ap.add_argument("--ce-only", action="store_true", help="only fill --ce-cache, no LLM calls")
+    ap.add_argument("--dump-prompts", type=Path, help="write {qid, prompt} JSONL instead of calling the LLM")
+    ap.add_argument("--replay-raw", type=Path, help="JSONL {qid, raw} from a deterministic generation run")
     ap.add_argument("--front-k", type=int, default=3, help="judge picks moved to the front (dev: >3 hurts R@5)")
     args = ap.parse_args()
 
@@ -155,6 +157,9 @@ def main() -> None:
     if (args.out / "calls.jsonl").exists():
         done = {json.loads(l)["qid"] for l in open(args.out / "calls.jsonl") if l.strip()}
     log = (args.out / "calls.jsonl").open("a")
+    dump = args.dump_prompts.open("w") if args.dump_prompts else None
+    replay = ({json.loads(l)["qid"]: json.loads(l)["raw"] for l in open(args.replay_raw) if l.strip()}
+              if args.replay_raw else None)
 
     for qid in qids:
         if qid in done:
@@ -181,10 +186,14 @@ def main() -> None:
                 cache_dirty = False
             continue
         today = f"Today's date: {qdates[qid]}\n" if qid in qdates else ""
-        raw, dt, usage = chat(args.provider, args.model,
-                              PROMPT.format(today=today, question=r["question"], n=len(cands),
-                                            blocks="\n\n".join(blocks)),
-                              args.max_tokens, args.timeout, args.reasoning)
+        prompt = PROMPT.format(today=today, question=r["question"], n=len(cands), blocks="\n\n".join(blocks))
+        if dump is not None:
+            dump.write(json.dumps({"qid": qid, "prompt": prompt}) + "\n")
+            continue
+        if replay is not None:
+            raw, dt, usage = replay.get(qid), 0.0, {}
+        else:
+            raw, dt, usage = chat(args.provider, args.model, prompt, args.max_tokens, args.timeout, args.reasoning)
         if raw is None and args.strict:
             raise SystemExit(f"STRICT_ABORT qid={qid} {usage}")
         picks = []
@@ -206,6 +215,10 @@ def main() -> None:
         args.ce_cache.write_text(json.dumps(cache))
     if args.ce_only:
         print(f"ce cache filled for {processed} questions -> {args.ce_cache}")
+        return
+    if dump is not None:
+        dump.close()
+        print(f"prompts written -> {args.dump_prompts}")
         return
 
     rows = [json.loads(l) for l in open(args.out / "calls.jsonl") if l.strip()]
