@@ -359,3 +359,5 @@ Scoring: kaggle_qwen_rerank_docs.py, Qwen/Qwen3-Reranker-4B @ 22e683669bc0f0bd69
 generic instruction (no LongMemEval wording), BATCH 16, MAX_LEN 2048, deterministic flags, repeat check on the
 first 20 q. Session score = max over its docs (score_rerank_docs.py). Run once, log overall + by type + the
 repeat-check |diff| as is. Kernel atakanakbaba/mnemonics-m-qrr4b, dataset atakanakbaba/mnemonics-m-rerank-docs.
+- 2026-10-13 run v1 died with CUDA OOM before writing any score (full-vocab logits for every position). Execution fix, no
+  scores seen: logits_to_keep=1 (only the last position, which is all the yes/no score uses) and BATCH 8. Re-pushed as v2.

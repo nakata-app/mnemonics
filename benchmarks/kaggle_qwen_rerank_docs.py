@@ -20,7 +20,7 @@ REVISION = os.environ.get("RR_REVISION", "22e683669bc0f0bd69640a1354a6d0aebcfeed
 DOCS_NAME = os.environ.get("RR_DOCS", "rerank_docs.jsonl")
 INSTRUCT = ("Given a question a user asks about their own past conversations, judge whether this conversation "
             "excerpt contains information needed to answer the question")
-BATCH, MAX_LEN, REPEAT_CHECK = 16, 2048, 20
+BATCH, MAX_LEN, REPEAT_CHECK = 8, 2048, 20
 
 torch.manual_seed(0)
 torch.use_deterministic_algorithms(True, warn_only=True)
@@ -48,7 +48,7 @@ def score(question, texts):
     for b0 in range(0, len(order), BATCH):
         idx = order[b0:b0 + BATCH]
         batch = tok.pad({"input_ids": [ids[i] for i in idx]}, padding=True, return_tensors="pt").to("cuda")
-        logits = model(**batch).logits[:, -1, :]
+        logits = model(**batch, logits_to_keep=1).logits[:, -1, :]
         lp = torch.log_softmax(torch.stack([logits[:, no], logits[:, yes]], dim=1).float(), dim=1)[:, 1].exp()
         for i, v in zip(idx, lp.tolist()):
             out[i] = v
