@@ -61,7 +61,11 @@ def call(prompt: str) -> str:
     for attempt in range(5):
         try:
             with urllib.request.urlopen(req, timeout=180) as r:
-                return json.load(r)["choices"][0]["message"]["content"]
+                content = json.load(r)["choices"][0]["message"]["content"]
+            if content:
+                return content
+            time.sleep(2 ** (attempt + 2))
+            continue
         except Exception as e:  # error class only
             if attempt == 4:
                 raise SystemExit(f"generation failed: {type(e).__name__} {getattr(e, 'code', '')}")
@@ -101,8 +105,10 @@ def main() -> None:
                     item = None
                     break
                 try:
-                    item = json.loads(call(PROMPT.format(domain=d, seed=v)))
+                    item = json.loads(call(PROMPT.format(domain=d, seed=v)) or "null")
                 except json.JSONDecodeError:
+                    item = None
+                if not isinstance(item, dict):
                     item = None
             if item is None:
                 print("skip", d, v)
