@@ -334,3 +334,20 @@ Run once on all 500, log overall + by type (base / judge / duel) as is; no M per
   Session texts from m_deep_top75_sessions.jsonl (same "[role] content" text). (2) --strict: a failed LLM call
   aborts without writing a row and the run resumes later, so a provider limit can never silently keep base order.
   Ollama Pro 5-hour limit was hit at ~20:00Z by the dev runs (same account as Atakan's svelka); EXAM 7 waits for it.
+
+## Path to R@1 = 1.0: deterministic, verifiable, no memorization (Atakan, 2026-10-13)
+Bar: same inputs -> same ranking on re-run; every stage pinned (code SHA, HF model commit) and logged; no tuning
+on LongMemEval S/M questions; final independent proof on LongMemEval-V2 (never scored, never trained on).
+1. Candidates: deep pool (candidate_k/top_k 300). Aggregate recall: top-10 0.952, top-30 0.984, top-75 0.996,
+   top-150 1.000. Recall is solved by depth; the rest is ranking.
+2. Deterministic rerank: Qwen3-Reranker (open weights, pinned commit) on Kaggle GPU, fp16, deterministic torch
+   flags, built-in repeat check (score the first 20 q twice, report max |diff|). Docs = CE-selected windows.
+3. Deterministic judge: open-weights LLM (Qwen3-8B/14B, pinned commit), greedy decoding, same prompts as the
+   cloud judge. The cloud judge (EXAM 7, 0.910) is the reference to match or beat.
+4. Training if 2-3 fall short: distill the cloud judge into the open reranker/judge on NON-LongMemEval data only
+   (LoCoMo train convs + a large LLM-generated first-person synthetic memory set with planted facts, preferences,
+   updates and dated events). Earlier CE fine-tune on LoCoMo alone overfit (-9 R@1), so the synthetic set is the
+   main training source; held-out LoCoMo dev decides acceptance.
+5. Preference is the open problem: judge and regex lanes both failed on M (0.500-0.533 R@1). Needs a capability
+   developed on synthetic first-person preference data, not on M.
+Each step: dev first, then one pre-registered M exam, logged as is.
