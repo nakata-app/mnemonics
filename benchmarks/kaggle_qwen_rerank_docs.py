@@ -18,8 +18,9 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 MODEL = os.environ.get("RR_MODEL", "Qwen/Qwen3-Reranker-4B")
 REVISION = os.environ.get("RR_REVISION", "22e683669bc0f0bd69640a1354a6d0aebcfeede5")
 DOCS_NAME = os.environ.get("RR_DOCS", "rerank_docs.jsonl")
-INSTRUCT = ("Given a question a user asks about their own past conversations, judge whether this conversation "
-            "excerpt contains information needed to answer the question")
+INSTRUCT = os.environ.get("RR_INSTRUCT") or (
+    "Given a question a user asks about their own past conversations, judge whether this conversation "
+    "excerpt contains information needed to answer the question")
 BATCH, MAX_LEN, REPEAT_CHECK = 8, 2048, 20
 
 torch.manual_seed(0)
@@ -63,7 +64,7 @@ def score(question, texts):
 
 
 rows = [json.loads(l) for l in open(IN) if l.strip()]
-print("model", MODEL, REVISION, os.environ.get("RR_QUANT", "fp16"), "| questions", len(rows), "| docs", sum(len(r["docs"]) for r in rows), flush=True)
+print("model", MODEL, REVISION, os.environ.get("RR_QUANT", "fp16"), "| instruct:", INSTRUCT[:60], "| questions", len(rows), "| docs", sum(len(r["docs"]) for r in rows), flush=True)
 t0, maxdiff, nan = time.time(), 0.0, 0
 with open(OUT / "scores.jsonl", "w") as f:
     for qi, r in enumerate(rows):
