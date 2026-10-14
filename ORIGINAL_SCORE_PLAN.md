@@ -418,3 +418,18 @@ repeat |diff| 0, NaN 0. Scored with score_rerank_docs.py on locomo_poolall_perq:
 - 4B full + VL-8B, equal-weight RRF k=60 (--scores2, fixed before this check): **0.860/0.980/0.985** = cloud R@1,
   deterministic. M uses 3x600-char windows, not full chunks, so the same fusion is being checked on the LoCoMo window
   docs (kernel mnemonics-locomo-qvlrr8b-w3) before any M pre-registration.
+- Window docs (3x600, same as M): VL alone 0.790/0.960/0.980; 4B-w3 + VL-w3 RRF 0.800/0.955/0.990 (R@5 -0.5, fails
+  the zero-regression rule). The 0.860 comes from full chunks, not from the model pair alone.
+- Two-stage simulation on LoCoMo (stage 1 = 4B-w3 order, stage 2 = full-chunk 4B+VL RRF over its top-N, rest kept):
+  N=5 0.850/0.960/0.975, 10 0.850/0.970/0.975, 15 0.855/0.980/0.990, 20 0.850/0.980/0.985, 30 0.850/0.980/0.985
+  (stage-1 alone 0.785/0.960/0.975). No N regresses.
+
+### EXAM 11 (pre-registered 2026-10-14, before any M call): full-chunk 4B+VL RRF over the EXAM 8 top-20
+N=20 fixed because the EXAM 8 order has recall@20 0.986 (R@10 can rise above 0.976) and N=20 does not regress on dev;
+N=15 was 0.005 better on dev and is not chosen for that. Docs: make_rerank_docs.py --full-chunks 3000 over the deep
+top-75 (m_rerank_docs_top75_full3000.jsonl), kept for the EXAM 8 top-20 sessions only (48946 docs, 118.5M chars,
+m_rerank_docs_ex8top20_full3000.jsonl; every top-20 session has docs). Scoring on Kaggle T4, two question shards each:
+kaggle_qwen_rerank_docs.py Qwen3-Reranker-4B @22e68366 fp16 default instruct, and kaggle_qwen_vl_rerank_docs.py
+Qwen3-VL-Reranker-8B @b212dc8 8-bit default prompt; repeat checks as coded. Score: score_rerank_docs.py --perq
+m_ex8_perq.json (m_deep_perq + key ex8 = EXAM 8 order) --sids-key ex8 --scores <4B> --scores2 <VL>; sessions
+outside the top-20 keep the EXAM 8 order. Run once, log overall + by type; no M per-question inspection.
