@@ -393,3 +393,16 @@ log overall + by type as is; no M per-question inspection.
   multi-session 0.865->0.887, single-session-assistant 0.982->0.982, single-session-preference 0.467->0.433,
   single-session-user 0.871->0.871, temporal-reasoning 0.782->0.850. Best deterministic M score so far; cloud EXAM 7
   (non-deterministic) 0.910/0.944/0.952 is still higher at R@1. R@10 0.976 is the rerank pool ceiling for this order.
+
+### EXAM 10 (pre-registered 2026-10-14, before any M call): personalization instruct fused with EXAM 8 by RRF
+Motivation: preference is the weakest type (EXAM 9 R@1 0.433). The personalization instruct (commit 0e33ba3) alone
+regressed LoCoMo R@5 (0.960->0.940) so it was not adopted. Rank-level fusion, checked offline on dev score files:
+session score = max over its docs, rank each list (ties by base order), fuse 1/(60+r1) + 1/(60+r2).
+Dev, default 4B -> fused: LoCoMo 0.785/0.960/0.975 -> 0.805/0.960/0.975 (no regression); synthetic pref2
+0.475/0.762/0.800 -> 0.512/0.812/0.887. Disclosure: on dev I also looked at weights 0.3/0.7, k=10 and a z-score sum;
+equal-weight k=60 (the textbook RRF default) is fixed here and was tied-best on LoCoMo.
+M run: kaggle_qwen_rerank_docs.py, Qwen/Qwen3-Reranker-4B @22e68366 fp16, RR_INSTRUCT = the 0e33ba3 personalization
+instruct, same docs as EXAM 8 (m_rerank_docs_top75_w3.jsonl), repeat check. Score: score_rerank_docs.py --perq
+m_deep_perq.json --sids-key cands --scores m_qrr4b/scores.jsonl --scores2 <new scores>. (The scorer change reproduces
+the EXAM 8 order byte-identically without --scores2.) Run once, log overall + by type; no M per-question inspection.
+A judge pass over the fused order, if run, is a separate pre-registration.
