@@ -408,6 +408,11 @@ Same docs as EXAM 8 (m_rerank_docs_top75_w3.jsonl), repeat check. Score: score_r
 m_deep_perq.json --sids-key cands --scores m_qrr4b/scores.jsonl --scores2 <new scores>. (The scorer change reproduces
 the EXAM 8 order byte-identically without --scores2.) Run once, log overall + by type; no M per-question inspection.
 A judge pass over the fused order, if run, is a separate pre-registration.
+- **EXAM 10 result (2026-10-14, 500 q, 17144 s, repeat |diff| 0, NaN 0): 0.890 / 0.968 / 0.982** (EXAM 8
+  0.854/0.958/0.976, EXAM 9 0.872/0.966/0.976). By type R@1/R@5/R@10: knowledge-update 0.987/1/1, multi-session
+  0.910/0.992/1.000, single-session-assistant 1/1/1, single-session-preference 0.567/0.800/0.867, single-session-user
+  0.914/0.986/1.000, temporal-reasoning 0.827/0.940/0.962. Best deterministic M score; R@1 vs EXAM 8: ku -1.3,
+  every other type up (pref +10.0, multi +4.5, ss-user +4.3, temporal +4.5, ss-assistant +1.8). results/exam10_m_scored.
 
 ### Dev 2026-10-14: open Qwen3-VL-Reranker-8B (the model evren's reranker endpoint routes to) on LoCoMo
 First run died: the repo at b212dc8 (its latest commit) lists module 1 at 1_CausalScoreHead but ships 1_LogitScore,
