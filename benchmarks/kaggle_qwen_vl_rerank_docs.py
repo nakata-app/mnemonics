@@ -18,6 +18,7 @@ subprocess.run([sys.executable, "-m", "pip", "install", "-q", "-U", "sentence-tr
 os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
 import torch
 from sentence_transformers import CrossEncoder
+from huggingface_hub import snapshot_download
 from transformers import BitsAndBytesConfig
 
 MODEL = os.environ.get("RR_MODEL", "Qwen/Qwen3-VL-Reranker-8B")
@@ -30,7 +31,11 @@ torch.use_deterministic_algorithms(True, warn_only=True)
 torch.backends.cudnn.benchmark = False
 IN = Path(sorted(glob.glob(f"/kaggle/input/**/{DOCS_NAME}", recursive=True), key=len)[0])
 OUT = Path("/kaggle/working")
-ce = CrossEncoder(MODEL, revision=REVISION, device="cuda",
+SNAP = Path(snapshot_download(MODEL, revision=REVISION))
+for m in json.load(open(SNAP / "modules.json")):
+    if m["path"] and not (SNAP / m["path"]).exists():
+        (SNAP / m["path"]).symlink_to(SNAP / "1_LogitScore", target_is_directory=True)
+ce = CrossEncoder(str(SNAP), device="cuda",
                   model_kwargs={"torch_dtype": torch.float16,
                                 "quantization_config": BitsAndBytesConfig(load_in_8bit=True)})
 
