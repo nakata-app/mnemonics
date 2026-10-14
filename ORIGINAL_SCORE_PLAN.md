@@ -385,3 +385,11 @@ log overall + by type as is; no M per-question inspection.
   time: full-prompt prefill attention (~1.3 GB fp16 scores per layer at ~3.7k tokens) on top of ~10 GB weights. Execution
   fix, no scores seen: prefill in 1024-token chunks through the KV cache, attn_implementation sdpa, expandable_segments.
   Same greedy argmax policy; equivalence re-checked on the LoCoMo dev prompts with this exact code. Re-run as v3.
+- 2026-10-14 v3 equivalence (eq3, LoCoMo dev prompts, same chunked-prefill code): raw outputs equal the generate()
+  run on 186/200 prompts; the 14 that differ are mostly reordered/shortened pick tails. Replayed with --front-k 3 the
+  scores are identical: 0.815/0.960/0.975 both. Repeat check 0/10.
+- **EXAM 9 result (v3, 500 q, 5348 s, repeat check 0/10, replay --strict 0 failed): 0.872 / 0.966 / 0.976**
+  (base EXAM 8 0.854/0.958/0.976: +1.8 R@1, +0.8 R@5). By type R@1 base->judge: knowledge-update 1.000->0.974,
+  multi-session 0.865->0.887, single-session-assistant 0.982->0.982, single-session-preference 0.467->0.433,
+  single-session-user 0.871->0.871, temporal-reasoning 0.782->0.850. Best deterministic M score so far; cloud EXAM 7
+  (non-deterministic) 0.910/0.944/0.952 is still higher at R@1. R@10 0.976 is the rerank pool ceiling for this order.
