@@ -401,8 +401,10 @@ session score = max over its docs, rank each list (ties by base order), fuse 1/(
 Dev, default 4B -> fused: LoCoMo 0.785/0.960/0.975 -> 0.805/0.960/0.975 (no regression); synthetic pref2
 0.475/0.762/0.800 -> 0.512/0.812/0.887. Disclosure: on dev I also looked at weights 0.3/0.7, k=10 and a z-score sum;
 equal-weight k=60 (the textbook RRF default) is fixed here and was tied-best on LoCoMo.
-M run: kaggle_qwen_rerank_docs.py, Qwen/Qwen3-Reranker-4B @22e68366 fp16, RR_INSTRUCT = the 0e33ba3 personalization
-instruct, same docs as EXAM 8 (m_rerank_docs_top75_w3.jsonl), repeat check. Score: score_rerank_docs.py --perq
+M run: kaggle_qwen_rerank_docs.py, Qwen/Qwen3-Reranker-4B @22e68366 fp16, RR_INSTRUCT = the personalization instruct
+(the same string the LoCoMo/pref2 dev kernels used, set in run.py line 1; 0e33ba3 only added the env override):
+"Given a question or request a user makes about their own life, judge whether this excerpt from their past conversations contains information needed to answer it, including anything the user revealed about themselves (what they own, like, dislike, cannot do, or have experienced) that a personalized answer should take into account".
+Same docs as EXAM 8 (m_rerank_docs_top75_w3.jsonl), repeat check. Score: score_rerank_docs.py --perq
 m_deep_perq.json --sids-key cands --scores m_qrr4b/scores.jsonl --scores2 <new scores>. (The scorer change reproduces
 the EXAM 8 order byte-identically without --scores2.) Run once, log overall + by type; no M per-question inspection.
 A judge pass over the fused order, if run, is a separate pre-registration.
