@@ -453,3 +453,6 @@ kaggle_qwen_rerank_docs.py Qwen3-Reranker-4B @22e68366 fp16 default instruct, an
 Qwen3-VL-Reranker-8B @b212dc8 8-bit default prompt; repeat checks as coded. Score: score_rerank_docs.py --perq
 m_ex8_perq.json (m_deep_perq + key ex8 = EXAM 8 order) --sids-key ex8 --scores <4B> --scores2 <VL>; sessions
 outside the top-20 keep the EXAM 8 order. Run once, log overall + by type; no M per-question inspection.
+- 2026-10-14 status: vl-s0 (248 q, 15134 s), vl-s1 (252 q, 15974 s), 4b-s0 (248 q, 9195 s) done, all repeat |diff| 0,
+  NaN 0. 4b-s1 could not start: Kaggle "Maximum weekly GPU quota of 30.00 hours reached". Not scored on the partial
+  shards (that would be a look at M before the pre-registered run is complete); scored once 4b-s1 has run.
