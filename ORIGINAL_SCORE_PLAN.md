@@ -416,6 +416,12 @@ A judge pass over the fused order, if run, is a separate pre-registration.
   0.914/0.986/1.000, temporal-reasoning 0.827/0.940/0.962. Best deterministic M score; R@1 vs EXAM 8: ku -1.3,
   every other type up (pref +10.0, multi +4.5, ss-user +4.3, temporal +4.5, ss-assistant +1.8). results/exam10_m_scored.
 
+### EXAM 12 (pre-registered 2026-10-14, before any M call): the EXAM 9 judge over the EXAM 10 order
+Identical to EXAM 9 except --base-calls results/exam10_m_scored/calls.jsonl: same prompt builder flags (--top-n 10
+--windows-per-session 3 --window-chars 600, m_qdates, GPU deep CE cache, m_deep_top75_sessions), prompts
+m_judge_prompts_exam10.jsonl (500), kaggle_qwen_generate.py v3 code (chunked prefill, verified equivalent on dev),
+Qwen3-14B @40c06982 NF4 greedy thinking off MAX_NEW 48, replay --strict --front-k 3. Run once, log overall + by type.
+
 ### Dev 2026-10-14: open Qwen3-VL-Reranker-8B (the model evren's reranker endpoint routes to) on LoCoMo
 First run died: the repo at b212dc8 (its latest commit) lists module 1 at 1_CausalScoreHead but ships 1_LogitScore,
 so sentence-transformers built LogitScore without true_token_id. Fix 0400319 (symlink the missing path; weights and
