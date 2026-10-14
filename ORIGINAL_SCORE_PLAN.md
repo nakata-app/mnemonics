@@ -408,3 +408,13 @@ Same docs as EXAM 8 (m_rerank_docs_top75_w3.jsonl), repeat check. Score: score_r
 m_deep_perq.json --sids-key cands --scores m_qrr4b/scores.jsonl --scores2 <new scores>. (The scorer change reproduces
 the EXAM 8 order byte-identically without --scores2.) Run once, log overall + by type; no M per-question inspection.
 A judge pass over the fused order, if run, is a separate pre-registration.
+
+### Dev 2026-10-14: open Qwen3-VL-Reranker-8B (the model evren's reranker endpoint routes to) on LoCoMo
+First run died: the repo at b212dc8 (its latest commit) lists module 1 at 1_CausalScoreHead but ships 1_LogitScore,
+so sentence-transformers built LogitScore without true_token_id. Fix 0400319 (symlink the missing path; weights and
+revision unchanged). v2: 8-bit, default prompt, full chunks (3000 chars, same docs as the 4B full run), 4769 s,
+repeat |diff| 0, NaN 0. Scored with score_rerank_docs.py on locomo_poolall_perq:
+- VL-8B alone 0.815/0.970/0.985 (4B full 0.795/0.980/0.980; cloud 0.860/0.980/0.990). Not the cloud number alone.
+- 4B full + VL-8B, equal-weight RRF k=60 (--scores2, fixed before this check): **0.860/0.980/0.985** = cloud R@1,
+  deterministic. M uses 3x600-char windows, not full chunks, so the same fusion is being checked on the LoCoMo window
+  docs (kernel mnemonics-locomo-qvlrr8b-w3) before any M pre-registration.
