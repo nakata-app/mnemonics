@@ -466,3 +466,15 @@ outside the top-20 keep the EXAM 8 order. Run once, log overall + by type; no M 
   knowledge-update 1/1/1, multi-session 0.925/0.992/1.000, single-session-assistant 1/1/1, single-session-preference
   0.567/0.800/0.900, single-session-user 0.900/0.971/1.000, temporal-reasoning 0.827/0.940/0.962. No type drops at
   R@1 vs EXAM 8. Best deterministic M R@1 and R@10 so far (EXAM 10 0.890/0.968/0.982). results/exam11_m_scored.
+
+### Literature check 2026-10-15: published LongMemEval-M retrieval numbers (self-reported, protocols differ)
+- LongMemEval paper (2410.10813) Table 3, Stella V5, session value, K=V+fact: R@5 0.732, R@10 0.862 (recall variant not
+  stated in the table; the official eval script reports recall_any and recall_all and skips abstention questions).
+- MemGAS (2505.19549) Table 2: R@5 63.62, R@10 77.02. RF-Mem (2603.09250): best R@10 0.6635 (bge-base).
+- ReMind (2610.16137) Table 1, frozen top-50, trained on a 60% split of LongMemEval and tested on 40%: R@1 50.07,
+  R@5 82.82; Qwen3-Reranker-4B there: R@1 45.08, R@5 79.89 (R@k definition not given; R@1 far below 1 suggests a
+  fraction-of-gold recall).
+- lcm-x PR #941 (GitHub, not a paper): R@10 0.950 on a 483-question privacy-filtered subset (456 scored).
+- Ours under the same variants (EXAM 11): all 500 recall_any 0.894/0.966/0.984; 470 non-abstention recall_any
+  0.900/0.968/0.983, recall_all 0.319/0.872/0.923. recall_all@1 cannot reach 1.0 for multi-gold questions, so the
+  1.0 target is recall_any. No published M number found that is above ours on a comparable metric.
