@@ -27,12 +27,15 @@ PROMPT = """You are the retrieval judge of a personal memory assistant.
 {today}Question: {question}
 
 Below are {n} past conversation sessions (most relevant excerpts only), each with its date.
-Decide which sessions contain the information needed to answer the question. Use the dates for questions
+Decide which sessions contain the information needed to answer the question{personal}. Use the dates for questions
 about time, order, the latest state, or how long ago something happened.
 
 {blocks}
 
 Reply with only a JSON list of session numbers, most relevant first, at most 5 numbers, e.g. [3, 0, 7]."""
+
+PERSONAL = (", including anything the user revealed about themselves (what they own, like, dislike, cannot do,\n"
+            "or have experienced) that a personalized answer should take into account")
 
 PROVIDERS = {
     "deepseek": ("https://api.deepseek.com/v1/chat/completions", "DEEPSEEK_API_KEY"),
@@ -129,6 +132,7 @@ def main() -> None:
     ap.add_argument("--dump-prompts", type=Path, help="write {qid, prompt} JSONL instead of calling the LLM")
     ap.add_argument("--replay-raw", type=Path, help="JSONL {qid, raw} from a deterministic generation run")
     ap.add_argument("--front-k", type=int, default=3, help="judge picks moved to the front (dev: >3 hurts R@5)")
+    ap.add_argument("--personal", action="store_true", help="also count what the user revealed about themselves")
     args = ap.parse_args()
 
     perq = {r["qid"]: r for r in json.load(open(args.perq))}
@@ -186,7 +190,8 @@ def main() -> None:
                 cache_dirty = False
             continue
         today = f"Today's date: {qdates[qid]}\n" if qid in qdates else ""
-        prompt = PROMPT.format(today=today, question=r["question"], n=len(cands), blocks="\n\n".join(blocks))
+        prompt = PROMPT.format(today=today, question=r["question"], n=len(cands), blocks="\n\n".join(blocks),
+                               personal=PERSONAL if args.personal else "")
         if dump is not None:
             dump.write(json.dumps({"qid": qid, "prompt": prompt}) + "\n")
             continue
