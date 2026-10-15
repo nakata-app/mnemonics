@@ -478,3 +478,17 @@ outside the top-20 keep the EXAM 8 order. Run once, log overall + by type; no M 
 - Ours under the same variants (EXAM 11): all 500 recall_any 0.894/0.966/0.984; 470 non-abstention recall_any
   0.900/0.968/0.983, recall_all 0.319/0.872/0.923. recall_all@1 cannot reach 1.0 for multi-gold questions, so the
   1.0 target is recall_any. No published M number found that is above ours on a comparable metric.
+
+### Dev 2026-10-15: judge with --personal (Colab T4, 360 prompts, 1664 s, repeat 0/10)
+Same generation setup as EXAM 9/12 (kaggle_qwen_generate.py, Qwen3-14B @40c06982 NF4 greedy thinking off), replay
+--strict, 0 failed. Prompts from llm_judge_rerank.py with/without --personal over the deterministic 4B base orders.
+- LoCoMo 200 q (base 0.785/0.960/0.975): default judge 0.815/0.960/0.975, personal judge 0.810/0.960/0.975.
+- pref2 80 q (base 0.475/0.762/0.800): default judge **0.325**/0.762/0.800, personal judge **0.500/0.787/0.800**.
+The default judge loses 15 R@1 points on preference questions on dev, the same failure EXAM 12 showed on M
+(0.567->0.367). --personal removes it (+2.5 over base) at -0.5 on LoCoMo (one question). Passes dev.
+
+### EXAM 13 (pre-registered 2026-10-15, before any M call): personal judge over the EXAM 11 order
+Identical to EXAM 12 except --base-calls results/exam11_m_scored/calls.jsonl and --personal: prompts
+m_judge_prompts_exam11_personal.jsonl (500, sha256 4a2afc6f3d4105ca...), Qwen3-14B @40c06982 NF4 greedy thinking
+off MAX_NEW 48 (Colab T4; Colab vs Kaggle verified identical on EXAM 11), replay --strict --front-k 3 --personal.
+Run once, log overall + by type. Base EXAM 11 0.894/0.966/0.984.
