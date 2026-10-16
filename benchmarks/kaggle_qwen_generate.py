@@ -22,7 +22,8 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 MODEL = os.environ.get("GEN_MODEL", "Qwen/Qwen3-14B")
 REVISION = os.environ.get("GEN_REVISION", "40c069824f4251a91eefaf281ebe4c544efd3e18")
 PROMPTS = os.environ.get("GEN_PROMPTS", "prompts.jsonl")
-MAX_NEW, REPEAT_CHECK, PREFILL_CHUNK = 48, 10, 1024
+MAX_NEW, REPEAT_CHECK, PREFILL_CHUNK = int(os.environ.get("GEN_MAX_NEW", "48")), 10, 1024
+THINK = os.environ.get("GEN_THINK") == "1"
 
 torch.manual_seed(0)
 torch.use_deterministic_algorithms(True, warn_only=True)
@@ -44,7 +45,7 @@ EOS = set(eos if isinstance(eos, list) else [eos])
 @torch.no_grad()
 def generate(prompt):
     text = tok.apply_chat_template([{"role": "user", "content": prompt}], tokenize=False,
-                                   add_generation_prompt=True, enable_thinking=False)
+                                   add_generation_prompt=True, enable_thinking=THINK)
     ids = tok(text, return_tensors="pt").input_ids.to("cuda:0")
     out = None
     for c0 in range(0, ids.shape[1], PREFILL_CHUNK):
@@ -59,7 +60,10 @@ def generate(prompt):
         out = model(input_ids=nxt, past_key_values=out.past_key_values, use_cache=True, logits_to_keep=1)
     del out
     torch.cuda.empty_cache()
-    return tok.decode(toks, skip_special_tokens=True).strip()
+    text = tok.decode(toks, skip_special_tokens=True)
+    if THINK:
+        text = text.split("</think>", 1)[1] if "</think>" in text else ""
+    return text.strip()
 
 
 rows = [json.loads(l) for l in open(IN) if l.strip()]
