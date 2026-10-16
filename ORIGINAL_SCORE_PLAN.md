@@ -492,3 +492,9 @@ Identical to EXAM 12 except --base-calls results/exam11_m_scored/calls.jsonl and
 m_judge_prompts_exam11_personal.jsonl (500, sha256 4a2afc6f3d4105ca...), Qwen3-14B @40c06982 NF4 greedy thinking
 off MAX_NEW 48 (Colab T4; Colab vs Kaggle verified identical on EXAM 11), replay --strict --front-k 3 --personal.
 Run once, log overall + by type. Base EXAM 11 0.894/0.966/0.984.
+- **EXAM 13 result (Colab T4, 6222 s, one session, repeat 0/10, replay --strict 0 failed): 0.900 / 0.978 / 0.984**
+  (base EXAM 11 0.894/0.966/0.984: +0.6 R@1, +1.2 R@5). New best deterministic M R@1 and R@5. By type R@1
+  base->judge: knowledge-update 1.000->0.987, multi-session 0.925->0.925, single-session-assistant 1.000->0.982,
+  single-session-preference 0.567->0.533, single-session-user 0.900->0.914, temporal-reasoning 0.827->0.865.
+  --personal keeps the preference lane near base (EXAM 12 default judge lost 0.200 there) while the temporal gain
+  stays. raw sha256 009f06e52b0d3c3d..., results/exam13_m_judge.
