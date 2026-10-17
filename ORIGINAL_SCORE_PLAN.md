@@ -498,3 +498,125 @@ Run once, log overall + by type. Base EXAM 11 0.894/0.966/0.984.
   single-session-preference 0.567->0.533, single-session-user 0.900->0.914, temporal-reasoning 0.827->0.865.
   --personal keeps the preference lane near base (EXAM 12 default judge lost 0.200 there) while the temporal gain
   stays. raw sha256 009f06e52b0d3c3d..., results/exam13_m_judge.
+
+### Dev 2026-10-17: thinking-ON judge, LoCoMo 200 + pref2 80 (Kaggle T4, INCONCLUSIVE)
+280 prompts (lp 200 + p1 80), GEN_THINK=1 GEN_MAX_NEW=1024, Qwen3-14B @40c06982 NF4 greedy, same prompt/replay code
+as EXAM 9/13. Ran as two Kaggle T4 shards (s0 139 q repeat 10: 15324 s, repeat 0/10; s1 138 q repeat 0), merged to
+280/280. 57/280 outputs are empty (lp 38, p1 19): the generator strips to "" when the thinking block is not closed and
+1024 new tokens are not enough, so a fifth of the judge answers are missing. Not scored (a dev R@1 over 223/280 prompts
+would be confounded). Thinking-ON at this budget is not usable; a fair test would need MAX_NEW 3072-4096 (~3-4x GPU).
+Not adopted. Artifacts ~/.local/share/mnemonics-devthink, kernels mnemonics-devthink-think-s0/s1.
+
+## Path to R@1 = 1.0, phase 2 (Atakan, 2026-10-17): close coverage, then rank
+Current best M is EXAM 13 0.900/0.978/0.984, 50 R@1 misses. Miss distribution by type: single-session-preference
+14/30, temporal-reasoning 18/133, multi-session 10/133, single-session-user 6/70, knowledge-update 1/78,
+single-session-assistant 1/56. Fused cheap recall on M is R@50 0.978, R@100 0.992, R@200 1.000 (target arithmetic
+2026-10-07), so ~11 misses are candidate coverage and ~39 are ranking. Three conditional pre-registrations below, each
+dev-gated on LoCoMo 200 + pref2 80 (must not regress any dev R@1/R@5/R@10), each ended by one M exam. Every stage
+pinned (code SHA, HF commit) and logged. No M per-question inspection before the exam run.
+
+### EXAM 14 (pre-registered 2026-10-17, conditional, before any M call): session-level candidate union with provenance
+Motivation: coverage, not ranking. Fused cheap recall already reaches R@200 1.000 but R@50 0.978, so ~11 R@1 misses have
+gold outside the current top-50 band. Build a session-level candidate union per lane with explicit provenance (semantic
+top-N, temporal/event lane, preference lane, aggregate/comparison lane), dedup by session, keep the union band <=200.
+Dev gate: candidate recall of the union >= current, and no dev R@1/R@5/R@10 regression on LoCoMo 200 + pref2 80. The
+exact lane list, band size and code SHA are pinned in a Dev entry before the M run. M run: one deterministic pass, log
+overall + by type + candidate recall. Falsify if the union does not lift dev recall or regresses any dev metric.
+
+### EXAM 15 (pre-registered 2026-10-17, conditional, before any M call): temporal event-time lane
+Motivation: temporal-reasoning is the largest miss bucket (18/133) and the proven query-only lanes cover only part of
+it (duration event-first +7/0, aggregate/comparison +7/0, current-state/frequency +2/0). Add an event-time index
+(extracted event dates, not session timestamps: the 2026-10-07 target arithmetic already falsified timestamp-only
+routing, 10/20) as a candidate lane and extend the query-only grammar to more temporal shapes. Dev gate: positive on
+the LoCoMo temporal subset, zero regression elsewhere; lane grammar and index code SHA pinned in a Dev entry first.
+M run: one deterministic pass, overall + by type. Falsify if the temporal gain is not reproduced without a regression.
+
+### EXAM 16 (pre-registered 2026-10-17, conditional, before any M call): personalized preference selector
+Motivation: preference is the worst type (EXAM 13 0.533, 14/30) and generic CE regresses it (mn-ce-v1 0.500->0.467);
+semantic top-10 UNION extracted-preference top-50 already holds the gold session on 30/30 M preference questions, so the
+gap is selection, not recall. Build a lane-specific personalized selector (the --personal judge is the current lead,
+dev pref2 0.500 vs default 0.325) validated on the synthetic first-person preference dev set, not on M. Dev gate:
+pref2 R@1 above the 0.500 personal-judge baseline with no LoCoMo regression; selector code SHA pinned in a Dev entry
+first. M run: one deterministic pass, overall + by type. Falsify if pref2 does not improve or LoCoMo regresses.
+
+Order: EXAM 14 (coverage) -> EXAM 15 (temporal) -> EXAM 16 (preference). A thinking-ON judge is not on this path
+(dev 2026-10-17 inconclusive at MAX_NEW 1024; a 3072-4096 retry is a separate dev decision, low expected yield since
+judge answers are short index lists).
+
+### Dev 2026-10-17: LoCoMo 200 session-level candidate recall (local CPU; EXAM 14 gate instrument)
+Instrument: ~/.local/share/mnemonics-exam14/exam14_recall_dev.py on the checked-out repo, MiniLM-L6-L6,
+MNEMONICS_DETERMINISTIC=1, turn-pair chunks (primary speaker = user), SID-tagged, one shared 272-session corpus,
+touch=False (static corpus so lane order is query-independent). 200 q = random.Random(11).sample over the 1536 non-cat5
+gold-bearing questions. Session-level = dedupe the row order into sessions, gold in the first k; chunk-level = gold in
+the top-k rows. Same 200 (seed 11) sample as the 4B-reranker dev baseline (0.785/0.960/0.975).
+- session-level fused (RRF vec+bm25 k=60): R@1 0.505 / R@5 0.780 / R@10 0.905 / R@20 0.980 / R@50 **1.000** / R@100 1.000 / R@200 1.000.
+  bm25 alone 0.590/0.795/0.880/0.950/0.985/1.000/1.000; vec alone 0.380/0.700/0.825/0.930/0.990/0.995/0.995.
+- by category (fused, session): cat1 0.417/0.750/0.917/1.0, cat2 0.525/0.797/0.898/0.983, cat3 0.182/0.455/0.546/0.818,
+  cat4 0.564/0.819/0.947/0.989 (R@1/5/10/20). Cat3 (temporal/multi-hop-style) is the weak bucket, matching the M miss
+  distribution. Sanity: dense arm 0.380/0.700/0.825 vs the 2026-10-10 dense dev 0.4076/0.7246/0.8496 (200-sample,
+  session=best-chunk) -- consistent, so the instrument is not miscalibrated.
+- **EXAM 14 verdict: session-level coverage is already 1.000 at band 50 on dev** (and fused cheap recall is R@200 1.000 on
+  M). A session-level candidate union therefore adds no coverage headroom; the residual R@1 misses are ranking, not
+  coverage. EXAM 14 is deprioritized (expected ~0 gain) behind EXAM 16 (preference) and EXAM 15 (temporal). Probe retained
+  as the coverage instrument. No M run; nothing here inspects M per question.
+
+### Dev 2026-10-17: pref2 personalized preference selector (local CPU; EXAM 16 gate instrument)
+Instrument: ~/.local/share/mnemonics-exam16/exam16_pref_dev.py over the persisted pref2 artifacts
+(rerank_inputs/pref2_perq.json, pref2_sessions.jsonl, pref2_rerank_docs_top40_w3.jsonl,
+results/mnemonics-pref2-qrr4b[-pers]/scores.jsonl). Session = max over its docs, ties by dense base order
+(score_rerank_docs.py), MiniLM-L6. Harness REPRODUCES the documented pref2 numbers byte-for-byte:
+dense base 0.3625/0.8125/0.9000; 4B base 0.4750/0.7625/0.8000; 4B RRF personal 0.5125/0.8125/0.8875 (documented
+0.512/0.812/0.887). Trusted before any selector is judged on it.
+- Coverage (EXAM 16 premise, the pref2 analogue of the M "30/30" claim): the extracted-preference lane
+  (mnemonics.ingest.extract_preferences over each session text, question-vs-statement max cosine) covers the gold
+  session on 80/80; dense top-10 covers 72/80; **8/80 have gold only in the pref-50**. dense-top10 UNION pref-50 = 80/80.
+  So on pref2 the gap is selection, not coverage -- the same conclusion as M.
+- Deterministic selectors vs the 0.500 R@1 personal-judge baseline (no M data touched): pref-first lane
+  0.2125/0.500/0.8625 (bad), union pref-first 0.2125/0.500/0.8625 (bad), RRF(dense,pref) 0.4250/0.8250/0.8875,
+  z(4B)+lam z(pref) 0.475-0.4875 (no help), **RRF(personalized-4B order, extracted-pref lane, k=60)
+  0.5250/0.8500/0.9250** -- clears the 0.500 gate at R@1 and is best at R@5/R@10 (personal judge 0.500/0.7875/0.800,
+  RRF-personal 0.5125/0.8125/0.8875).
+- CAVEAT (not promotable yet): at n=80 the R@1 gain is +2 questions -- inside noise; validated on dev only; LoCoMo
+  regression NOT yet checked (required by EXAM 16). The personalization instruct alone regressed LoCoMo R@5
+  0.960->0.940 (2026-10-14), so the pref lane must be shown harmless on LoCoMo before promotion. No M run.
+
+### Next step before any EXAM 16 M call: LoCoMo no-regression check for RRF(personalized-4B, extracted-pref)
+Reproduce the LoCoMo dev 4B default (0.785/0.960/0.975) and personalization orders from the persisted
+rerank_inputs/locomo_* artifacts, then confirm RRF(pers4B, pref-lane) does not regress any of R@1/R@5/R@10. If it
+regresses, the pref lane is gated to preference-routed questions only (memory_route._PREFERENCE_RE). Only after a clean
+LoCoMo pass: pin code SHA + lane definition in a Dev entry, then one deterministic M pass (overall + by type).
+
+### Dev 2026-10-17 (cont.): EXAM 16 selector FAILS the LoCoMo gate (extracted-pref lane fused by RRF)
+Instrument: ~/.local/share/mnemonics-exam16/exam16_locomo_regress.py over the persisted LoCoMo artifacts
+(rerank_inputs/locomo_poolall_perq.json, locomo_rerank_docs_top30_w3.jsonl, results/locomo_qrr4b/scores.jsonl,
+results/mnemonics-locomo-qrr4b-pers/scores.jsonl). Reproduces the documented dev numbers exactly: dense base
+0.705/0.935/0.965, 4B default 0.785/0.960/0.975, 4B personalization instruct 0.795/0.940/0.975 (matches the 2026-10-14
+note that personalization alone regressed LoCoMo R@5 0.960->0.940).
+- On LoCoMo the extracted-pref lane adds ZERO coverage: gold_pref_only 0/200 (gold in dense top-10 193/200, in pref-50
+  199/200). So on LoCoMo the lane can only reorder, never rescue.
+- Ungated fusion regresses hard: RRF(4B,pref) 0.490/0.930/0.965, RRF(pers4B,pref) 0.475/0.925/0.965.
+- Gating the lane to _PREFERENCE_RE-routed questions (fires on 7/200 LoCoMo q) does not save it: gated RRF(4B,pref)
+  0.770/0.960/0.975, gated RRF(pers4B,pref) 0.775/0.940/0.975 -- still -1.5 to -3 R@1 vs the 4B default 0.785.
+- **Conclusion:** the selector that clears the pref2 gate (RRF(pers4B,pref) 0.525/0.850/0.925) REGRESSES LoCoMo's
+  preference-routed subset, so it is NOT promotable as-is. Structural reason: the regex pref lane is helpful exactly
+  where gold is pref-only (pref2 8/80) and harmful where it is not (LoCoMo 0/200). EXAM 16 stays open; the next
+  iteration must make the lane harmless (e.g. reorder-within-4B-top-10 only, or fire only when the question is both
+  preference-routed and first-person) and re-check both dev sets. No M run.
+
+### Dev 2026-10-17 (cont. 2): EXAM 16 premise falsified on dev -- the extracted-preference lane adds nothing
+Harness ~/.local/share/mnemonics-exam16/exam16_selector_ab.py (+ an inline RRF check) on both dev sets. Fully
+validated: with base-order RRF tie-break it reproduces EXAM 10's documented dev numbers EXACTLY -- pref2 RRF(4B,pers4B)
+0.5125/0.8125/0.8875 (= 0.512/0.812/0.887) and LoCoMo 0.8050/0.9600/0.9750 (= 0.805/0.960/0.975).
+- pref2 (n=80; preference-routed 64, first-person 79): 4B default 0.4750/0.7625/0.8000; **personalization-instruct 4B
+  ALONE 0.5375/0.8875/0.9125**; RRF(4B,pers4B) 0.5125/0.8125/0.8875; extracted-pref fusions <= 0.5250 (a reorder_top10 by
+  pref score LOWERS pers4B 0.5375 -> 0.5250). Personal judge (documented) 0.500.
+- LoCoMo (n=200; preference-routed 7, first-person 0): 4B default 0.7850/0.9600/0.9750; pers4B 0.7950/0.9400/0.9750 (R@5
+  regression); RRF(4B,pers4B) 0.8050/0.9600/0.9750 (no regression). The extracted-pref lane has gold_pref_only 0/200, so
+  any pref-score reorder only damages LoCoMo (ungated reorder_top10 -> 0.34 R@1).
+- The first-person gate (routed AND first-person) is a NO-OP on LoCoMo (first-person fires on 0/200) and preserves pref2
+  (0.5250), but the lane never helps, so this only makes it harmless, not useful.
+- **EXAM 16 verdict (dev): falsified / redundant.** The gate it pre-registered (pref2 R@1 > 0.500, LoCoMo no regression) is
+  ALREADY met by the EXAM 10 RRF that is on the M path (pref2 0.5125 > 0.500; LoCoMo 0.805/0.960/0.975). The
+  extracted-preference lane adds no coverage or ranking on either dev set and hurts when fused. No separate EXAM 16 M pass
+  is warranted -- do not spend an M run on it. The remaining preference lever is reranker/selector strength on the existing
+  order, not a new cheap lane. No M data touched.
