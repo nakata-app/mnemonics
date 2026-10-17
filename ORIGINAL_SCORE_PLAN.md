@@ -620,3 +620,19 @@ validated: with base-order RRF tie-break it reproduces EXAM 10's documented dev 
   extracted-preference lane adds no coverage or ranking on either dev set and hurts when fused. No separate EXAM 16 M pass
   is warranted -- do not spend an M run on it. The remaining preference lever is reranker/selector strength on the existing
   order, not a new cheap lane. No M data touched.
+
+### Dev 2026-10-17 (cont. 3): band-width hypothesis FALSIFIED -- the judge is selection-limited, not band-limited
+Instrument: local decomposition of the persisted LoCoMo dev judge replay (results/dev_detjudge_replay/calls.jsonl, n=200,
+deterministic judge, band top_n=10, base = 4B order 0.785/0.960/0.975, judge 0.815/0.960/0.975). Key identity: a judge
+that only reorders within its band can reach at most R@1 = R@bandN(base order), so the band-N ceiling is the base order's
+R@N.
+- detjudge top-10: R@1 0.815; **selection_miss (gold inside the band, judge did not promote it) 32/200 = 0.160**;
+  band_miss (gold outside the band) 5/200 = 0.025. So 32 of its 37 R@1 misses are its OWN in-band selection failures.
+- 4B CE order session-level ceiling (LoCoMo dev): R@10 0.975, R@20 0.995, R@30 0.995, R@50 0.995. Widening 10 -> 20
+  raises the ceiling by at most +0.020 (5 questions), while the judge already forgoes 0.160 (32 questions) inside band 10.
+- Corroboration that the lever is JUDGE STRENGTH, not band: the partial dev run dev_judge_pro_reason_top30 (reasoning
+  judge, n=68) shows selection_miss 0.132 and R@1 0.853 vs the deterministic judge's 0.160/0.815 on the same task.
+- **Verdict: band width is not the path to R@1 = 1.0.** On M (EXAM 13 0.900, judge band top-10, order R@10 0.984) the same
+  structure holds (~42 selection misses vs ~8 band misses). Widening the band chases <= 8 questions and adds distractors to
+  the ~42 that are already mis-selected. The lever is the judge/reranker SELECTION strength on the existing order, not the
+  band. No M run. No M per-question inspection; this is dev only.
