@@ -649,3 +649,16 @@ results/mnemonics-locomo-qwen14b-judge/raw.jsonl, thinking-ON from ~/.local/shar
 - **Verdict: reasoning-ON at this budget does NOT improve the judge's selection**; the "+0.043" candidate would have been a
   false positive. Only a >1024 budget is untested, but the fair signal at 1024 is null, so it is deprioritized (matches
   the phase-2 low-expected-yield note). No M run. No M per-question inspection.
+
+### Dev 2026-10-17 (cont. 5): the residual gap is NEAR-TIE DISCRIMINATION (not band, gate, or budget)
+LoCoMo dev 200; judge band = the 4B CE order's top-10 (dev_detjudge_replay base == the 4B order, R@1 0.785); Qwen3-14B
+judge order R@1 0.815.
+- In-band gold rank: rank1 157, rank2 23, rank3 8, rank4-10 7, >10 5. Oracle in-band top-1 = 0.975, so the 0.16 gap is
+  capturable in principle but needs near-perfect in-band top-1 selection.
+- The judge DEMOTES a correct CE #1 on 11/200 while fixing 17 (net +6). All 11 demotions are NEAR-TIES: the CE top1-top2
+  session-score margin is 0.00-0.03 on 7 of 11 and <=0.45 on the rest (all-margin median 0.05).
+- A CE-margin trust gate (keep the CE order when margin > tau, else the judge order) tops out at R@1 0.820 (tau 0.25,
+  +1 question); it cannot isolate the demotions because they are near-ties where the CE is itself uncertain.
+- **Diagnosis:** the remaining M/LoCoMo gap is top-1 discrimination among topically-similar near-tie sessions. Band width,
+  candidate coverage, cheap lanes, reasoning budget, and margin gating are all exhausted on dev. Breaking the ceiling needs a
+  technique change aimed at near-tie discrimination. No M run. No M per-question inspection.
