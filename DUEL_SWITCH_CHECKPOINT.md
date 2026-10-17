@@ -116,7 +116,31 @@ p=0.26 and not deterministic).
 scaling (see above): it raises switch precision in all three duel models without a single GPU call, but it reaches
 +6/+7 of the required +8 and p=0.09-0.11. Text-only rules from the model's own reasoning are falsified.
 
-**Step 2 — needs more questions, not more GPU.** The resolving experiment is ~400-600 unseen LoCoMo questions:
+**Step 2 — needs more questions, not more GPU.** The resolving experiment is ~400-600 unseen LoCoMo questions.
+PRE-REGISTERED 2026-10-18 02:45, before any holdout judge output existed:
+
+- Set: 500 qids sampled with `random.seed(13)` from the 1336 LoCoMo questions that are in the qwen-rerank full
+  run (`results/locomo_clean2_qwenrr_full/calls.jsonl`) and NOT in the 200 dev questions. Frozen in
+  `rerank_inputs/locomo_holdout_qids.json`; perq in `rerank_inputs/locomo_holdout_perq.json`.
+- Base order for holdout = that run's qwen-rerank `order` (8 candidates, base R@1 0.826). DEVIATION from dev, where
+  the judge stage saw qrr4b-base prompts (verified byte-identical: sha `1d1badf1…`) and was scored on the CE base
+  (0.785). Holdout is self-consistent (prompts and scoring use the same base) but its absolute numbers are NOT
+  comparable to dev -- only the paired gate effect inside holdout is.
+- Judge: unchanged deterministic kernel (Qwen3-14B @40c0698, NF4, greedy, MAX_NEW 48, thinking off, repeat-check
+  10), same prompt template and flags (top-n 10, windows-per-session 3, window-chars 600, no --personal).
+- Gate: unchanged margin-0 sign rule from `duel_switch_gate.py`, tested in BOTH forms, because the mechanism is the
+  conjunction: (i) `--mode veto` on a 32B duel run on the same 500 questions -- the actual claim; (ii) `--mode swap`,
+  the negative control already measured as harmful on dev. Bar: **net >= +4% of n (= +20 of 500) and McNemar
+  p < 0.05**, for the veto form. If (ii) holds up as harmful and (i) still gains, the conjunction claim survives a
+  new sample; if either flips, the dev gain was noise and the line closes with judge-only 0.815.
+- Two GPU kernels, run in order: deterministic 14B judge on the 500 holdout prompts (~dm dev: 200 prompts took
+  1664 s on Colab T4), then the Qwen3-32B duel kernel on the holdout duel prompts (dev: 183 prompts, 5672 s on
+  2xT4). Both are existing kernel sources pointed at the new prompt dataset; check the weekly GPU quota first.
+- Amendment log: this design was written before any holdout output existed. The first draft omitted the 32B duel and
+  would only have re-measured the negative control; it was replaced in the same minute, still before any judge
+  output, because a swap-only holdout cannot test the conjunction at all.
+
+The operational steps are (unchanged from the original plan):
 
 1. `python benchmarks/dev_llm_rerank.py --ce-only` (or the existing rerank path) over the unseen qids to fill a new
    CE cache; LoCoMo QA total is 1986, the dev 200 is a subset, so pick the complement explicitly and freeze the
