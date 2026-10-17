@@ -579,6 +579,21 @@ dense base 0.3625/0.8125/0.9000; 4B base 0.4750/0.7625/0.8000; 4B RRF personal 0
 - CAVEAT (not promotable yet): at n=80 the R@1 gain is +2 questions -- inside noise; validated on dev only; LoCoMo
   regression NOT yet checked (required by EXAM 16). The personalization instruct alone regressed LoCoMo R@5
   0.960->0.940 (2026-10-14), so the pref lane must be shown harmless on LoCoMo before promotion. No M run.
+- CORRECTION 2026-10-17 (encoder audit): the encoder-dependent numbers above were computed with the AdaptMem
+  checkpoint, not MiniLM. `~/.zshrc` exports MNEMONICS_ADAPTMEM_PATH, and `_resolve_model` silently swaps it in for
+  all-MiniLM-L6-v2 whenever MNEMONICS_ENCODER_MODEL is unset; exam16_pref_dev.py called `_get_encoder()` unpinned.
+  Proof: pref-first 0.2125/0.500/0.8625 and RRF(dense,pref) 0.4250/0.8250/0.8875 reproduce byte-exact only with
+  AdaptMem on. With MiniLM (pinned, run twice, identical): pref lane 0.1875/0.5000/0.8625, RRF(dense,pref)
+  0.4375/0.8250/0.9000, RRF(4B base,pref) 0.5375/0.8125/0.9000. Encoder-free lines (dense base, 4B base, 4B RRF
+  personal 0.5125/0.8125/0.8875) are unaffected. The headline RRF(personalized-4B, pref, k=60) 0.5250/0.8500/0.9250
+  is NOT reproducible from the current exam16_pref_dev.py or exam16_selector_ab.py under either encoder (both were
+  last edited 13:40-13:51, before this audit); treat it as unverified and re-derive it with MiniLM before any EXAM 16
+  decision. The AdaptMem checkpoint (bge-large-ft-300-20260906) was fine-tuned on LongMemEval text: 104 of 231
+  model-card sample sentences appear verbatim in longmemeval_s_cleaned.json, so it must never touch an LME
+  measurement. M exams 4-13 are not affected (orig-v2 Kaggle kernels pin stock MiniLM + ms-marco CE, no env, no
+  checkpoint); the EXAM 14 gate is not affected (it pins MNEMONICS_ENCODER_MODEL, which wins over AdaptMem).
+  Fix: all three exam16 scripts now pin MNEMONICS_ENCODER_MODEL=sentence-transformers/all-MiniLM-L6-v2 (as exam14
+  does) and print the resolved encoder. The original lines above are kept as the historical record.
 
 ### Next step before any EXAM 16 M call: LoCoMo no-regression check for RRF(personalized-4B, extracted-pref)
 Reproduce the LoCoMo dev 4B default (0.785/0.960/0.975) and personalization orders from the persisted
