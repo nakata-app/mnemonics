@@ -29,6 +29,18 @@ state, or how long ago something happened.
 
 Reply with only the session number."""
 
+PROMPT2 = """You are the retrieval judge of a personal memory assistant.
+{today}Question: {question}
+
+Below are {n} past conversation sessions, each with its date, all retrieved as candidates. Exactly one holds the
+information needed to answer the question. Use the dates for questions about time, order, the latest state, or how
+long ago something happened.
+
+{blocks}
+
+For each session, in at most one short sentence, say what it contributes to answering the question. Then on a new
+line output exactly: ANSWER: <session number>"""
+
 
 def main() -> None:
     ap = argparse.ArgumentParser()
@@ -49,6 +61,10 @@ def main() -> None:
     ap.add_argument("--duel-k", type=int, default=2)
     ap.add_argument("--duel-chars", type=int, default=8000)
     ap.add_argument("--window-chars", type=int, default=600)
+    ap.add_argument("--reason-prompt", action="store_true",
+                    help="use a prompt that asks for one sentence of reasoning then 'ANSWER: <n>'")
+    ap.add_argument("--dump-prompts", type=Path, help="write {qid, prompt} JSONL instead of calling the LLM")
+    ap.add_argument("--replay-raw", type=Path, help="JSONL {qid, raw} from a deterministic generation run")
     args = ap.parse_args()
 
     perq = {r["qid"]: r for r in json.load(open(args.perq))}
@@ -65,6 +81,9 @@ def main() -> None:
     if (args.out / "calls.jsonl").exists():
         done = {json.loads(l)["qid"] for l in open(args.out / "calls.jsonl") if l.strip()}
     log = (args.out / "calls.jsonl").open("a")
+    dump = args.dump_prompts.open("w") if args.dump_prompts else None
+    replay = ({json.loads(l)["qid"]: json.loads(l)["raw"] for l in open(args.replay_raw) if l.strip()}
+              if args.replay_raw else None)
 
     for o in judge:
         qid = o["qid"]
@@ -90,20 +109,41 @@ def main() -> None:
                     keep.append(j); used += len(ch[j])
                 blocks.append(f"[{i}] date: {sess[s][0]}\n" + "\n...\n".join(ch[j] for j in sorted(keep)))
             today = f"Today's date: {qdates[qid]}\n" if qid in qdates else ""
-            raw, dt, usage = chat(args.provider, args.model,
-                                  PROMPT.format(today=today, question=r["question"], n=len(duel),
-                                                blocks="\n\n".join(blocks)),
-                                  args.max_tokens, args.timeout, args.reasoning)
+            tpl = PROMPT2 if args.reason_prompt else PROMPT
+            prompt = tpl.format(today=today, question=r["question"], n=len(duel),
+                                blocks="\n\n".join(blocks))
+            if dump is not None:
+                dump.write(json.dumps({"qid": qid, "prompt": prompt}) + "\n")
+                continue
+            if replay is not None:
+                raw, dt, usage = replay.get(qid), 0.0, {}
+            else:
+                raw, dt, usage = chat(args.provider, args.model, prompt,
+                                      args.max_tokens, args.timeout, args.reasoning)
             if raw is None and args.strict:
                 raise SystemExit(f"STRICT_ABORT qid={qid} {usage}")
-            mm = re.search(r"\d+", raw or "")
-            if mm and int(mm.group(0)) < len(duel):
-                w = duel[int(mm.group(0))]
+            raw_s = raw or ""
+            m_ans = re.search(r"(?i)answer:\s*(\d+)", raw_s)
+            if m_ans:
+                idx = int(m_ans.group(1))
+            else:
+                # A bare index ("0", "[1]") is an answer; prose is not. Grabbing the last number out of
+                # prose ("... August 11 ...") silently moves a session for no reason, so keep the judge
+                # order unless the whole output is just an index.
+                bare = re.fullmatch(r"\s*[\[(]?\s*(\d{1,3})\s*[\])]?\s*[.!]?\s*", raw_s)
+                idx = int(bare.group(1)) if bare else None
+            if idx is not None and idx < len(duel):
+                w = duel[idx]
                 order = [w] + [s for s in o["order"] if s != w]
         log.write(json.dumps({"qid": qid, "qtype": o["qtype"], "base": o["base"], "judge": o["order"][:30],
                               "order": order[:30], "gold": o["gold"], "raw": raw, "latency_s": round(dt, 2),
                               "usage": usage}) + "\n")
         log.flush()
+
+    if dump is not None:
+        dump.close()
+        print(f"prompts written -> {args.dump_prompts}")
+        return
 
     rows = [json.loads(l) for l in open(args.out / "calls.jsonl") if l.strip()]
     ks = (1, 5, 10)
@@ -118,7 +158,8 @@ def main() -> None:
             BT[o["qtype"]]["judge"][i] += any(s in g for s in o["judge"][:k])
             BT[o["qtype"]]["duel"][i] += any(s in g for s in o["order"][:k])
     n = len(rows)
-    summary = {"n": n, "model": args.model, "duel_k": args.duel_k, "duel_chars": args.duel_chars,
+    summary = {"n": n, "model": f"replay:{args.replay_raw.name}" if replay is not None else args.model,
+               "duel_k": args.duel_k, "duel_chars": args.duel_chars, "reason_prompt": args.reason_prompt,
                "duels": sum(o["raw"] is not None for o in rows),
                "base": [round(x / n, 4) for x in H["base"]], "judge": [round(x / n, 4) for x in H["judge"]],
                "duel": [round(x / n, 4) for x in H["order"]],

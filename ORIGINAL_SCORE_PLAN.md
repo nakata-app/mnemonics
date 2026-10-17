@@ -677,3 +677,51 @@ judge order R@1 0.815.
 - **Diagnosis:** the remaining M/LoCoMo gap is top-1 discrimination among topically-similar near-tie sessions. Band width,
   candidate coverage, cheap lanes, reasoning budget, and margin gating are all exhausted on dev. Breaking the ceiling needs a
   technique change aimed at near-tie discrimination. No M run. No M per-question inspection.
+
+### Dev 2026-10-17 (cont. 6): final-duel variants on the deterministic judge order -- 14B negative, 32B +3 (null), cloud flash +6 (null)
+Instrument: benchmarks/llm_judge_duel.py (additions in this commit: --reason-prompt PROMPT2 "one sentence per session
+then ANSWER: <n>", --replay-raw, --dump-prompts). Stage-1 judge fixed: results/dev_detjudge_replay/calls.jsonl (base = 4B CE
+order 0.785/0.960/0.975, deterministic Qwen3-14B judge 0.815/0.960/0.975). duel_k 2, duel_chars 8000, window CE from
+rerank_inputs/locomo_ce_cache_w600.json, perq locomo_poolall_perq.json, sessions locomo10.json. 183/200 questions enter
+the duel (the judge named >=2 picks). Regenerated prompts are byte-identical to rerank_inputs/locomo_duel_prompts_reason.jsonl
+(sha256 6eac7eebbc508a80..., 183 lines), and all three runs below share the same judge order and gold on all 200 rows
+(verified pairwise), so they answer the same inputs.
+- Qwen3-14B @40c06982 NF4, Kaggle T4, greedy, thinking off, MAX_NEW 48, 183/183, repeat 0/10:
+  **0.775 / 0.960 / 0.975** (12 fixes, 20 breaks, net -8, McNemar p=0.22). Note the output is a bare index ("0", "[0]",
+  "1") on all 183 -- at MAX_NEW 48 this model does not produce the sentence of reasoning, so this run is a plain 2-way
+  choice, not a reasoning duel. results/dev_duel_qwen14b.
+- Qwen3-32B @9216db5781bf21249d130ec9da846c4624c16137 NF4, Kaggle 2xT4, greedy, MAX_NEW 512 (the kernel default;
+  no output hit the cap, median 267 chars), 183/183 in 5672 s, repeat 0/10 (0 mismatches): **0.830 / 0.960 / 0.975**
+  (10 fixes, 7 breaks, net +3, p=0.63). This one does reason (a sentence per session plus "ANSWER: n" on all 183).
+  results/dev_duel_qwen32b (raw sha256
+  d6a4f2a06d574c301c07ca354a33fcf6c1b2a2fee3e04eb585be94d301f09ed2), kernel mnemonics-locomo-duel-qwen32b.
+- deepseek-v4.1-flash (Ollama cloud): **0.845 / 0.960 / 0.975** (13 fixes, 7 breaks, net +6, p=0.26). Bare indices too.
+  Best number of the three, but +0.03 is ~1 SD at n=200 and the model is a non-deterministic cloud call, so it cannot be
+  the deterministic path. results/dev_duel_evren_flash.
+By type R@1 judge -> duel: 32B cat1 0.806 -> 0.694 (-4 q, its only negative category), cat2 0.864 -> 0.898 (+2), cat3
+0.455 -> 0.455, cat4 0.830 -> 0.883 (+5). Flash: cat1 0.694, cat2 0.932, cat4 0.894. 14B: cat1 0.750, cat2 0.847,
+cat4 0.777.
+INSTRUMENT BUG found while reading the 32B outputs (fixed, and it changes the 32B number, so both are recorded): the
+answer parser took the last integer anywhere in the output when no "ANSWER: n" line was found. On 15 of the 32B's 183
+answers the ANSWER line itself was prose ("ANSWER: Neither session directly answers the question ...") and the fallback
+moved the top session on a stray digit taken from it. Strict parse (bare index or "ANSWER: n" only; unparseable keeps
+the judge order -- the rule cont. 3 already stated) gives 32B **0.830**, the old fallback gave 0.820 (10 fixes, 9
+breaks). The 14B and flash numbers are untouched
+(their outputs are bare indices, which the strict parser accepts). benchmark/llm_judge_duel.py now only accepts a bare
+index as the fallback and labels a replay run "replay:<file>" instead of naming a cloud model that was never called.
+WHY the deterministic duel is null (32B per-question behavior, no M data): on the 17 questions where the judge's #1 is
+wrong and its #2 is gold it switches 10/17 (0.59, so it can discriminate); on the 146 where the judge's #1 is already
+right it still switches on 12 and loses 7 of them (the other 5 land on a session that is also gold). The 26 plain "1"
+answers split 10 fixes / 7 breaks / 5 neutral / 4 where neither candidate is gold; switch precision 10/26 = 0.38. So
+the binding constraint is switch CALIBRATION, not discrimination -- the same near-tie story as cont. 5, now with an
+explicit mechanism.
+- Exploratory (post-hoc, same 200 dev questions -- no promotion claim): a text rule "switch only if the session-0
+  reasoning says it lacks the information" is null (32B 0.815 = the judge; 14B and flash 0.815 by suppressing every
+  switch). The cue regex also fires on 0 of the 14B/flash raws, so it is not portable.
+- **Verdict / gating: the final duel FAILS the dev gate and is not adopted. No M run, no M data touched.** Deterministic
+  14B is negative (0.775), deterministic 32B is null (+3 q, p=0.63), and the only larger number is the non-deterministic
+  cloud flash (+6, p=0.26), which does not separate from zero. The duel_k=2 ceiling is 17/200 = +0.085: the 32B already
+  takes 10 of the 17 recoverable questions while losing 7, so more scale at the same prompt will not help. A future duel
+  must improve the switch decision (an explicit "session 0 lacks the answer" gate, validated on a held-out dev sample),
+  not the model. Also logged: mnemonics-locomo-duel-qwen14b-reason (thinking-ON duel variant) never ran -- the kernel
+  slug does not exist / is inaccessible; no GPU result was lost with it.
