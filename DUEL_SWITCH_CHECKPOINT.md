@@ -1,6 +1,6 @@
 # Mnemonics Final-Duel Switch — Active Checkpoint
 
-Updated: 2026-10-18 (repo HEAD `4bd8c81`)
+Updated: 2026-10-18 (repo HEAD `4bd8c81`; cont. 7 gate results appended below)
 
 Everything below is dev-only (LoCoMo dev, 200 questions, one fixed deterministic judge order). No LongMemEval-M
 data was read or written by any of these runs.
@@ -20,6 +20,31 @@ All three duel runs see byte-identical prompts (`rerank_inputs/locomo_duel_promp
 (the judge named >=2 picks); the other 17 keep the judge order.
 
 **Verdict: the deterministic duel does not pass the dev gate** (32B +3, p=0.63 -> null). No M run. M untouched.
+
+### Cont. 7: the CE-agreement gate (Step 1 attempted) -- precision up, still underpowered
+
+Rule (one, zero free parameters, gold/qtype/qid never read): take the duel's move only when the CE ranks the judge's
+#2 above its #1 (session score = max window CE); otherwise keep the judge order. `benchmarks/duel_switch_gate.py`
+emits a gated raw that the normal `--replay-raw` path scores.
+
+| run | ungated | **gated** | paired | p | switches | precision |
+|---|---|---|---|---|---|---|
+| 32B | 0.830 | **0.845** | 8F/2B | 0.109 | 26 -> 12 | 0.588 -> 0.800 |
+| cloud flash | 0.845 | **0.850** | 10F/3B | 0.092 | 29 -> 17 | 0.650 -> 0.769 |
+| 14B | 0.775 | **0.825** | 9F/7B | 0.803 | 57 -> 27 | 0.375 -> 0.562 |
+
+- Pre-registered dev gate (**net >= +8 and p < 0.05**): **FAIL** (best +7, p=0.092). No promotion, no M run.
+- Rescues pass the gate more than breaks in all three models (8/2 p=0.054; 9/7 p=0.066; 10/3 p=0.174) -- same 200
+  questions, so this is one signal seen three times, not three replications.
+- Negative control: CE alone as the swapper hurts (judge 0.815 -> 0.785, 12F/18B; pro judge 0.890 -> 0.865). The
+  information is in the conjunction "duel switches AND CE agrees", not in the CE.
+- Text-only rules from the 32B reasoning were also tried and are dead (best cue: 2 rescues / 0 breaks; all 26 switches
+  are when-questions, so qtype cannot gate). Recorded in the ledger so nobody re-runs them.
+- Power: 8F/2B per 200 rows -> p=0.012 at n=400, p=0.0014 at n=600 if the rates hold.
+
+**Next experiment (pre-registered, not yet run):** ~400-600 *unseen* LoCoMo questions (1986 QA total, dev uses 200 ->
+1786 free) with their own CE cache and deterministic 14B judge order, then the same margin-0 gate judged at
+net >= +4% of n with p < 0.05. Do not tune the margin or any other threshold on the 200 dev rows first.
 
 ## Artifacts
 
@@ -87,20 +112,22 @@ p=0.26 and not deterministic).
 
 ## How to continue (ordered; each step is offline and cheap until a gate passes)
 
-**Step 1 — build a switch gate that is actually calibrated (no GPU).**
-The 32B outputs already contain the reasoning. Fit/derive a decision rule from the *question+session text only*
-(no gold, no qtype, no qid) that predicts "judge #1 is insufficient" better than the model's own choice: e.g.
-require the duel's chosen session to be supported by a quoted span, require the unchosen session to be explicitly
-negated, or abstain (keep judge order) unless the margin between the two sessions is large. Score it with
-`llm_judge_duel.py --replay-raw` (store the rule's verdicts as a raw.jsonl; the rule is then just another raw run,
-so the instrument stays untouched).
-Pre-registered gate for any promotion: **net >= +8 of 200 and McNemar p < 0.05 on dev**, plus the rule must be
-derivable from text alone (audit it for qid/gold/qtype literals before scoring).
+**Step 1 — DONE (cont. 7), verdict: underpowered null, do not promote.** The CE-agreement gate is the version worth
+scaling (see above): it raises switch precision in all three duel models without a single GPU call, but it reaches
++6/+7 of the required +8 and p=0.09-0.11. Text-only rules from the model's own reasoning are falsified.
 
-**Step 2 — only if Step 1 passes dev:** repeat with the deterministic judge order and a second seed/temperature-0
-rerun to prove determinism (the 32B kernel already showed repeat-check 0/10). Then, and only then, run the
-pre-registered EXAM gate on M (see the "EXAM" sections). Do not touch M before the dev gate is met — the ledger has
-already burned three null promotions.
+**Step 2 — needs more questions, not more GPU.** The resolving experiment is ~400-600 unseen LoCoMo questions:
+
+1. `python benchmarks/dev_llm_rerank.py --ce-only` (or the existing rerank path) over the unseen qids to fill a new
+   CE cache; LoCoMo QA total is 1986, the dev 200 is a subset, so pick the complement explicitly and freeze the
+   qid list in a file next to the cache (`locomo_holdout_qids.json`).
+2. Run the deterministic 14B judge over those prompts on Kaggle (check the weekly GPU quota first; the 32B duel used
+   2xT4 for 5672 s).
+3. `duel_switch_gate.py` + `llm_judge_duel.py --replay-raw` as usual, and score the gate at net >= +4% of n, p < 0.05.
+   Only if that passes does EXAM/M come back into play -- and the EXAM gate is pre-registered there.
+
+**Step 3 — if the holdout also comes back flat:** accept judge-only (0.815 deterministic) for this line and move the
+lever to the judge's near-tie top-1 (cont. 5: 11 demoted-correct CE#1s) instead of another duel round.
 
 **Step 3 — if Step 1 fails again,** the honest fallback is judge-only (0.815 deterministic) and the next lever is
 the judge's near-tie top-1 (cont. 5: 11 demoted-correct CE#1s), not another duel round. A listwise judge that sees

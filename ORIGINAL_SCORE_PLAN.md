@@ -725,3 +725,39 @@ explicit mechanism.
   must improve the switch decision (an explicit "session 0 lacks the answer" gate, validated on a held-out dev sample),
   not the model. Also logged: mnemonics-locomo-duel-qwen14b-reason (thinking-ON duel variant) never ran -- the kernel
   slug does not exist / is inaccessible; no GPU result was lost with it.
+
+### Dev 2026-10-18 (cont. 7): CE-vs-judge agreement gate -- precision up on all three duel models, still short
+of the pre-registered +8/p<0.05 dev gate
+Step 1 from DUEL_SWITCH_CHECKPOINT.md, two attempts, both on the same 200 dev questions and the same fixed judge order
+(0.815). No M data. No new GPU run: every number below is an offline replay through benchmarks/llm_judge_duel.py.
+- TEXT-ONLY RULES from the 32B's own reasoning: dead. On the 26 rows where it moved the judge's #1 (10 rescues,
+  7 breaks, 5 neutral, 4 harmless) no feature separates right from wrong switches. "session 0 says it does not
+  mention X" fires 2 rescues / 0 breaks / 2 other; "session 0 does not specify" fires 0/1; "but/however in session 0"
+  1/1; "implied/indicates in session 1" 0/1; CE-style date cues 0/0; "session 1 sentence much longer" 4/5. All 26
+  switches are on when/how-long questions, so question type cannot gate either. A gate built from these would cap at
+  +2 of the +8 required.
+- CE-DISAGREEMENT GATE (benchmarks/duel_switch_gate.py, one rule, zero free parameters): take the duel's move only
+  when the CE ranks the judge's #2 ABOVE its #1 (session score = max window CE, the same number the judge stage uses
+  to pick windows); otherwise keep the judge order. Gold, qtype and qid are never read. Gated raws are replayed as
+  ordinary generation runs, so the instrument and its parse rules are unchanged.
+  - 32B: 0.830 -> **0.845** (8F/2B, net +6, p=0.109, switches 26 -> 12, yield 0.385 -> 0.667, precision 0.588 -> 0.800,
+    lost-when-judge-right 7 -> 2). results/dev_duel_qwen32b_gate_ce.
+  - cloud flash: 0.845 -> **0.850** (10F/3B, net +7, p=0.092, switches 29 -> 17, yield 0.588, precision 0.769).
+    results/dev_duel_evren_flash_gate_ce.
+  - 14B: 0.775 -> **0.825** (9F/7B, net +2, p=0.80, switches 57 -> 27, precision 0.562). A 0.775 run reaching above the
+    0.815 judge shows the gate is model-agnostic. results/dev_duel_qwen14b_gate_ce.
+- The gate's own discrimination, computed after the fact: rescues pass it more often than breaks in all three models
+  (8/2 Fisher p=0.054; 9/7 p=0.066; 10/3 p=0.174). These are the same 200 questions, so they are NOT independent
+  replications -- one directional signal seen three times, not three confirmations.
+- NEGATIVE CONTROL (--mode swap, CE alone as the swapper, no LLM): harmful. Deterministic judge 0.815 -> 0.785
+  (12F/18B, p=0.36; results/dev_detjudge_replay_swap_ce) and deepseek-v4-pro judge 0.890 -> 0.865 (6F/11B, p=0.33;
+  results/dev_judge_pro_w6_reason_swap_ce). So the CE is not the signal by itself; the information is in the
+  CONJUNCTION "the duel switches AND the CE agrees", i.e. an agreement filter on the model's switch.
+- GATE VERDICT: FAIL. The pre-registered bar was net >= +8 of 200 AND McNemar p < 0.05; the best is +7 (flash, p=0.09)
+  and the deterministic option is +6 (32B, p=0.11). No promotion, no M run, M still untouched. This is a power
+  problem, not a code problem: the observed 8F/2B per 200 rows would give p=0.012 at n=400 and p=0.0014 at n=600 if
+  the same rates held. The next test therefore needs MORE QUESTIONS, not more GPU capacity: LoCoMo has 1986 QA and
+  dev uses 200, so 1786 are unseen. Pre-registered next experiment: ~400-600 unseen LoCoMo questions, CE cache +
+  deterministic 14B judge order on them, then the same gate with the same +8/p<0.05-equivalent bar (net >= +4% of n
+  and p < 0.05). Do not tune the margin or any other threshold on the 200 dev rows first -- the checkpoint records
+  that the sign rule with margin 0 is the pre-registered version.
