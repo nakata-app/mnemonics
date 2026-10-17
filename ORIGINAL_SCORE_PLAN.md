@@ -636,3 +636,16 @@ R@N.
   structure holds (~42 selection misses vs ~8 band misses). Widening the band chases <= 8 questions and adds distractors to
   the ~42 that are already mis-selected. The lever is the judge/reranker SELECTION strength on the existing order, not the
   band. No M run. No M per-question inspection; this is dev only.
+
+### Dev 2026-10-17 (cont. 4): reasoning-ON selection gain is SUBSET BIAS -- fair paired test is null
+Same model (Qwen3-14B), same LoCoMo dev 200, same top-10 band; thinking-OFF from
+results/mnemonics-locomo-qwen14b-judge/raw.jsonl, thinking-ON from ~/.local/share/mnemonics-devthink/raw.jsonl (lp:*, the
+2026-10-17 MAX_NEW 1024 run), scored against results/dev_detjudge_replay/calls.jsonl base/gold.
+- thinking-OFF: 200 scored, R@1 0.815, selection_miss 32 (0.160), band_miss 5.
+- thinking-ON @ MAX_NEW 1024: 162 scored, 38 empty; R@1 0.858 over the 162 -- which looks like +0.043, BUT restricted to
+  the SAME 162 qids thinking-OFF is 0.833 vs ON 0.840 (+1 question). Paired flips: ON fixes 7, OFF fixes 6 (net +1).
+  The apparent gain was subset bias: the 38 ON-empty qids are the hard ones (OFF R@1 0.737 there). (Also note: raws that
+  are non-empty but unparseable must NOT fall back to the base order when scoring, or R@1 inflates -- the 0.858 figure.)
+- **Verdict: reasoning-ON at this budget does NOT improve the judge's selection**; the "+0.043" candidate would have been a
+  false positive. Only a >1024 budget is untested, but the fair signal at 1024 is null, so it is deprioritized (matches
+  the phase-2 low-expected-yield note). No M run. No M per-question inspection.
