@@ -140,6 +140,22 @@ PRE-REGISTERED 2026-10-18 02:45, before any holdout judge output existed:
   would only have re-measured the negative control; it was replaced in the same minute, still before any judge
   output, because a swap-only holdout cannot test the conjunction at all.
 
+### Holdout progress (2026-10-18 04:05)
+
+- 500 unseen questions built, CE cache filled (500 qids, `locomo_holdout_ce_w600.json`), judge prompts dumped and
+  uploaded as Kaggle dataset `atakanakbaba/mnemonics-locomo-holdout-judge-prompts`.
+- Deterministic 14B judge **COMPLETE**: 500 prompts in 1771 s, repeat-check 0/10 mismatches (deterministic).
+  Judge order replayed onto the holdout base: **base 0.826 / 0.948 / 0.950 -> judge 0.852 / 0.948 / 0.950** on 500
+  questions (`results/holdout_judge`). So the judge stage itself replicates on unseen data (+13 rows).
+- Negative control `--mode swap` on holdout (`results/holdout_judge_swap`): 0.822, **net -15, p=0.036** (15F/30B,
+  70 switches). The dev finding that CE disagreement alone is harmful replicates on new questions -- this is the
+  first result in this line that is significant and on held-out data, and it is a NEGATIVE result for the CE.
+- 32B duel on the holdout: 383 duel prompts (the judge named >=2 picks on 383 of 500), kernel
+  `atakanakbaba/mnemonics-locomo-holdout-duel-qwen32b` pushed and RUNNING (~3.3 h expected at the dev rate of
+  31 s/prompt on 2xT4). The veto-form gate result is the pending measurement.
+- Note for the veto test: with judge 0.852 the rescuable ceiling is 28/500 (judge #1 wrong and judge #2 gold), so a
+  perfect switch rule tops out at 0.908; the pre-registered bar is +20 net.
+
 The operational steps are (unchanged from the original plan):
 
 1. `python benchmarks/dev_llm_rerank.py --ce-only` (or the existing rerank path) over the unseen qids to fill a new
