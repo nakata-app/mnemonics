@@ -188,3 +188,31 @@ dates + 2 windows per candidate is the cheapest thing not yet tried.
   no result to recover.
 - Kaggle GPU quota: the 32B run used 2xT4 for 5672 s. Check weekly quota before launching another GPU kernel.
 - M data: still untouched by this line of work.
+
+## PRE-REGISTERED 2026-10-18 04:20 — complement-836 replication (written before any 836 output exists)
+
+Why now: the running 500-question veto test is not decisive against a shrunken effect. Power at n=500 is 0.84 if the
+true gated rate is 4% fixes / 1% breaks, but only 0.54 at 3%/1% and 0.23 at 2.5%/1.25% -- and the dev estimate
+(8F/2B of 200) is itself selection-biased upward because the gate was chosen on those rows. A flat n=500 result would
+therefore be uninformative, which is the exact failure mode this line already had at n=200. Power at n=836: 0.98 /
+0.79 / 0.38 for the same three rates. (Monte-Carlo McNemar power, 4000 sims, seed 1.)
+
+- Set: every remaining unseen question, not a sample. `complement = (qwenrr_full 1536 qids - dev 200) - holdout 500`
+  = **836 qids**, frozen in `rerank_inputs/locomo_comp836_qids.json` (sorted), perq in
+  `rerank_inputs/locomo_comp836_perq.json`. There is no seed and no judgement here: the set is the arithmetic
+  complement, so no researcher freedom exists in what goes in it.
+- Instrument: byte-identical reconstruction of the holdout pipeline. Verified before this pre-registration by
+  re-dumping the 500 holdout judge prompts from perq + base order + `locomo10.json` + the existing CE cache:
+  sha256 `af6ac22c9e54de13…` matched `locomo_holdout_judge_prompts.jsonl` exactly. Same flags, same 14B judge
+  kernel, same 32B duel kernel, same gate at margin 0. New CE cache file
+  `rerank_inputs/locomo_comp836_ce_w600.json` -- no scores are copied from dev or holdout, so nothing can leak across
+  sets through the cache.
+- Bars, both pre-registered:
+  1. Per-set (836): veto form net >= +4% of n (= **+34**) and McNemar p < 0.05. Swap form must stay harmful.
+  2. Confirmatory pooled (500 + 836 = 1336): veto net >= **+54** and p < 0.05. The pooled number is the one that
+     decides whether the duo (duel shift ∧ CE agreement) beats judge-only; the per-set numbers are replication
+     diagnostics, not pick-your-favourite evidence.
+- No peeking: all 836 are generated, scored and reported in one pass. No stopping early on a partial subset, no
+  dropping questions, no re-running with a different duel_k.
+- What would falsify: veto failing the 836 bar while the swap control also stops being harmful, or a pooled net below
+  +54 with p >= 0.05. In that case the line closes at judge-only and the lever moves to the judge's near-tie top-1.

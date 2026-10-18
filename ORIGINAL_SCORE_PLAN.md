@@ -761,3 +761,20 @@ Step 1 from DUEL_SWITCH_CHECKPOINT.md, two attempts, both on the same 200 dev qu
   deterministic 14B judge order on them, then the same gate with the same +8/p<0.05-equivalent bar (net >= +4% of n
   and p < 0.05). Do not tune the margin or any other threshold on the 200 dev rows first -- the checkpoint records
   that the sign rule with margin 0 is the pre-registered version.
+
+### cont. 8 (2026-10-18 04:20) — Pre-registered complement-836 replication, written before any 836 output exists
+
+The holdout-500 veto test alone is underpowered against a shrunken effect: Monte-Carlo McNemar power at n=500 is
+0.84 (4% fixes / 1% breaks), 0.54 (3%/1%), 0.23 (2.5%/1.25%); at n=836 it is 0.98 / 0.79 / 0.38. Dev's 8F/2B of 200
+is an upward-biased estimate (the gate was selected on those rows), so the shrinkage case is the realistic one.
+
+Registered before generating anything on the new set:
+- Set = arithmetic complement, no sampling: (1536 qwenrr_full qids - 200 dev) - 500 holdout = 836,
+  `rerank_inputs/locomo_comp836_qids.json`.
+- Instrument reproduced byte-identically: re-dumped the 500 holdout judge prompts and matched
+  `locomo_holdout_judge_prompts.jsonl` at sha256 `af6ac22c9e54de13…`; same kernels, same flags, margin-0 gate.
+  Fresh CE cache (`locomo_comp836_ce_w600.json`), no scores shared with dev/holdout.
+- Bars: per-set 836 veto net >= +34 (4% of n) and p < 0.05 with the swap control still harmful; pooled 1336 veto
+  net >= +54 and p < 0.05 is the confirmatory test. One pass, no peeking, no dropping, no retuning duel_k.
+- Failure closes the line at judge-only (deterministic 0.815 on dev) and moves the lever to the judge's near-tie
+  top-1, not to another duel round.
