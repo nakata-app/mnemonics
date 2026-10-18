@@ -216,3 +216,13 @@ therefore be uninformative, which is the exact failure mode this line already ha
   dropping questions, no re-running with a different duel_k.
 - What would falsify: veto failing the 836 bar while the swap control also stops being harmful, or a pooled net below
   +54 with p >= 0.05. In that case the line closes at judge-only and the lever moves to the judge's near-tie top-1.
+
+### Complement-836 progress
+
+- CE cache `rerank_inputs/locomo_comp836_ce_w600.json`: 836/836 qids, no empty score lists.
+- Judge prompts `rerank_inputs/locomo_comp836_judge_prompts.jsonl`: 836 rows, 0 overlap with dev and 0 with holdout,
+  template suffix identical to the holdout prompts.
+- Dataset `atakanakbaba/mnemonics-comp836-judge-prompts` (ready), kernel `atakanakbaba/mnemonics-comp836-judge`
+  (deterministic 14B, same source, only the dataset source changed) pushed 05:02 and RUNNING. Kaggle accepted a
+  second concurrent GPU session, so the 500-question duel was not disturbed (still RUNNING).
+- Remaining: judge raw -> duel prompts -> 32B duel kernel on 836, then per-set and pooled scoring.
