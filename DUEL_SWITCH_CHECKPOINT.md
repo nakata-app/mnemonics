@@ -1,6 +1,6 @@
 # Mnemonics Final-Duel Switch — Active Checkpoint
 
-Updated: 2026-10-18 (repo HEAD `4bd8c81`; cont. 7 gate results appended below)
+Updated: 2026-10-18 (repo HEAD `4bd8c81`; cont. 8 gate results appended below)
 
 Everything below is dev-only (LoCoMo dev, 200 questions, one fixed deterministic judge order). No LongMemEval-M
 data was read or written by any of these runs.
@@ -151,10 +151,17 @@ PRE-REGISTERED 2026-10-18 02:45, before any holdout judge output existed:
   70 switches). The dev finding that CE disagreement alone is harmful replicates on new questions -- this is the
   first result in this line that is significant and on held-out data, and it is a NEGATIVE result for the CE.
 - 32B duel on the holdout: 383 duel prompts (the judge named >=2 picks on 383 of 500), kernel
-  `atakanakbaba/mnemonics-locomo-holdout-duel-qwen32b` pushed and RUNNING (~3.3 h expected at the dev rate of
-  31 s/prompt on 2xT4). The veto-form gate result is the pending measurement.
+  `atakanakbaba/mnemonics-locomo-holdout-duel-qwen32b`. **Veto-form gate COMPLETE (cont. 8 below): FAIL — net +6,
+  p=0.146** (see the Cont. 8 section for the measured result).
 - Note for the veto test: with judge 0.852 the rescuable ceiling is 28/500 (judge #1 wrong and judge #2 gold), so a
   perfect switch rule tops out at 0.908; the pre-registered bar is +20 net.
+- **Cont. 8 — the holdout veto gate result (pending measurement -> COMPLETE):** replay
+  `results/holdout_duel_qwen32b_gate_veto_raw.jsonl` (500 rows; gate switch=17 / keep=483 / no_ce=0; crosstab
+  RESCUE 9 passed / 8 blocked, BREAK 3 / 4, OTHER 5 / 10) gives **base 0.826 / 0.948 / 0.950 -> judge
+  0.852 / 0.948 / 0.950 -> gated 0.864 / 0.948 / 0.950, paired vs judge 9F / 3B, net +6, McNemar p=0.146**.
+  In the 383-question duel the 32B thus nets +6 on the holdout, well under the +20 bar (0.908 ceiling). The gate
+  crosstab (not shown in summary) split in proportion to the requested switches and 9/28 (0.32) of the rescuable
+  rows were captured. **The veto-form duel does NOT replicate on the holdout at the +4%/p<0.05 bar.**
 
 The operational steps are (unchanged from the original plan):
 
