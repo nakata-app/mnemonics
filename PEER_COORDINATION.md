@@ -77,3 +77,25 @@ and the separate AdaptMem repo (training).
 - This file. Edit + push when status changes.
 - Memory namespace `proj:mnemonics`. Both peers ingest decisions there.
 - Tag `lme-0.954` is the rollback point. Don't squash past it.
+
+## Status sync 2026-10-20
+
+- **S exact CLOSED**: `mnemonics-r1-1000-exact` COMPLETE — R@1 = R@5 = R@10 =
+  1.000 on the official 470 answerable-question denominator, per-question
+  artifact (`~/krun-output/mnemonics_r1/runs/r1000-exact-v2-final-artifacts/`),
+  pinned SHA `ca5359417c9a`, no gold labels, trust gate fired 15, margin 3.0.
+- **M exact OPEN**: candidate replay is 500/500 at R@1 = 1.0
+  (`r1000-exact-v2-final-artifacts/run.json`, mode `mnemonics_rerank`), but per
+  `M_PLUS58_INTEGRITY_AUDIT_20261006` that is *candidate replay, not exact*.
+  Pushed `mnemonics-m-query-lanes-plus58` v2 (CPU kernel, `enable_gpu: false`,
+  so the exhausted 30 h weekly GPU quota does not block it) to produce the
+  exact 500q artifact. Status at push time: RUNNING.
+- **Claim gate**: do not say "exact M R@1 = 1.000" until that 500q artifact
+  lands and per-question hit1 = 500/500 is verified locally.
+- **Do not mix harnesses**: EXAM 13/14 (deepseek-flash judge over the EXAM 11
+  RRF order, category-selective tail 0.904) is the older EXAM pipeline, not the
+  mnemonics champion line (0.958 deterministic CHAMPION.json / 1.000 exact).
+  Numbers from one must never be quoted as the other.
+- **Stale locks pruned**: the "7 dirty" files seen in svelka-work were stale
+  `svelka-lock` entries from dead pids (33102-33121); `svelka-lock check`
+  pruned them, the files are FREE for whoever owns them.
