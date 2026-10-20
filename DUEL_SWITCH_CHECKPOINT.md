@@ -160,8 +160,9 @@ PRE-REGISTERED 2026-10-18 02:45, before any holdout judge output existed:
   RESCUE 9 passed / 8 blocked, BREAK 3 / 4, OTHER 5 / 10) gives **base 0.826 / 0.948 / 0.950 -> judge
   0.852 / 0.948 / 0.950 -> gated 0.864 / 0.948 / 0.950, paired vs judge 9F / 3B, net +6, McNemar p=0.146**.
   In the 383-question duel the 32B thus nets +6 on the holdout, well under the +20 bar (0.908 ceiling). The gate
-  crosstab (not shown in summary) split in proportion to the requested switches and 9/28 (0.32) of the rescuable
-  rows were captured. **The veto-form duel does NOT replicate on the holdout at the +4%/p<0.05 bar.**
+  crosstab (`results/holdout_duel_qwen32b_gate_veto_crosstab.txt`) split in proportion to the requested switches and
+  9/28 (0.32) of the rescuable rows were captured; Fisher two-sided p=1.0 (the gate passes rescues no more than
+  breaks — no CE-agreement edge). **The veto-form duel does NOT replicate on the holdout at the +4%/p<0.05 bar.**
 
 The operational steps are (unchanged from the original plan):
 
