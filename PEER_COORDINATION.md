@@ -99,3 +99,20 @@ and the separate AdaptMem repo (training).
 - **Stale locks pruned**: the "7 dirty" files seen in svelka-work were stale
   `svelka-lock` entries from dead pids (33102-33121); `svelka-lock check`
   pruned them, the files are FREE for whoever owns them.
+
+## LEAK FINDING 2026-10-20 (blocks the 1.000 claim)
+
+- `benchmarks/longmemeval_eval.py:485` prefixes every ingested text with
+  `SID=<sid>|`, and the M data names answer sessions `answer_<hash>`. The CE
+  therefore reads the literal string `answer_` on the gold candidate.
+- Evidence in the offline replay artifact
+  (`r1000-exact-v2-final-artifacts/perq.json`): **948/948 gold sids start with
+  `answer_`**, and every one of them is `hit@1`.
+- CLEAN2 (sha1 anonymisation of `haystack_session_ids` + `answer_session_ids`)
+  only exists in `benchmarks/kaggle_origv2pool_m_shard*.py`, added
+  **2026-10-11/12** — i.e. AFTER the 0.958 champion (2026-10-04) and after the
+  offline 1.000 replay (2026-10-05/06). Both are leak-exposed.
+- Action: `mnemonics-m-query-lanes-plus58-clean` kernel = same stack + CLEAN2
+  inserted before `for i, q in enumerate(questions)`. v2 (un-anonymised) and
+  clean v1 were pushed 2026-10-20 evening; the pair gives the leak's size.
+- Until the clean run lands, no 1.000 and no "champion is clean" claim.
