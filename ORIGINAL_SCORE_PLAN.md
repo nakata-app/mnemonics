@@ -798,3 +798,27 @@ Registered before generating anything on the new set:
   14,266 chars while the CE used to see the first 3,000 — run chunk-max rerank
   with an off-the-shelf reranker over the same top-10
   (`dev_api_rerank.py --chunks --chunk-chars 3000`).
+
+## 2026-10-21 clean chunk-max rerank: measured, incomplete
+
+Method (no leak, no per-question tuning): take clean2's top-10 candidate pool
+(`clean2_m_top10_sessions.json`, anonymised ids), split each session into
+3,000-char chunks, score every chunk with the off-the-shelf `qwen3-reranker-8b`,
+and rank a session by its best chunk (`dev_api_rerank.py --chunks --chunk-chars
+3000`). Nothing is fit on M.
+
+Evidence so far:
+
+- **Miss-recovery experiment** (all 76 clean2 R@1 misses, 4-way split): the
+  chunk-max reranker puts gold at #1 for **26/76 = 34.2%** (by type: ss-assistant
+  1/1, knowledge-update 2/3, temporal 3/19, ss-user 0/8, preference ~2/23).
+- **Full-pipeline run, 132/500 questions completed** before the provider started
+  returning HTTP 429: R@1 0.864, R@5 0.939, R@10 0.939, **3 regressions**
+  (baseline hits pushed out of #1).
+
+So the honest reading: the chunk-max lever is real but smaller than the
+miss-recovery number suggests. With +26 recovered and a ~2.3% regression rate
+the end-to-end estimate is **≈0.87-0.88**, not 0.90. The 0.900 figure earlier in
+this file was the no-regression upper bound and is **not** a measured result.
+The remaining 368 questions are queued in `~/bin/resume-clean2.sh`, which
+resumes after the rate limit clears.
