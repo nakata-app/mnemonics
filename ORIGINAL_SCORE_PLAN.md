@@ -822,3 +822,21 @@ the end-to-end estimate is **≈0.87-0.88**, not 0.90. The 0.900 figure earlier 
 this file was the no-regression upper bound and is **not** a measured result.
 The remaining 368 questions are queued in `~/bin/resume-clean2.sh`, which
 resumes after the rate limit clears.
+
+## 2026-10-21 GPU port result: 4B is not 8B
+
+Ran the chunk-max scheme locally on a Kaggle T4 (`mnemonics-q3rerank-clean2`,
+`orders.jsonl` in `results/q3rerank_gpu`) because the API threw sustained 429s.
+Full 500 questions, off-the-shelf `Qwen3-Reranker-4B` (8B OOMs on a single T4:
+12.4GB used of 14.56GB even at batch 2), 3000-char chunks, max-over-chunks:
+
+- **n=500 R@1 = 0.538** with **170 regressions** against clean2's 0.848.
+
+That is *worse* than the base ordering, so it is **not** evidence that chunk-max
+hurts; it is evidence that the 4B checkpoint is far weaker than the 8B one the
+API run used (which scored 0.864 on the same kind of candidates across the first
+132 questions). The GPU port is therefore discarded as a measurement and the
+honest chunk-max number stays the API 8B result.
+
+Next step for a real full-500 number: 8B needs either 2xT4 (`machine_shape`) or
+8-bit quantisation; 4B is not a substitute.
