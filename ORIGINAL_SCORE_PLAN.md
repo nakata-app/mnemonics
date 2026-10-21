@@ -780,3 +780,21 @@ Registered before generating anything on the new set:
   net >= +54 and p < 0.05 is the confirmatory test. One pass, no peeking, no dropping, no retuning duel_k.
 - Failure closes the line at judge-only (deterministic 0.815 on dev) and moves the lever to the judge's near-tie
   top-1, not to another duel round.
+
+## 2026-10-21 quota + ceiling correction
+
+- `kaggle quota` (CLI 2.2.4) shows GPU **14.94h used / 15.06h left** (refresh
+  2026-10-24). The earlier "GPU quota exhausted, fall back to CPU" assumption
+  was wrong. CLI 2.1.2 has neither `quota` nor `kernels cancel`; 2.2.4 adds
+  `logs`/`quota` but still no cancel, and the REST cancel endpoint 404s, so a
+  stuck kernel only dies at its 12h limit.
+- Ceiling analysis on the leak-free clean2 run
+  (`clean2_m_kaggle_cpu/MERGED_perq.json`, n=500, R@1 .848 / R@10 .948):
+  **50 questions already have gold inside the top-10 but not at #1**, and 15
+  of those 23 preference misses are top-10 hits. So .848 is a *rerank* deficit,
+  not a retrieval wall; the theoretical cap with the current candidate pool is
+  .948, and only 26 questions are true coverage misses.
+- Generic lever (no per-question lanes): M sessions have a median length of
+  14,266 chars while the CE used to see the first 3,000 — run chunk-max rerank
+  with an off-the-shelf reranker over the same top-10
+  (`dev_api_rerank.py --chunks --chunk-chars 3000`).
