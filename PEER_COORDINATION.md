@@ -116,3 +116,23 @@ and the separate AdaptMem repo (training).
   inserted before `for i, q in enumerate(questions)`. v2 (un-anonymised) and
   clean v1 were pushed 2026-10-20 evening; the pair gives the leak's size.
 - Until the clean run lands, no 1.000 and no "champion is clean" claim.
+
+## Honest ceiling 2026-10-21 (leak-free, no LME-trained CE)
+
+Pulled from the existing artifacts, not re-run:
+
+| run | M R@1 | R@5 | R@10 | provenance |
+|---|---|---|---|---|
+| clean2 (anonim ids, off-the-shelf ms-marco CE, no lanes) | **0.848** | 0.928 | 0.948 | `clean2_m_kaggle_cpu/MERGED_summary.json`, n=500 |
+| clean2 + evren top-5 rerank | 0.858 | — | — | `ORIGINAL_SCORE_PLAN.md` |
+| ORIG-V2 (no lanes, no gate, anonymised) | 0.800 | 0.924 | 0.952 | `ORIGINAL_SCORE_PLAN.md` |
+| clean2, S split (470) | 0.942 | 0.988 | 0.994 | `ORIGINAL_SCORE_PLAN.md` |
+
+So: **M 1.000 does not exist without contamination.** Both 1.000-class
+numbers rest on (a) CEs trained on LongMemEval, (b) the `answer_` id leak, and
+(c) per-question lanes authored by looking at the same 500 questions. The
+signature is visible in the type table: clean2 preference R@1 = 0.233,
+plus58 = 1.000 — nothing but question-specific patches closes that gap.
+
+Consequence: any future claim must be a *holdout* number (lanes built on 250
+questions, scored on the other 250) on top of clean2.
