@@ -856,3 +856,21 @@ Conclusion: chunk-level reranking of the top-10 M candidates is a dead end for
 raising M. It rescues a few hard questions and loses many easy ones. Any future
 attempt needs a *selective* trigger (only rerank when the M margin is low), not
 a global rerank.
+
+## Selective trigger: simulated, no real gain
+
+Using the reranker's own score margin as the gate (rerank only when
+`top1 - top2 >= t`, otherwise keep M's order), swept offline over all 500:
+
+| gate | R@1 |
+|---|---|
+| base (never rerank) | 0.848 |
+| margin >= 0.05 | 0.828 |
+| margin >= 0.1 | 0.848 |
+| margin >= 0.2 | 0.852 |
+| margin >= 0.3 | 0.852 |
+| always rerank | 0.778 |
+
+Best cell is **+0.004 = 2 questions out of 500**, i.e. inside noise for this
+set. So the selective variant does not rescue chunk reranking; the honest
+statement stays "M = 0.848, rerank does not help".
