@@ -840,3 +840,19 @@ honest chunk-max number stays the API 8B result.
 
 Next step for a real full-500 number: 8B needs either 2xT4 (`machine_shape`) or
 8-bit quantisation; 4B is not a substitute.
+
+## 2026-10-22 full-500 result: chunk-max rerank hurts M
+
+The 8B reranker finally ran over all 500 questions (Kaggle T4, 8-bit,
+`mnemonics-q3rerank-clean2`): **R@1 = 0.778** (R@5 0.938, R@10 0.948),
+against clean2's **0.848**.
+
+- 51 baseline hits broken, 16 new hits gained -> net **-35**.
+- The earlier "0.864 on 132 questions" was measured on a *favourable subset*
+  (the questions the API run happened to reach), not on the full set. It must
+  not be quoted as the chunk-max ceiling any more.
+
+Conclusion: chunk-level reranking of the top-10 M candidates is a dead end for
+raising M. It rescues a few hard questions and loses many easy ones. Any future
+attempt needs a *selective* trigger (only rerank when the M margin is low), not
+a global rerank.
