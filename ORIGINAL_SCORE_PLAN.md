@@ -963,3 +963,23 @@ With `candidate_scores` logged, on 100 questions (shards 0 and 2):
 So M's own score margin separates hits from misses cleanly. It is not useful
 for triggering *this* reranker (that loses), but it is a usable confidence
 signal for a different action: abstain/escalate/verify on low margin.
+
+## M-margin gate at 250 questions: dead, and what the misses are
+
+Gate (rerank only when M's own margin <= t) on the 250 questions whose scores
+are now logged:
+
+| t | correct |
+|---|---|
+| base (no rerank) | 206/250 = 0.824 |
+| 0.25 / 0.5 | 206/250 = 0.824 (gate almost never fires) |
+| 1.0 | 200/250 = 0.800 |
+| 2.0 | 194/250 = 0.776 |
+
+Never above baseline. Reranking M's top-10 is closed at every trigger.
+
+Miss types on these 250: single-session-preference 13, multi-session 12,
+temporal-reasoning 10, single-session-user 7, knowledge-update 2.
+Low-margin (<1.0) questions are 60 and only 16 of them are misses - so low
+margin alone is not a good abstain signal either: it is mostly multi-session
+(23) and temporal (17) questions, which are hard but often still correct.
