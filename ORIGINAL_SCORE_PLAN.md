@@ -929,3 +929,25 @@ depth it is allowed to touch. That is the signature of a rescorer whose
 preference is simply worse than M's, not of an over-eager trigger. Chunk
 reranking with Qwen3-Reranker-8B is therefore closed at every variant tried:
 free, confidence-gated (CV -0.010), and depth-limited (-0.020 at best).
+
+## M's own margin as the gate: also negative (first 50 questions)
+
+Retriever scores are now logged (`candidate_scores` in perq, commit 0b834c7).
+On the first 50-question shard, misses do have smaller M margins than hits
+(median 1.41 vs 2.09), which is the direction H1 predicted.
+
+But gating the reranker on M's margin, joined against the full-500 rerank
+orders on the same 50 questions:
+
+| gate (rerank only when M margin <= t) | correct | base |
+|---|---|---|
+| t = 0.5 | 40/50 | 41/50 |
+| t = 1.0 | 38/50 | 41/50 |
+| t = 1.5 | 36/50 | 41/50 |
+| t = 2.0 | 36/50 | 41/50 |
+| t = 3.0 | 36/50 | 41/50 |
+
+Every threshold loses. Note this is 50 questions, not 500, so it is
+indicative - but combined with the full-500 results (free 0.778, depth-2
+0.828, confidence-gated CV -0.010) the conclusion is stable: this reranker
+cannot improve M at any trigger.
