@@ -909,3 +909,23 @@ So the headroom is real (0.948) but the instrument is wrong: the 8B reranker
 reshuffles top-10 too aggressively and loses more than it wins. Closing the
 rerank line as implemented; reaching 0.948 needs a better reranker or a
 different signal, not another trigger.
+
+## Depth-limited rerank: also negative
+
+Restricting the reranker to swap only within M's top-k, measured on all 500
+(no threshold to fit, so no CV needed):
+
+| allowed depth | R@1 |
+|---|---|
+| none (baseline) | 0.848 |
+| top-2 only | 0.828 |
+| top-3 only | 0.804 |
+| top-4 only | 0.796 |
+| top-5 only | 0.788 |
+| unrestricted | 0.778 |
+
+Every depth is worse than leaving M's order alone, and the loss grows with the
+depth it is allowed to touch. That is the signature of a rescorer whose
+preference is simply worse than M's, not of an over-eager trigger. Chunk
+reranking with Qwen3-Reranker-8B is therefore closed at every variant tried:
+free, confidence-gated (CV -0.010), and depth-limited (-0.020 at best).
