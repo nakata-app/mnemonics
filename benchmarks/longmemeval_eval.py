@@ -872,10 +872,14 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
 
             answer_sids = set(q.get("answer_session_ids") or [])
             retrieved_sids: list[str] = []
+            score_by_sid: dict[str, float] = {}
             for r in result["results"]:
                 sid = _session_id_of(r.get("text"))
                 if sid and sid not in retrieved_sids:
                     retrieved_sids.append(sid)
+                    # keep the retriever score so margins are analysable offline
+                    if sid not in score_by_sid:
+                        score_by_sid[sid] = float(r.get("score", 0.0))
 
             qtype = q.get("question_type", "unknown")
             by_type[qtype]["n"] += 1
@@ -894,6 +898,7 @@ def evaluate_mnemonics(questions: list[dict], rerank: bool, top_k: int = 10,
                     "answer": q.get("answer"),
                     "answer_sids": list(answer_sids),
                     "retrieved_top10_sids": retrieved_sids[:10],
+                    "candidate_scores": {s: score_by_sid.get(s, 0.0) for s in retrieved_sids[:10]},
                     "hit@1": q_hits[1], "hit@5": q_hits[5], "hit@10": q_hits[10],
                     **({"gate": gate_info} if gate_info is not None else {}),
                 })
