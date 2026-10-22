@@ -874,3 +874,21 @@ Using the reranker's own score margin as the gate (rerank only when
 Best cell is **+0.004 = 2 questions out of 500**, i.e. inside noise for this
 set. So the selective variant does not rescue chunk reranking; the honest
 statement stays "M = 0.848, rerank does not help".
+
+## Correcting the gate result: cross-validation kills it
+
+The 0.852 above was measured on the same 500 questions used to pick the
+threshold, so it is selection overfitting. 5-fold cross-validation (threshold
+chosen on 4 folds, measured on the held-out fold):
+
+| fold | threshold | held-out | base | delta |
+|---|---|---|---|---|
+| 0 | 0.1 | 0.850 | 0.880 | -0.030 |
+| 1 | 0.2 | 0.880 | 0.880 | +0.000 |
+| 2 | 0.3 | 0.840 | 0.840 | +0.000 |
+| 3 | 0.1 | 0.780 | 0.790 | -0.010 |
+| 4 | 0.2 | 0.840 | 0.850 | -0.010 |
+
+**Mean held-out delta = -0.010.** The selective trigger is not a gain; the
++0.004 was an artefact. Chunk reranking of M's top-10 is closed as a dead end,
+including the gated variant.
