@@ -6,6 +6,18 @@ import pytest
 from mnemonics.store import DIM, Store
 
 
+@pytest.fixture(autouse=True)
+def _isolate_rerank_cache(tmp_path, monkeypatch):
+    """Keep the persistent rerank-score cache out of tests.
+
+    The cache is on by default in production and a shared ``$HOME`` database
+    would let one test's scores satisfy another test's rerank call, silently
+    skipping the model.  Each test therefore gets its own file.
+    """
+    monkeypatch.setenv("MNEMONICS_RERANK_CACHE", str(tmp_path / "rerank_scores.db"))
+
+
+
 @pytest.fixture
 def tmp_store(tmp_path):
     """Fresh Store in a temp directory."""

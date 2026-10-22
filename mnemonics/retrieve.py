@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from mnemonics.ingest import _get_encoder, _resolve_model_for_store
+from mnemonics import rerank_cache
 from mnemonics.rerank import Reranker, env_int, make_reranker
 from mnemonics.store import Store
 
@@ -70,6 +71,11 @@ def _get_rerank_ce(model: str | None = None) -> Reranker:
     return _rerank_ce
 
 
+def _rerank_model() -> str:
+    """Model identifier used as the cache key for rerank scores."""
+    return _rerank_model_name or os.environ.get("MNEMONICS_RERANK_MODEL", "bge-reranker-v2-m3")
+
+
 def _ce_rerank(query: str, results: list[dict[str, Any]], top_k: int) -> list[dict[str, Any]]:
     """Cross-encoder rerank: attach ce_score, replace score, return top_k sorted desc.
 
@@ -80,12 +86,25 @@ def _ce_rerank(query: str, results: list[dict[str, Any]], top_k: int) -> list[di
     """
     if not results:
         return []
-    ranked = _get_rerank_ce().rerank(
-        query,
-        [r["text"] for r in results],
-        max_length=env_int("MNEMONICS_RERANK_MAX_LENGTH"),
-        batch_size=env_int("MNEMONICS_RERANK_BATCH_SIZE"),
-    )
+    texts = [r["text"] for r in results]
+    model_name = _rerank_model()
+    cached = rerank_cache.lookup(model_name, query, texts)
+    if len(cached) == len(texts):
+        # every (query, document) pair is already scored: skip the model load
+        ranked = sorted(cached.items(), key=lambda kv: kv[1], reverse=True)
+    else:
+        ranked = _get_rerank_ce().rerank(
+            query,
+            texts,
+            max_length=env_int("MNEMONICS_RERANK_MAX_LENGTH"),
+            batch_size=env_int("MNEMONICS_RERANK_BATCH_SIZE"),
+        )
+        # ``ranked`` is sorted by score, so map the scores back onto the
+        # original document positions before caching them.
+        scores_by_pos = [0.0] * len(texts)
+        for idx, ce_score in ranked:
+            scores_by_pos[idx] = float(ce_score)
+        rerank_cache.store(model_name, query, texts, scores_by_pos)
     out: list[dict[str, Any]] = []
     for idx, ce_score in ranked:
         item = dict(results[idx])
