@@ -892,3 +892,20 @@ chosen on 4 folds, measured on the held-out fold):
 **Mean held-out delta = -0.010.** The selective trigger is not a gain; the
 +0.004 was an artefact. Chunk reranking of M's top-10 is closed as a dead end,
 including the gated variant.
+
+## Anatomy of the 51 broken questions (ceiling vs reality)
+
+From artefacts alone (no rerun needed): of the 76 baseline misses, the correct
+session is already inside M's top-10 for **50** of them, so a perfect reranker
+caps at **474/500 = 0.948**. Gold rank among misses: rank 2 x22, rank 3 x8,
+rank 4 x6, rank 5 x4, rank 6-7 x4 each, rank 9 x2.
+
+What our reranker actually did on the 51 questions it broke: it promoted a
+candidate from M rank 2 (x12), rank 3 (x11), rank 4 (x12), rank 5 (x7),
+rank 6 (x6), rank 7 (x2), rank 8 (x1). Where it agreed with M (301 questions)
+the hit rate was **282/301 = 0.937**, i.e. higher than either ordering alone.
+
+So the headroom is real (0.948) but the instrument is wrong: the 8B reranker
+reshuffles top-10 too aggressively and loses more than it wins. Closing the
+rerank line as implemented; reaching 0.948 needs a better reranker or a
+different signal, not another trigger.
