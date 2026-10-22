@@ -951,3 +951,15 @@ Every threshold loses. Note this is 50 questions, not 500, so it is
 indicative - but combined with the full-500 results (free 0.778, depth-2
 0.828, confidence-gated CV -0.010) the conclusion is stable: this reranker
 cannot improve M at any trigger.
+
+## Margin channel is real (2 shards, 100 questions)
+
+With `candidate_scores` logged, on 100 questions (shards 0 and 2):
+
+- hits (n=83): median M margin **2.13**
+- misses (n=17): median M margin **1.13**
+- shard R@1 = 0.830
+
+So M's own score margin separates hits from misses cleanly. It is not useful
+for triggering *this* reranker (that loses), but it is a usable confidence
+signal for a different action: abstain/escalate/verify on low margin.
