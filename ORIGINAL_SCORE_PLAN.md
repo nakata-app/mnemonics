@@ -1068,3 +1068,12 @@ S11 0.850/0.980/0.985; pref2 base 0.3625/0.8125/0.9000, 4B-w3 0.4750/0.7625/0.80
   gap above; (2) the temporal-routed deterministic judge over the S11/EXAM 11 order (14B, query-regex router fixed
   before any output, dev = LoCoMo + pref2 over S11). Recombining the existing reranker signals is closed: the full-chunk
   view already carries what the window view adds.
+
+### 2026-10-23 EXAM 18 pre-registered (GPU-free part done): temporal-routed deterministic judge
+Router committed and FROZEN before any judge output: benchmarks/temporal_router_dev.py (sha256 8eec6576...),
+encoder-free/offline/deterministic (byte-identical re-run). Fire rate per qtype (face validity vs LABEL, not
+gold): LoCoMo cat2 58/59 (0.983), cat4 29/94, cat1 4/36, cat3 2/11, all 93/200 (0.465); pref2 16/80 (0.20).
+cat4 fires mostly genuine temporal; pref2 fires mostly false positives (future/relational/product-year) --
+router NOT re-tuned after peeking (forking-paths guard), over-fire recorded as a limitation. Pre-registration
++ dev gate in docs/EXAM18_PREREG.md. Blocked step (Kaggle refresh 2026-10-24 00:00Z): pref2 full-chunk 4B+VL
+scores (prereq, pref2 S11 does not exist yet), then the 14B judge arm. M untouched.
