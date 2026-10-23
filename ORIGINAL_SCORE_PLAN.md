@@ -983,3 +983,59 @@ temporal-reasoning 10, single-session-user 7, knowledge-update 2.
 Low-margin (<1.0) questions are 60 and only 16 of them are misses - so low
 margin alone is not a good abstain signal either: it is mostly multi-session
 (23) and temporal (17) questions, which are hard but often still correct.
+
+## 2026-10-23 next-step choice and pre-registration: EXAM 17 = rank fusion of the two best deterministic M orders
+
+Written 2026-10-23 07:34Z, before any number for the candidate below exists on any set.
+
+### Why this step (the alternatives weighed)
+- **EXAM 15 event-time lane, not chosen now.** As registered it is a *candidate lane*, but coverage is not the binding
+  constraint (session coverage 1.000 at band 50 on LoCoMo dev; fused M R@200 1.000; ~8 band vs ~42 selection misses).
+  The "proven" temporal query lanes it would extend came from the plus-era M forensics (memorized line), and no dev set
+  has question-relative time anchors ("N weeks ago", "last Saturday"): LoCoMo questions are "When did X ...", pref2 is
+  preference-only. It cannot be dev-gated without first building a new synthetic temporal set. Blocked, not falsified.
+- **Hits-agreement (reranker agreed with M -> 0.937) is not a selector.** Agreement leaves R@1 unchanged where it holds;
+  any gain must come from what is done on disagreement, and every arbiter tried there lost (8B chunk rerank at every
+  trigger; CE-agreement duel gate: holdout Fisher p=1.0, net +6 vs +20 bar). Closed as a ranking lever; kept as a
+  confidence signal only.
+- **Trained deterministic selector on non-LME data: blocked.** No GPU (Kaggle quota 31.93h/30h used, refresh
+  2026-10-24 00:00Z), training a 4B+ reranker on an 8 GB CPU is infeasible, and the one CE fine-tune on LoCoMo overfit
+  (-9 R@1).
+- **Temporal-routed deterministic judge: second choice.** Deterministic 14B judge gained temporal on M twice (EXAM 9 +9 q,
+  EXAM 12 +4 q) while losing pref/ku; a query-regex router could keep the gain. But no deterministic judge exists over the
+  EXAM 11 order (the EXAM 13 scored/ summary says provider deepseek-flash and its Kaggle/Colab logs end on quota errors,
+  so it is not treated as the 14B run), and the dev arm also needs new judge prompts over a new base -> GPU on both sides.
+- **Chosen: fuse the EXAM 10 and EXAM 11 orders by equal-weight RRF.** They are the two best deterministic M systems
+  (0.890 and 0.894) and are built from different evidence views: EXAM 10 = 4B on 3x600-char CE windows, default +
+  personalization instruct; EXAM 11 = 4B + VL-8B on full 3000-char chunks over the EXAM 8 top-20. Rank fusion is the only
+  deterministic lever that has transferred in sign from LoCoMo dev to M twice (EXAM 8 -> 10 +18 q, EXAM 8 -> 11 +20 q).
+  Where the two systems agree at #1 the fusion keeps that pick (this is the useful form of the agreement signal); where
+  they disagree, the pick goes to the session with more joint support. It needs no new model call: the M exam is an
+  offline recombination of two persisted, already pinned order files (no GPU, no cloud).
+- **Expected headroom, stated before measuring: small.** Per-type best-of(EXAM 10, EXAM 11) on M is 448/500 = 0.896
+  (+1 q over EXAM 11); the per-question union is unknown and must not be looked at. Realistic M range 0.890-0.904
+  (-2..+5 q). This step cannot reach 1.0; it is the cheapest unblocked move toward it and a test of whether the two
+  evidence views are complementary at the question level.
+
+### Dev pre-registration (instrument benchmarks/order_fusion_dev.py, outputs ~/.local/share/mnemonics-exam17/)
+Encoder-free (only persisted reranker score files; no embedding is computed), CPU, deterministic.
+- LoCoMo 200 (seed 11; rerank_inputs/locomo_poolall_perq.json, base = retrieved_all_sids):
+  - S10 (EXAM 10 analogue) = RRF k=60 of 4B-w3 default (results/locomo_qrr4b) and 4B-w3 personalization
+    (results/mnemonics-locomo-qrr4b-pers); session = max over its docs, ties by base order. Must reproduce 0.805/0.960/0.975.
+  - S11 (EXAM 11 analogue) = stage 1 the 4B-w3 default order; stage 2 RRF k=60 of 4B-full3000
+    (mnemonics-locomo-qrr4b-full) and VL-8B-full3000 (mnemonics-locomo-qvlrr8b-full) over the stage-1 top-20; the rest keeps
+    stage-1 order. Must reproduce 0.850/0.980/0.985 (the documented N=20 two-stage number).
+  - **F (candidate)** = RRF k=60 over the S10 and S11 orders (rank = position in each full order); ties by S11 order.
+- pref2 80: S10 is documented (0.5125/0.8125/0.8875); S11 needs 4B-full and VL-full scores on pref2, which do not exist
+  and need ~1 T4 hour. **That arm is blocked until the Kaggle refresh (2026-10-24 00:00Z)**; pref2 sessions are all
+  <= 1840 chars, so full3000 docs are one doc per session.
+- **Gate (vs the incumbent S11, paired):** no drop in any of R@1/R@5/R@10 on LoCoMo AND on pref2, AND paired R@1 net
+  (fixes - breaks) >= +2 summed over the two sets. **Falsified** if any metric drops on either set, or net <= +1.
+  LoCoMo alone can falsify; it cannot pass (pass needs the pref2 arm).
+- Exploratory only (reported, not promotable, cannot change the verdict): flat 4-signal RRF over the stage-1 top-20.
+
+### EXAM 17 (pre-registered 2026-10-23, conditional on the dev gate, before any M call)
+Inputs: results/exam10_m_scored/calls.jsonl and results/exam11_m_scored/calls.jsonl (`order`, 75 sessions each).
+Fused order = RRF k=60 over the two orders, ties by EXAM 11 order; gold from the same rows. One pass, log overall + by
+type + paired net vs EXAM 11, code SHA of order_fusion_dev.py. No M per-question inspection, no variant selection on M.
+Runs only after the dev gate passes and Atakan says go.
