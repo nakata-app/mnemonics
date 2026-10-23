@@ -1039,3 +1039,32 @@ Inputs: results/exam10_m_scored/calls.jsonl and results/exam11_m_scored/calls.js
 Fused order = RRF k=60 over the two orders, ties by EXAM 11 order; gold from the same rows. One pass, log overall + by
 type + paired net vs EXAM 11, code SHA of order_fusion_dev.py. No M per-question inspection, no variant selection on M.
 Runs only after the dev gate passes and Atakan says go.
+
+### Dev 2026-10-23 result: EXAM 17 FALSIFIED on LoCoMo -- fusing the window view into the full-chunk view loses
+Instrument benchmarks/order_fusion_dev.py (sha256 40680694...), run 2026-10-23 07:4xZ, CPU, encoder-free (no embedding
+loaded; MNEMONICS_ENCODER_MODEL pinned to all-MiniLM-L6-v2 anyway), re-run byte-identical. Outputs
+~/.local/share/mnemonics-exam17/{locomo,pref2}_{summary.json,rows.jsonl}. It reproduces every documented dev number
+before the candidate is read: LoCoMo base 0.705/0.935/0.965, 4B-w3 0.785/0.960/0.975, S10 0.805/0.960/0.975,
+S11 0.850/0.980/0.985; pref2 base 0.3625/0.8125/0.9000, 4B-w3 0.4750/0.7625/0.8000, S10 0.5125/0.8125/0.8875.
+
+| LoCoMo 200 | R@1 | R@5 | R@10 | paired vs S11 (F/B, net, McNemar p) |
+|---|---|---|---|---|
+| S10 (EXAM 10 analogue) | 0.805 | 0.960 | 0.975 | 5/14, -9, 0.064 |
+| **S11 (EXAM 11 analogue, incumbent)** | **0.850** | **0.980** | **0.985** | - |
+| **F = RRF(S10, S11) (candidate)** | **0.830** | **0.975** | 0.990 | **0/4, -4, 0.125** |
+| X4 flat 4-signal RRF, top-20 (exploratory) | 0.840 | 0.970 | 0.990 | 3/5, -2, 0.73 |
+
+- **Verdict: FAIL against the pre-registered gate** (R@1 -0.020 and R@5 -0.005 vs S11; net -4 <= +1). The pref2 arm
+  is not needed to decide (LoCoMo alone can falsify) and stays unmeasured. **No EXAM 17 M run.** M untouched.
+- Why (dev, per question allowed): S10 and S11 agree at #1 on 160/200 (hit rate there 0.894). On the 40 disagreements
+  S11 is right 27, S10 18, F 23: the window-view order is the weaker voter, and RRF hands it ties it should lose.
+  Union oracle R@1 0.875 = +5 q over S11, so the two views are only weakly complementary even with a perfect arbiter.
+  By category F loses everywhere vs S11 (cat1 -1, cat2 -1, cat3 -1, cat4 -1).
+- Agreement as a confidence signal (not a selector): agree-at-1 covers 80% of questions at 0.894 precision vs 0.675 on
+  the 20% disagreement set -- usable for abstain/escalate, consistent with the earlier 0.937 M observation.
+- Gap found on the way: the M path's incumbent (EXAM 11 / S11) has **never been measured on pref2** -- pref2 has no
+  full-chunk 4B or VL-8B scores. Any future S11-based dev gate needs them first (~1 T4 hour).
+- Next unblocked step after the Kaggle refresh (2026-10-24 00:00Z): (1) pref2 full-chunk 4B + VL-8B scores, closing the
+  gap above; (2) the temporal-routed deterministic judge over the S11/EXAM 11 order (14B, query-regex router fixed
+  before any output, dev = LoCoMo + pref2 over S11). Recombining the existing reranker signals is closed: the full-chunk
+  view already carries what the window view adds.
