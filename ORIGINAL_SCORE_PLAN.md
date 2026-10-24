@@ -1122,3 +1122,10 @@ falsified: crediting a 2nd/3rd chunk is noise-neutral at best (top2mean) and des
 (top3sum: cat2 .881->.746, cat4 .883->.766 -- multi-chunk distractor sessions outscore single-chunk gold). Within-type
 movement under P1A (cat1 .833->.917, cat3 .455->.273) is the kind of per-type reshuffle that EXAM 17 also showed and that
 has never transferred to M. Nothing from this exam goes to M. Artefacts: WD-Backup/.../results/exam19_pooling_dev/.
+
+### 2026-10-24 EXAM 20 pre-registered (before any rewrite exists): deterministic HyDE query view as a stage-2 signal
+After EXAM 19 fell. Qwen3-14B greedy rewrites each question into the one sentence the speaker likely said; the frozen 4B
+reranker scores the full-3000 docs against that rewrite; two fixed configs (H3 = third RRF signal; QH2 = replaces the 4B
+question view). Dev gate as EXAM 19 (+0.015 LoCoMo, no regress, pref2 no harm, p<0.10, determinism checks). M rewrites are
+generated alongside but not opened before the gate. GPU: ~0.5 h gen + ~1 h dev rerank (+ ~2 h M if PASS); quota 28.7 h.
+Full text + forbidden list: docs/EXAM20_PREREG.md. Expected headroom stated in advance: 0..+8 q on M.
