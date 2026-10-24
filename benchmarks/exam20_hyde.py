@@ -82,7 +82,7 @@ def orders(name: str, sc_h: dict):
 
 
 def dev() -> None:
-    sc_h = ofd.jl(D / "kaggle/dev_scores.jsonl", "scores")
+    sc_h = ofd.jl(D / "kaggle-dev/scores.jsonl", "scores")
     out = {}
     for name in ("locomo", "pref2"):
         rows = orders(name, sc_h)
