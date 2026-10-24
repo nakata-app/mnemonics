@@ -1143,3 +1143,19 @@ Prereg: docs/EXAM20_PREREG.md (b7a0785, dev skorundan önce). Rewriter: Qwen3-14
 | pref2 80 | QH2 | 0.400 | 0.8625 | 0.9375 | 2/1/+1 | 1.0 |
 
 Seçim (en iyi LoCoMo R@1): QH2. Gate: G1 (LoCoMo R@1 ≥ +0.015) HAYIR; G2 (pref2 zarar yok) EVET; G3 (p<0.10, net>0) HAYIR. **VERDICT: FAIL.** HyDE her iki biçimde LoCoMo'yu anlamlı bozuyor (en çok cat4 0.883→0.755; cat3 değişmedi). Yorum: hipotez cümle, soruyu doğru oturuma değil benzer anlatıma sahip yanlış oturumlara çekiyor. M rewrite'ları üretildi ama açılmadı; M sınavı prereg gereği yapılmadı. S11 incumbent kalır. Artefakt: /Volumes/WD-Backup/datasets/longmemeval/results/mnemonics-exam20-hyde/.
+
+## EXAM 15 yeniden açıldı (2026-10-25 00:40, herhangi bir temp1 madde/skor yokken): olay-zamanı tarih-tutarlılık lane'i
+Prereg: docs/EXAM15_PREREG.md (bu commit). 17 Ekim kaydı "aday lane" idi ve 23 Ekim'de "engelli, çürütülmemiş" bırakıldı
+(soru-göreli zaman anchor'lı dev seti yok). Bu açılış o seti kurar ve lever'ı coverage değil SIRALAMA sinyali olarak tanımlar:
+soru hedef olayı zamana bağlıyorsa (route_memory_query target_time), S11 top-K içinde tarih-tutarlı oturumlar kararlı
+biçimde öne alınır. Tarih kümesi: `session` kolu {oturum tarihi} (negatif kontrol; 07 Ekim'de 10/20 çürütülen zaman-damgası
+yönlendirmesi) / `event` kolu {oturum tarihi} ∪ kullanıcı turlarından kural tabanlı çıkarılan olay tarihleri. Grid K∈{5,10,20}
+× kol∈{session,event}; seçim en iyi temp1-anchor R@1. Gate: G1 temp1-anchor R@1 ≥ S11+0.05 & net>0 & p<0.10; G2 temp1-control
+(süre soruları, 16) gerileme yok; G3 LoCoMo+pref2 gerileme yok (LoCoMo'da soru tarihi yok → inşa gereği etkisiz).
+Dev seti temp1: benchmarks/synth_temp1_gen.py (spec docstring'de), 40 alan × 3 seed = 120 prompt, mekanik geçerlilik,
+alan başına ilk 2 geçerli → hedef 80 (64 anchor + 16 control), haystack 40, seed 15 tarihleme. Üretici: Kaggle
+mnemonics-temp1-qwen14b-gen (Qwen3-14B 40c06982 NF4 greedy, T4x2, batch 6; dataset atakanakbaba/mnemonics-temp1-gen-prompts).
+Pipeline pref2 ile aynı: synth_to_perq → make_rerank_docs w3 + full3000 → 3 Kaggle kerneli → S11. Lever scripti
+benchmarks/exam15_datelane_dev.py (selftest 7/7). Bilinen sınır: temp1 yalnız göreli-anchor alt sınıfı; M temporal'daki
+süre/kronoloji/toplam sorularında lever etkisiz. PASS M sınavını açar, büyüklüğünü öngörmez. M adımı GPU'suz (EXAM 11 sırası
++ m_qdates + m_deep_top75_sessions), adım 0 EXAM 11 0.894 yeniden üretimi. Yasaklar prereg'de.
