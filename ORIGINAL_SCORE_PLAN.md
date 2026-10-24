@@ -1077,3 +1077,6 @@ cat4 fires mostly genuine temporal; pref2 fires mostly false positives (future/r
 router NOT re-tuned after peeking (forking-paths guard), over-fire recorded as a limitation. Pre-registration
 + dev gate in docs/EXAM18_PREREG.md. Blocked step (Kaggle refresh 2026-10-24 00:00Z): pref2 full-chunk 4B+VL
 scores (prereq, pref2 S11 does not exist yet), then the 14B judge arm. M untouched.
+
+### 2026-10-24 EXAM 18 judge arm: Evren-hosted GLM-5.3 execution NON-VIABLE (exploratory probe abandoned)
+temporal_judge_dev.py (part 2) koşuldu ama Evren üzerinden bitmedi: izole tek judge çağrısı ~28s (geçerli, finish=stop) olmasına rağmen 93-çağrılık sıralı batch 46 dakikada ~0 sorgu işledi (process CPU TIME 0.55s / %0 → tümü ağ beklemesi). Evren sürekli sıralı yük altında kısıtlıyor/asıyor; retry (4×240s) sürünmeyi uzatıyor. Zaten exploratory/NON-deterministik (glm-5.3 temp0 bile tekrar üretmiyor), hedefe sayılmıyordu. KARAR: Evren judge yolu terk. Gerçek yol pre-registration'daki deterministik Qwen3-14B judge = Kaggle GPU (bugün 00:00Z yenilendi): önce pref2 full-chunk 4B+VL skorları (pref2 S11 prereq), sonra judge. Router (part 1) ve dev gate frozen, geçerli; yalnız çalıştırma motoru Evren→Kaggle değişiyor.
