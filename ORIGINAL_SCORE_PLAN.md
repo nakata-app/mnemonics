@@ -1101,3 +1101,12 @@ Motor: Kaggle kernel `mnemonics-exam18-qwen14b-judge` v2 (Qwen/Qwen3-14B rev 40c
 - Neden (dev, soru başına izinli bakış): judge 109 sorgunun 39'unda S11 top-1'i değiştirdi; bunların çoğu kayıp. Kırılan 27 sorguda gold S11'de #1'deydi; judge sonrası gold 9'unda #2, 6'sında #10 (en sona attı), 2'sinde top-10 dışına düştü (parse eksikleri sona eklenir). Yani 14B judge tarih kısıtını okuyarak reranker'ın doğru seçimini bozuyor; hipotez ("S11 top-1 temporal sorularda sıklıkla yanlış, judge düzeltir") LoCoMo'da yanlışlandı: S11 routed cat2'de zaten 0.88.
 - Reward-hacking kontrolü: router/prompt/K/gate hiç değiştirilmedi; pref2 gate'te kaldı; LoCoMo-only raporlanmadı. Sonuç EXAM 17 gibi falsifikasyon olarak kaydedildi.
 - Açık kalan bulgu: pref2'de S11 < S10 (R@1 0.3875 vs 0.5125, p=0.03). Bu bir sonraki hipotez adayı ama yeni prereg gerektirir; bugün başlatılmadı.
+
+### 2026-10-24 EXAM 19 pre-registered (before any pooling score exists): chunk-evidence pooling in the S11 pipeline
+Atakan 2026-10-24 ("başla, ne yap et, 3 gününüz var"): autonomous until 2026-10-27. After EXAM 18 fell, the cheapest
+untested deterministic lever is the per-session pooling (`session_max` everywhere). Fixed grid P1 top2mean / P2 max+0.5*s2
+/ P3 top3sum x scope A (stage-2 only) / B (stage-1 too) = 6 candidates vs P0 incumbent; selection = best LoCoMo R@1; gate
+LoCoMo +>=0.015 & no R@k -0.005, pref2 R@1/R@10 no harm, McNemar p<0.10, byte-identical. Offline, no GPU. Full text and
+forbidden list: docs/EXAM19_PREREG.md. Expected headroom stated in advance: 0..+6 q on M. Step 0 of the M exam =
+reproduce EXAM 11 0.894 with the new instrument (score_rerank_docs.py clamps VL session scores at -1.0; discrepancy, if any,
+is recorded, not exploited).
