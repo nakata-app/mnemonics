@@ -1110,3 +1110,15 @@ LoCoMo +>=0.015 & no R@k -0.005, pref2 R@1/R@10 no harm, McNemar p<0.10, byte-id
 forbidden list: docs/EXAM19_PREREG.md. Expected headroom stated in advance: 0..+6 q on M. Step 0 of the M exam =
 reproduce EXAM 11 0.894 with the new instrument (score_rerank_docs.py clamps VL session scores at -1.0; discrepancy, if any,
 is recorded, not exploited).
+
+### 2026-10-24 EXAM 19 dev result: pooling FALSIFIED on dev (no M run, M untouched)
+`benchmarks/pooling_dev.py` (two runs byte-identical). LoCoMo (n=200) R@1/5/10 vs P0A=S11 0.850/0.980/0.985:
+P1A 0.855/0.980/0.995 (fixes 8 / breaks 7, net +1, p=1.0) = selected by the pre-registered rule; P1B 0.855 (10/9, +1);
+P2A 0.845 (-1); P2B 0.845 (-1); P3A 0.750 (5/25, net -20, p=0.0003); P3B 0.770 (net -16, p=0.007).
+pref2 (n=80): P1A/P1B/P2A/P2B/P3A identical to S11 0.3875/0.85/0.925 (0 fixes, 0 breaks) -- pref2 sessions are
+effectively single-chunk at 3000 chars, so pooling cannot act there; P3B 0.375 (-1).
+Gate: G1 (+0.015, no regress) FAIL (+0.005), G2 PASS, G3 FAIL (net +1, p=1.0). **VERDICT: FAIL.** Hypothesis
+falsified: crediting a 2nd/3rd chunk is noise-neutral at best (top2mean) and destructive when it sums raw scores
+(top3sum: cat2 .881->.746, cat4 .883->.766 -- multi-chunk distractor sessions outscore single-chunk gold). Within-type
+movement under P1A (cat1 .833->.917, cat3 .455->.273) is the kind of per-type reshuffle that EXAM 17 also showed and that
+has never transferred to M. Nothing from this exam goes to M. Artefacts: WD-Backup/.../results/exam19_pooling_dev/.
