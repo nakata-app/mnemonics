@@ -38,17 +38,27 @@ OUT = Path.home() / ".local/share/mnemonics-exam18"
 
 
 def evren(prompt: str) -> str:
+    """Call the judge. Retries transient timeouts/5xx; raises after the last try so the caller can fall back.
+    Decision inputs (model, temperature, prompt, max_tokens) are unchanged by the retry logic."""
     base = os.environ["EVREN_BASE_URL"].rstrip("/")
     body = json.dumps({
         "model": MODEL, "temperature": 0, "max_tokens": MAXTOK,
         "messages": [{"role": "user", "content": prompt}],
     }).encode()
-    req = urllib.request.Request(
-        base + "/chat/completions", body,
-        {"Authorization": "Bearer " + os.environ["EVREN_API_KEY"], "Content-Type": "application/json"},
-    )
-    d = json.load(urllib.request.urlopen(req, timeout=180))
-    return d["choices"][0]["message"].get("content") or ""
+    last = None
+    for attempt in range(4):
+        try:
+            req = urllib.request.Request(
+                base + "/chat/completions", body,
+                {"Authorization": "Bearer " + os.environ["EVREN_API_KEY"], "Content-Type": "application/json"},
+            )
+            d = json.load(urllib.request.urlopen(req, timeout=240))
+            return d["choices"][0]["message"].get("content") or ""
+        except Exception as e:  # noqa: BLE001 -- transient network/5xx; retry then surface
+            last = e
+            import time
+            time.sleep(5 * (attempt + 1))
+    raise last if last else RuntimeError("evren failed")
 
 
 def parse_rank(text: str, k: int) -> list[int]:
@@ -117,14 +127,18 @@ def main() -> None:
         b_fv = ofd.session_max(docs_full[qid], sc_fv[qid])
         s11 = ofd.two_stage(o_w3, [b_f4, b_fv])
         routed = is_temporal(r["question"])
+        judge_failed = False
         if routed:
             routed_ct += 1
-            judged, raw = judge_order(r["question"], s11, docs_full[qid])
+            try:
+                judged, raw = judge_order(r["question"], s11, docs_full[qid])
+            except Exception as e:  # noqa: BLE001 -- judge unreachable for this q; keep S11, record it
+                judged, raw, judge_failed = s11, f"<FAILED: {type(e).__name__}>", True
             raw_fh.write(json.dumps({"qid": qid, "raw": raw}) + "\n")
         else:
             judged = s11
         rows.append({
-            "qid": qid, "qtype": r["qtype"], "routed": routed,
+            "qid": qid, "qtype": r["qtype"], "routed": routed, "judge_failed": judge_failed,
             "S11": ofd.hits(s11, gold), "judge": ofd.hits(judged, gold),
         })
     raw_fh.close()
@@ -137,7 +151,8 @@ def main() -> None:
     f = sum(x["judge"][0] and not x["S11"][0] for x in routed_rows)
     b = sum(x["S11"][0] and not x["judge"][0] for x in routed_rows)
     summ = {
-        "set": name, "n": len(rows), "routed": routed_ct, "judge_model": MODEL, "K": K,
+        "set": name, "n": len(rows), "routed": routed_ct,
+        "judge_failed": sum(x["judge_failed"] for x in rows), "judge_model": MODEL, "K": K,
         "note": "EXPLORATORY, non-deterministic hosted judge; LoCoMo arm only; NOT the pre-registered gate",
         "overall": {"S11": r_at("S11", rows), "judge": r_at("judge", rows)},
         "routed_only": {"S11": r_at("S11", routed_rows), "judge": r_at("judge", routed_rows),
