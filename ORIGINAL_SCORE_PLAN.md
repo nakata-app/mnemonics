@@ -1129,3 +1129,17 @@ reranker scores the full-3000 docs against that rewrite; two fixed configs (H3 =
 question view). Dev gate as EXAM 19 (+0.015 LoCoMo, no regress, pref2 no harm, p<0.10, determinism checks). M rewrites are
 generated alongside but not opened before the gate. GPU: ~0.5 h gen + ~1 h dev rerank (+ ~2 h M if PASS); quota 28.7 h.
 Full text + forbidden list: docs/EXAM20_PREREG.md. Expected headroom stated in advance: 0..+8 q on M.
+
+## EXAM 20 — HyDE query view (dev gate) — FAIL (2026-10-24)
+Prereg: docs/EXAM20_PREREG.md (b7a0785, dev skorundan önce). Rewriter: Qwen3-14B NF4 greedy, 780 prompt, repeat-check 0/10, 0 boş. Dev rerank: Qwen3-Reranker-4B fp16, 560 q × 3000 doc, tek T4, 6432 s, repeat-check max |diff| = 0, NaN 0. `exam20_hyde.py dev` iki koşu byte-aynı.
+
+| set | sistem | R@1 | R@5 | R@10 | fixes/breaks/net | McNemar p |
+|---|---|---|---|---|---|---|
+| LoCoMo 200 | S11 | 0.850 | 0.980 | 0.985 | — | — |
+| LoCoMo 200 | H3 = RRF(4B q, VL q, 4B H) | 0.765 | 0.970 | 0.985 | 7/24/−17 | 0.0033 |
+| LoCoMo 200 | QH2 = RRF(4B "q+Likely memory: H", VL q) | 0.770 | 0.965 | 0.985 | 5/21/−16 | 0.0025 |
+| pref2 80 | S11 | 0.3875 | 0.850 | 0.925 | — | — |
+| pref2 80 | H3 | 0.3625 | 0.8625 | 0.925 | 1/3/−2 | 0.625 |
+| pref2 80 | QH2 | 0.400 | 0.8625 | 0.9375 | 2/1/+1 | 1.0 |
+
+Seçim (en iyi LoCoMo R@1): QH2. Gate: G1 (LoCoMo R@1 ≥ +0.015) HAYIR; G2 (pref2 zarar yok) EVET; G3 (p<0.10, net>0) HAYIR. **VERDICT: FAIL.** HyDE her iki biçimde LoCoMo'yu anlamlı bozuyor (en çok cat4 0.883→0.755; cat3 değişmedi). Yorum: hipotez cümle, soruyu doğru oturuma değil benzer anlatıma sahip yanlış oturumlara çekiyor. M rewrite'ları üretildi ama açılmadı; M sınavı prereg gereği yapılmadı. S11 incumbent kalır. Artefakt: /Volumes/WD-Backup/datasets/longmemeval/results/mnemonics-exam20-hyde/.
