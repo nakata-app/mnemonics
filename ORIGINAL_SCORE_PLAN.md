@@ -1166,3 +1166,19 @@ süre/kronoloji/toplam sorularında lever etkisiz. PASS M sınavını açar, bü
   (açık şema + detail'i birebir kopyala; geçerlilik kuralları, tarihleme, gold inşası AYNI). v2: 40 alan × seed 3-7 = 200 prompt,
   kernel mnemonics-temp1-qwen14b-gen2 (dataset mnemonics-temp1-gen-prompts-v2), ~2.7 saat. Birleştirme v1 ∪ v2, alan başına ilk 2
   geçerli. v1 ham çıktı WD-Backup/.../mnemonics-exam15-temp1/kaggle-gen/.
+
+### 2026-10-25 EXAM 15 KOŞULDU — dev gate PASS, M'de marjinal + anlamsız (+2/−0, R@1 0.894→0.898)
+Devralındı (önceki oturum pid 76158 öldü). v2 gen kerneli COMPLETE idi; assemble v1∪v2 yeniden koşuldu → 45 geçerli madde (36 anchor: days/weeks/months/weekday 9'ar + 9 control), deterministik (md5 f01388ad). Hedef 80'in altında; baskın ret "detail-not-in-own-chat" 180 (Qwen3-14B benzersiz detayı sohbette birebir yazamıyor). Pipeline pref2 ile birebir: synth_to_perq (MiniLM, dense base R@1/5/10 0.467/0.911/0.956) → make_rerank_docs w3+full3000 → 3 Kaggle kerneli (mnemonics-temp1-qrr4b / -qrr4b-full / -qvlrr8b-full, revision-pinli fp16 deterministik, T4) → scores. Kernel kuyruğu: Kaggle max 2 eşzamanlı GPU, VL slot açılınca push edildi (poller).
+
+**Dev gate (exam15_datelane_dev.py dev, iki koşu byte-aynı md5 51c1376):**
+- temp1_anchor (n=36): S11 R@1 0.389 → seçili **K10_event 0.972** (+0.583), fixes 21 / breaks 0 / net +21, McNemar p≈0, routed 36/36. **G1 PASS.**
+- temp1_control (n=9): [1,1,1] değişmedi, routed 0 (duration soruları router'ı tetiklemiyor, lever inert). **G2 PASS.**
+- locomo (n=200): 0.850/0.980/0.985 değişmedi, routed 0 (soru tarihi yok). pref2 (n=80): 0.3875/0.85/0.925 değişmedi, routed 0. **G3 PASS.**
+- Seçim (en iyi temp1-anchor R@1, tie→küçük K→session): **K10_event**. **VERDICT: PASS.** Ama bu PASS beklenen ve neredeyse tanımsal: temp1 sentetik, tarih-tutarlılığın near-tie'ları ayırması için kurulmuş; prereg "PASS M sınavını açar, büyüklüğünü öngörmez" diyor.
+
+**M step (benchmarks/exam15_m_apply.py, GPU'suz offline, iki koşu byte-aynı):** frozen target/event_dates/partition/TOL import edildi; tek yeni kod M tarih-formatı ("YYYY/MM/DD (Day) HH:MM" → ISO) normalizasyonu ve 490MB m_deep_top75_sessions stream. Dev seçimi K10_event M'ye uygulandı, M'de YENİDEN SEÇİM YOK (6 grid şeffaflık için basıldı, hepsi ~0.898).
+- step 0: persist EXAM 11 order'dan R@1/5/10 = 0.894/0.966/0.984 birebir reprodüksiyon (enstrüman geçerli).
+- **K10_event M (n=500): R@1/5/10 = 0.898 / 0.970 / 0.984.** S11'e karşı R@1 net **+2 / −0** (routed 20/500). Hareket yalnız temporal-reasoning: 0.827 → 0.842 (+2 soru/133). Diğer tipler değişmedi (knowledge-update 1.0, multi-session 0.925, single-session-assistant 1.0, single-session-preference 0.567, single-session-user 0.900).
+- **İstatistik:** net +2/0 binom/McNemar p = 0.5 → ANLAMLI DEĞİL. Gerçek yönde pozitif, güvenli (0 gerileme), ama marjinal ve anlamsız. temp1'deki büyük dev sıçraması M'ye taşınmadı (prereg öngörüsü doğrulandı). Hedef R@1=1.0 (şu an 0.898) uzak.
+- Reward-hacking kontrolü: frozen fonksiyonlar değiştirilmeden import edildi; dev config M'de yeniden seçilmedi; EXAM 11 önce reprodüce edildi; tek koşu; determinizm doğrulandı. Sonuç olduğu gibi kaydedildi, manşet seçilerek sunulmadı.
+- Durum: K10_event güvenli (monoton, gerileme yok) → gelecekte S11+datelane incumbent olarak kullanılabilir, ama kazanç anlamsız. Artefaktlar: ~/.local/share/mnemonics-exam15/{dev_summary.json,m_apply_result.json}, scores results/mnemonics-temp1-*. Sonraki aday lane (yeni prereg gerektirir): en zayıf tip single-session-preference (0.567, n=30) top-1 ayrımı.
