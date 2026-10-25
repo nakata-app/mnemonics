@@ -80,6 +80,17 @@ Write JSON with these keys:
   its detail>?" that contains sessions[0].detail verbatim and no {{WHEN}} token.
 Each chat message is {{"role": ..., "content": ...}}. Reply with JSON only."""
 
+# v2 (2026-10-25, before any temp1 score): the v1 batch yielded 24 valid of 120 because the 14B dropped the
+# "content" key (56) and paraphrased "detail" instead of copying it (44). v2 states the schema explicitly and
+# demands a verbatim copy. Validity rules, dating scheme and gold construction are unchanged; v1 raws are kept.
+PROMPT_V2 = PROMPT.replace(
+    'Each chat message is {{"role": ..., "content": ...}}. Reply with JSON only.',
+    'STRICT FORMAT: every chat message is an object with exactly two keys, "role" and "content", e.g.\n'
+    '{{"role": "user", "content": "{{REL}} I finally had my cleaning at Dr. Okafor\'s clinic."}}.\n'
+    'Each "detail" must be copied character-for-character from one message of its own chat (write the chat first,\n'
+    'then copy the detail out of it). The four details must be different and must not appear in each other\'s chats.\n'
+    'Reply with JSON only, no prose, no code fences.')
+
 ANCHOR_KINDS = ("days", "weeks", "months", "weekday")
 NUM_WORDS = {1: "a", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six"}
 WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
@@ -89,19 +100,28 @@ def anon(s: str) -> str:
     return "s" + hashlib.sha1(s.encode()).hexdigest()[:12]
 
 
-def prompts() -> None:
+def prompts(version: int = 1, seeds: tuple = (0, 1, 2), out_name: str = "gen_prompts.jsonl") -> None:
     D.mkdir(parents=True, exist_ok=True)
-    out = D / "gen_prompts.jsonl"
+    out = D / out_name
+    tpl = PROMPT if version == 1 else PROMPT_V2
     with open(out, "w") as f:
         for d in DOMAINS:
-            for v in range(PER_DOMAIN_PROMPTS):
+            for v in seeds:
                 qid = f"{re.sub(r'\\W+', '_', d)}__{v}"
-                f.write(json.dumps({"qid": qid, "prompt": PROMPT.format(domain=d, seed=v)}) + "\n")
-    print("wrote", out, len(DOMAINS) * PER_DOMAIN_PROMPTS)
+                f.write(json.dumps({"qid": qid, "prompt": tpl.format(domain=d, seed=v)}) + "\n")
+    print("wrote", out, len(DOMAINS) * len(seeds))
+
+
+def repair(raw: str) -> str:
+    """Mechanical JSON repairs for two recurrent 14B slips; they never alter message text or structure otherwise:
+    {"role": "user", "text"}  ->  {"role": "user", "content": "text"}
+    {"role": "user": "text"}  ->  {"role": "user", "content": "text"}"""
+    s = re.sub(r'("role":\s*"(?:user|assistant)")\s*:\s*"', r'\1, "content": "', raw)
+    return re.sub(r'("role":\s*"(?:user|assistant)",\s*)"(?!content"\s*:)', r'\1"content": "', s)
 
 
 def parse_json(raw: str):
-    s = raw.strip()
+    s = repair(raw.strip())
     s = re.sub(r"^```(?:json)?\s*|\s*```$", "", s, flags=re.S)
     i, j = s.find("{"), s.rfind("}")
     if i < 0 or j <= i:
@@ -204,8 +224,13 @@ def fill(chat, phrase: str):
 
 
 def assemble() -> None:
-    raw_path = D / "kaggle-gen/raw.jsonl"
-    rows = [json.loads(l) for l in open(raw_path) if l.strip()]
+    # v1 batch first, then v2; validity is mechanical and identical for both, so order only decides which
+    # valid items fill a domain's two slots.
+    rows = []
+    for sub in ("kaggle-gen", "kaggle-gen2"):
+        p = D / sub / "raw.jsonl"
+        if p.exists():
+            rows += [json.loads(l) for l in open(p) if l.strip()]
     by_domain: dict[str, list] = {}
     reasons: dict[str, int] = {}
     for r in rows:
@@ -221,6 +246,8 @@ def assemble() -> None:
     items = [(dom, it) for dom in sorted(by_domain) for it in by_domain[dom]]
     print("valid items kept", len(items), "| rejected reasons", json.dumps(reasons, sort_keys=True))
 
+    # control share fixed at 1/5 of whatever was kept (16 of 80 at full yield), never all of a short set
+    n_control = round(len(items) / 5)
     rng = random.Random(SEED)
     built = []
     for i, (dom, it) in enumerate(items):
@@ -255,7 +282,7 @@ def assemble() -> None:
             if sk >= q:
                 dk, sk = 0, ek
             sessions.append({"date": sk, "event": ek, "chat": fill(it["sessions"][k]["chat"], rel_phrase(dk, ek))})
-        control = i >= len(items) - N_CONTROL
+        control = i >= len(items) - n_control
         question = it["duration_question"] if control else it["question"].replace("{WHEN}", when)
         built.append({"i": i, "domain": dom, "q": q, "when": when, "kind": kind, "later": later, "trap": trap,
                       "control": control, "question": question, "answer": it["sessions"][0]["detail"],
@@ -290,5 +317,11 @@ def assemble() -> None:
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("cmd", choices=["prompts", "assemble"])
+    ap.add_argument("--version", type=int, default=1, help="prompt template: 1 (v1, seeds 0-2) or 2 (v2, seeds 3-7)")
     a = ap.parse_args()
-    prompts() if a.cmd == "prompts" else assemble()
+    if a.cmd == "assemble":
+        assemble()
+    elif a.version == 1:
+        prompts()
+    else:
+        prompts(2, (3, 4, 5, 6, 7), "gen_prompts_v2.jsonl")

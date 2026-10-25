@@ -1159,3 +1159,10 @@ Pipeline pref2 ile aynı: synth_to_perq → make_rerank_docs w3 + full3000 → 3
 benchmarks/exam15_datelane_dev.py (selftest 7/7). Bilinen sınır: temp1 yalnız göreli-anchor alt sınıfı; M temporal'daki
 süre/kronoloji/toplam sorularında lever etkisiz. PASS M sınavını açar, büyüklüğünü öngörmez. M adımı GPU'suz (EXAM 11 sırası
 + m_qdates + m_deep_top75_sessions), adım 0 EXAM 11 0.894 yeniden üretimi. Yasaklar prereg'de.
+- 2026-10-25 09:30 temp1 üretim v1 sonucu (skor yok): Kaggle gen kerneli 120/120 çıktı, 5893 s. Mekanik geçerlilik: 24 geçerli
+  (alan başına 2 sınırıyla 21 madde), ret: detail sohbette birebir yok 77, content anahtarı eksik JSON 56 (onarım sonrası 6), chat 8.
+  Mac 03:37'de yeniden başladığı için yoklayıcı öldü; çıktı elle indirildi. Düzeltmeler (hiçbir skor görülmeden): JSON onarımı
+  (eksik "content" anahtarı, iki örüntü), control payı n/5 (16/80 ile aynı oran; kısa sette hepsi control olmasın), prompt v2
+  (açık şema + detail'i birebir kopyala; geçerlilik kuralları, tarihleme, gold inşası AYNI). v2: 40 alan × seed 3-7 = 200 prompt,
+  kernel mnemonics-temp1-qwen14b-gen2 (dataset mnemonics-temp1-gen-prompts-v2), ~2.7 saat. Birleştirme v1 ∪ v2, alan başına ilk 2
+  geçerli. v1 ham çıktı WD-Backup/.../mnemonics-exam15-temp1/kaggle-gen/.
