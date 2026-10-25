@@ -1225,3 +1225,19 @@ Devralındı (önceki oturum pid 76158 öldü). v2 gen kerneli COMPLETE idi; ass
   event-kolu 42/42, session-kolu 31/42 — fark 11 madde (kanıt olaydan farklı tarihli), set tasarlanan session-vs-event ayrımını test ediyor.
   Bu R@1 etkisini KANITLAMAZ (gold'un S11 top-K'da bir distractor'ın altında olup partition'la yükselmesi gerekir; trap maddelerinde distractor
   session-tarihi pencerede), onu rerank skorları ölçecek. Skordan önce kaydedildi ki routing/extraction'ın sonradan ayarlanmadığı sabit olsun.
+
+## RECONCILE 2026-10-25 22:40 — EXAM 15 ZATEN BİTMİŞTİ (42f8c0d); bu oturumun sonraki EXAM 15 işi REDUNDANT ÇAKIŞMA
+Dürüst düzeltme (reward-hacking kuralı: başarı görüntüsü değil, gerçek durum). Git doğrulaması: EXAM 15, paralel oturum (macmini-21, author
+nakata-app) tarafından **42f8c0d @ 13:22** koşulmuş ve commit'li: dev gate 3/3 PASS (K10_event = bu oturumun event-kolu, K=10; temp1-anchor
+0.389→0.972 "by construction"), M step (exam15_m_apply.py, GPU'suz, bu oturumun exam15_datelane_dev.ex15 fonksiyonlarını import eder):
+step0 EXAM 11 reprodüksiyonu OK, M R@1/5/10 = **0.898/0.970/0.984**, net +2/-0 (binom p=0.5, ANLAMSIZ), yalnız temporal-reasoning 0.827→0.842.
+**Sonuç: lever güvenli ama M R@1'i anlamlı ilerletmiyor; 1.0 hedefi uzak.** Pre-registered EXAM 15 KAPANDI.
+- Bu oturumun katkısı 30472ee (prereg) + ae98f00 (generator/lever) GERÇEKTEN KULLANILDI (macmini-21 bunların üzerine kurdu). AMA b4a7b26
+  (3. üretim partisi) ve sonrası (ca0d0a3 down-registration, 9bbd9f9/c228865/b8b9cc8 blocked/face-validity) 13:22'de biten bir exam'i
+  farkında olmadan TEKRAR koşuyordu — redundant. Neden: Mac restart + uzun oturum boyunca, peer'ın exam'i bitirdiğini push öncesi
+  yeniden-okumadım (dosya-lock'ları exam-düzeyi talebi yakalamıyor). Redundant GPU harcanMADI (-1025 kernelleri hiç çalışmadı, 404).
+- YAN HASAR: 18:40 pipeline'ım paylaşılan rerank_inputs/temp1_{perq,sessions,rerank_docs_w3/full3000,qdates,ce_cache} dosyalarını 45→52
+  maddeye EZDİ (bu data dosyalarını kilitlememiştim). macmini-21'in SKORLARI (results/mnemonics-temp1-*/scores.jsonl, 45-madde) ve commit'li
+  apply scripti SAĞLAM → 42f8c0d sonucu geçerli/doğrulanabilir. 45-madde girdileri backup ham çıktılardan (gen+gen2, donuk assemble) birebir
+  yeniden üretilebilir; 52-madde sürümüm WD-Backup/.../mnemonics-exam15-temp1/my52-inputs/ içine yedeklendi. Geri-yazma kararı macmini-21'de
+  (exam sahibi); habersiz tekrar ezme yapmadım, mesajla sordum. 52-madde setimin ek araştırma değeri yok (exam 45'te marjinal karara vardı).
