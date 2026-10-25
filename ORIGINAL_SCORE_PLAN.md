@@ -1203,3 +1203,13 @@ Devralındı (önceki oturum pid 76158 öldü). v2 gen kerneli COMPLETE idi; ass
   gücü artırmak için SOMUT gerekçe olur (cont.7/cont.8 güç analizi gibi), körlemesine GPU değil. temp1.json donduruldu; perq/S11 bundan sonra.
   Yapısal doğrulama: gold haystack'te 52/52; anchor'da route_memory_query hedef-zaman üretiyor; control (süre) sorularında üretmiyor (lever
   inert) → G2 inşa gereği muhafaza guard'ı. v3 ham çıktı WD-Backup.
+- 2026-10-25 21:50 temp1 pipeline kuruldu, S11 skorlaması GPU slot'una TAKILI (skor yok): synth_to_perq temp1 dense base (MiniLM) R@1/5/10 =
+  0.481/0.942/0.942 — bu setin zorluk özelliği (R@10 0.942: ~3 gold zaten top-10 dışı, bu set için aday tavanı); lever/S11 skoru DEĞİL.
+  rerank docs (w3 2080 doc + full3000) üretildi. KEŞİF: 09:56'da (Mac restart sonrası, safety-kesintili bir yanıt) eski 21-maddelik
+  temp1 ile pipeline çalışmış; o bayat datasetler/kerneller (mnemonics-temp1-qrr4b/-full/-qvlrr8b-full, 09:57-10:03 COMPLETE) KULLANILMAZ.
+  Temiz kopuş için taze adlar: datasetler mnemonics-temp1-rerank-docs{,-full}-1025 (52 madde), kerneller mnemonics-temp1-q{rr4b,rr4b-full,vlrr8b-full}-1025.
+  BLOKER: Kaggle "Maximum batch GPU session count of 2 reached" — iki slot başka bir ajanın ÖKSÜZ EXAM 22 koşusunca tutuluyor
+  (mnemonics-m-ex22-8b-s0 RUNNING; onu başlatan yerel süreç pid 3153 ÖLÜ, exam22_stronger_rerank.py lock'u stale→pruned). Peer-respect:
+  başkasının ön-kayıtlı deneyini ÖLDÜRMEDİM. Hafif detached driver ~/.local/share/exam15-rerank-driver.sh (pid 10228): slot açılınca 3
+  kerneli sırayla push eder (her biri pref2 benzeri ~10-20 dk), COMPLETE olunca scores indirir, bitince exam15-rerank-driver.DONE bırakır.
+  DONE görülünce: exam15_datelane_dev.py dev iki kez (byte-aynı), gate, ledger+mnemonics, commit, yedek.
