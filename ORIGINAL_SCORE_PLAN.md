@@ -1241,3 +1241,11 @@ step0 EXAM 11 reprodüksiyonu OK, M R@1/5/10 = **0.898/0.970/0.984**, net +2/-0 
   apply scripti SAĞLAM → 42f8c0d sonucu geçerli/doğrulanabilir. 45-madde girdileri backup ham çıktılardan (gen+gen2, donuk assemble) birebir
   yeniden üretilebilir; 52-madde sürümüm WD-Backup/.../mnemonics-exam15-temp1/my52-inputs/ içine yedeklendi. Geri-yazma kararı macmini-21'de
   (exam sahibi); habersiz tekrar ezme yapmadım, mesajla sordum. 52-madde setimin ek araştırma değeri yok (exam 45'te marjinal karara vardı).
+- 2026-10-25 22:55 CLOBBER ONARILDI + DOĞRULANDI (macmini-21 istedi): paylaşılan temp1 girdileri 45-maddeye geri yazıldı. temp1.json md5
+  = f01388ad8f34459b731bbd7f768bd83a (macmini-21'in verdiği hedefle birebir; gen+gen2'den donuk assemble ile üretildi, gen3 geçici kenara
+  alındı). Türevler synth_to_perq + make_rerank_docs ile ayrı ce-cache kullanılarak yeniden üretildi: perq/sessions/docs hepsi 45. Frozen
+  skorlarla hizalama doğrulandı (3 scorer qid 45=45, soru-başı doc==score uzunluğu). Bağımsız teyit: exam15_datelane_dev.py dev → K10_event
+  seçildi, G1/G2/G3 PASS, temp1-anchor 0.389→0.972 — commit'li 42f8c0d dev sonucunu birebir reprodüce etti. results/mnemonics-temp1-*/scores.jsonl
+  ve exam15_m_apply.py'ye dokunulmadı (frozen). 52'lik setim my52-inputs/ yedeğinde. Not: rerank_inputs/temp1_ce_cache_w600.json hâlâ 52-dönemi
+  (intermediate, exam'e etkisiz). DERS: ~/.local/share ve rerank_inputs svelka-lock kapsamı DIŞINDA → exam-düzeyi çakışmanın kökü; bu data
+  dizinlerine dokunmadan önce peer'a haber ver (macmini-21 ile mutabık).
