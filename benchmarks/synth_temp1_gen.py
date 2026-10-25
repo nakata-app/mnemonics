@@ -227,7 +227,7 @@ def assemble() -> None:
     # v1 batch first, then v2; validity is mechanical and identical for both, so order only decides which
     # valid items fill a domain's two slots.
     rows = []
-    for sub in ("kaggle-gen", "kaggle-gen2"):
+    for sub in ("kaggle-gen", "kaggle-gen2", "kaggle-gen3"):
         p = D / sub / "raw.jsonl"
         if p.exists():
             rows += [json.loads(l) for l in open(p) if l.strip()]
@@ -323,5 +323,7 @@ if __name__ == "__main__":
         assemble()
     elif a.version == 1:
         prompts()
-    else:
+    elif a.version == 2:
         prompts(2, (3, 4, 5, 6, 7), "gen_prompts_v2.jsonl")
+    else:  # third batch, same v2 template, fresh seeds (v1+v2 yielded 45 valid; target is 80)
+        prompts(2, (8, 9, 10, 11, 12), "gen_prompts_v3.jsonl")

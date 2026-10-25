@@ -1182,3 +1182,6 @@ Devralındı (önceki oturum pid 76158 öldü). v2 gen kerneli COMPLETE idi; ass
 - **İstatistik:** net +2/0 binom/McNemar p = 0.5 → ANLAMLI DEĞİL. Gerçek yönde pozitif, güvenli (0 gerileme), ama marjinal ve anlamsız. temp1'deki büyük dev sıçraması M'ye taşınmadı (prereg öngörüsü doğrulandı). Hedef R@1=1.0 (şu an 0.898) uzak.
 - Reward-hacking kontrolü: frozen fonksiyonlar değiştirilmeden import edildi; dev config M'de yeniden seçilmedi; EXAM 11 önce reprodüce edildi; tek koşu; determinizm doğrulandı. Sonuç olduğu gibi kaydedildi, manşet seçilerek sunulmadı.
 - Durum: K10_event güvenli (monoton, gerileme yok) → gelecekte S11+datelane incumbent olarak kullanılabilir, ama kazanç anlamsız. Artefaktlar: ~/.local/share/mnemonics-exam15/{dev_summary.json,m_apply_result.json}, scores results/mnemonics-temp1-*. Sonraki aday lane (yeni prereg gerektirir): en zayıf tip single-session-preference (0.567, n=30) top-1 ayrımı.
+- 2026-10-25 18:10 temp1 v2 sonucu (skor yok): 200/200 çıktı, 10341 s. v1∪v2 birleşik geçerli 45 (36 anchor: 9/9/9/9 tür, 9 control; 23'ü
+  sonradan tarihli kanıt). Baskın ret hâlâ "detail birebir yok" (180). 80 hedefi için üçüncü parti: aynı v2 şablon, seed 8-12, 200 prompt,
+  kernel mnemonics-temp1-qwen14b-gen3 (~2.9 saat). Set tamamlanmadan perq/S11 ÇALIŞTIRILMAZ (temel sayı bile görülmeden).
