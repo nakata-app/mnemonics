@@ -1220,3 +1220,8 @@ Devralındı (önceki oturum pid 76158 öldü). v2 gen kerneli COMPLETE idi; ass
   Peer macmini-cb: "benim değil, lokal cyber-llm bench'teyim" (ETA veremedi). macmini-21: cevap bekleniyor. 2. slotun kim olduğu
   belirsiz kaldı (s1 kerneli Kaggle'da 404; yalnız s0 RUNNING görünüyor) ama önemsiz: driver tek-tek push yapıyor, ex22-s0 bitip 1 slot
   açılınca kendi kernellerim (her biri 1 slot) sırayla girer. Karar: BEKLE; iptal yalnız kimse sahip çıkmazsa VE Atakan onaylarsa.
+- 2026-10-25 22:30 temp1 lever face-validity (GPU'suz, SKOR YOK, girdi-girdi — tüm lever/grid/gate donuk, ayar imkânı yok): router
+  (route_memory_query) anchor 42/42 hedef-zaman üretiyor, control 10/10 üretmiyor (lever control'de inert ✓). Gold oturum tarih-tutarlılığı:
+  event-kolu 42/42, session-kolu 31/42 — fark 11 madde (kanıt olaydan farklı tarihli), set tasarlanan session-vs-event ayrımını test ediyor.
+  Bu R@1 etkisini KANITLAMAZ (gold'un S11 top-K'da bir distractor'ın altında olup partition'la yükselmesi gerekir; trap maddelerinde distractor
+  session-tarihi pencerede), onu rerank skorları ölçecek. Skordan önce kaydedildi ki routing/extraction'ın sonradan ayarlanmadığı sabit olsun.
