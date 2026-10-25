@@ -1213,3 +1213,10 @@ Devralındı (önceki oturum pid 76158 öldü). v2 gen kerneli COMPLETE idi; ass
   başkasının ön-kayıtlı deneyini ÖLDÜRMEDİM. Hafif detached driver ~/.local/share/exam15-rerank-driver.sh (pid 10228): slot açılınca 3
   kerneli sırayla push eder (her biri pref2 benzeri ~10-20 dk), COMPLETE olunca scores indirir, bitince exam15-rerank-driver.DONE bırakır.
   DONE görülünce: exam15_datelane_dev.py dev iki kez (byte-aynı), gate, ledger+mnemonics, commit, yedek.
+- 2026-10-25 22:25 DÜZELTME (önceki "öksüz" nitelemesi fazla iddialıydı): blokeri doğruladım. mnemonics-m-ex22-8b-s0 RUNNING,
+  EXAM 22 = ÖN-KAYITLI ve ledger+git'te commit'li deney (docs/EXAM22_PREREG.md + benchmarks/exam22_stronger_rerank.py,
+  commit 5b5dc4b/c55b9f6; Qwen3-Reranker-8B stage-2, held-out M split). Başlatan yerel süreç (pid 3153) ölü ama bu tek başına
+  "sahipsiz" demek değil (peer macmini-cb uyardı: SSH/oturum kopmuş olabilir, kernel sunucuda sürer). Meşru M-goal işi → İPTAL YOK.
+  Peer macmini-cb: "benim değil, lokal cyber-llm bench'teyim" (ETA veremedi). macmini-21: cevap bekleniyor. 2. slotun kim olduğu
+  belirsiz kaldı (s1 kerneli Kaggle'da 404; yalnız s0 RUNNING görünüyor) ama önemsiz: driver tek-tek push yapıyor, ex22-s0 bitip 1 slot
+  açılınca kendi kernellerim (her biri 1 slot) sırayla girer. Karar: BEKLE; iptal yalnız kimse sahip çıkmazsa VE Atakan onaylarsa.
